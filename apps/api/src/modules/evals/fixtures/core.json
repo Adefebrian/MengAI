@@ -1,0 +1,222 @@
+{
+  "id": "core",
+  "title": "Core crew scenarios: one task per role, sizes taken from typical Bun and TypeScript projects",
+  "model": "gpt-4o-mini",
+  "contextWindow": 128000,
+  "scenarios": [
+    {
+      "id": "engineer-discount",
+      "role": "engineer",
+      "project": "shop-api",
+      "goal": "Let shoppers apply discount codes at checkout.",
+      "workspaceDigest": "shop-api (Bun, Hono, SQLite). src/ 42 files: routes/ (cart.ts, checkout.ts, products.ts), services/ (cart.ts, pricing.ts, tax.ts), db/ (schema.ts, queries.ts), lib/ (money.ts, errors.ts). tests/ 18 files, bun test. package.json scripts: dev, test, typecheck.",
+      "lessons": [
+        "Money is stored in integer cents; never use floats for prices in this codebase.",
+        "Run bun test tests/cart before the full suite; the full suite takes 40 seconds."
+      ],
+      "task": {
+        "title": "Add POST /cart/discount",
+        "spec": "Add an endpoint that applies a discount code to the current cart. Codes live in a new discounts table (code, percent_off, expires_at). Validate the code, reject expired codes with 422, and recompute the cart totals through the pricing service.",
+        "acceptance": ["POST /cart/discount with a valid code returns the updated cart", "expired or unknown codes return 422", "totals stay in integer cents", "bun test passes"]
+      },
+      "steps": [
+        { "say": "Looking at the project layout first.", "tools": [ { "name": "fs_list", "args": { "path": "src", "depth": 2 }, "outputChars": 1400 } ] },
+        { "say": "Reading the cart routes and service.", "tools": [ { "name": "fs_read", "args": { "path": "src/routes/cart.ts" }, "outputChars": 7800 }, { "name": "fs_read", "args": { "path": "src/services/cart.ts" }, "outputChars": 9600 } ] },
+        { "say": "Checking how pricing computes totals.", "tools": [ { "name": "fs_read", "args": { "path": "src/services/pricing.ts" }, "outputChars": 5200 } ] },
+        { "say": "Searching for existing discount handling.", "tools": [ { "name": "fs_search", "args": { "pattern": "discount|coupon", "glob": "src/**/*.ts" }, "outputChars": 2400 } ] },
+        { "say": "Reading the schema to add the discounts table.", "tools": [ { "name": "fs_read", "args": { "path": "src/db/schema.ts" }, "outputChars": 6100 } ] },
+        { "say": "Adding the discounts table and query.", "tools": [ { "name": "fs_edit", "args": { "path": "src/db/schema.ts", "find": "export const carts", "replace": "export const discounts = table('discounts', { code: text().primaryKey(), percentOff: integer(), expiresAt: integer() });\nexport const carts" }, "outputChars": 60 }, { "name": "fs_edit", "args": { "path": "src/db/queries.ts", "find": "// cart queries", "replace": "export const findDiscount = (code: string) => db.query.discounts.findFirst({ where: eq(discounts.code, code) });\n// cart queries" }, "outputChars": 60 } ] },
+        { "say": "Applying the discount in the pricing service.", "tools": [ { "name": "fs_edit", "args": { "path": "src/services/pricing.ts", "find": "export function totals(", "replace": "export function applyDiscount(cents: number, percentOff: number): number { return cents - Math.round((cents * percentOff) / 100); }\n\nexport function totals(" }, "outputChars": 60 } ] },
+        { "say": "Adding the route.", "tools": [ { "name": "fs_edit", "args": { "path": "src/routes/cart.ts", "find": "export default cart;", "replace": "cart.post('/discount', async (c) => { const body = await parse(c, DiscountBody); return c.json(await service.applyDiscount(c.get('cartId'), body.code)); });\n\nexport default cart;" }, "outputChars": 60 } ] },
+        { "say": "Writing tests for the endpoint.", "tools": [ { "name": "fs_write", "args": { "path": "tests/cart-discount.test.ts", "content": "describe('POST /cart/discount', () => { test('valid code', async () => {}); test('expired code', async () => {}); test('unknown code', async () => {}); });" }, "outputChars": 90 } ] },
+        { "say": "Running the cart tests.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/cart" }, "outputChars": 14200, "ok": false } ] },
+        { "say": "The expired case returns 500; reading the error helper.", "tools": [ { "name": "fs_read", "args": { "path": "src/lib/errors.ts" }, "outputChars": 3100 } ] },
+        { "say": "Throwing a 422 for expired codes.", "tools": [ { "name": "fs_edit", "args": { "path": "src/services/cart.ts", "find": "if (discount.expiresAt < now) throw new Error('expired');", "replace": "if (discount.expiresAt < now) throw unprocessable('discount code expired');" }, "outputChars": 60 } ] },
+        { "say": "Re-running the cart tests.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/cart" }, "outputChars": 6500 } ] },
+        { "say": "Typecheck before the full suite.", "tools": [ { "name": "shell_run", "args": { "command": "bun run typecheck" }, "outputChars": 3200 } ] },
+        { "say": "Running the full suite.", "tools": [ { "name": "shell_run", "args": { "command": "bun test" }, "outputChars": 11800 } ] },
+        { "say": "All green.", "tools": [ { "name": "finish", "args": { "summary": "Added POST /cart/discount with a discounts table, 422 on expired or unknown codes, totals in cents. bun test passes.", "files": ["src/db/schema.ts", "src/db/queries.ts", "src/services/pricing.ts", "src/services/cart.ts", "src/routes/cart.ts", "tests/cart-discount.test.ts"], "ok": true }, "outputChars": 20 } ] }
+      ]
+    },
+    {
+      "id": "qa-flaky-checkout",
+      "role": "qa",
+      "project": "shop-api",
+      "goal": "Make the checkout test suite reliable in CI.",
+      "workspaceDigest": "shop-api (Bun, Hono, SQLite). tests/ 18 files; tests/checkout.test.ts is flaky in CI (1 in 5 runs). src/services/checkout.ts uses Date.now() and a payment client mock.",
+      "lessons": ["Inject a clock instead of calling Date.now() in services under test."],
+      "task": {
+        "title": "Fix the flaky checkout test",
+        "spec": "tests/checkout.test.ts fails about one run in five in CI with a totals mismatch. Reproduce it, find the cause, fix the test or the code, and prove it with repeated runs.",
+        "acceptance": ["root cause identified and fixed", "bun test tests/checkout passes 20 runs in a row", "no test is skipped"]
+      },
+      "steps": [
+        { "say": "Reproducing with repeated runs.", "tools": [ { "name": "shell_run", "args": { "command": "for i in $(seq 1 10); do bun test tests/checkout.test.ts || break; done" }, "outputChars": 22000, "ok": false } ] },
+        { "say": "Reading the failing test.", "tools": [ { "name": "fs_read", "args": { "path": "tests/checkout.test.ts" }, "outputChars": 6200 } ] },
+        { "say": "Reading the checkout service.", "tools": [ { "name": "fs_read", "args": { "path": "src/services/checkout.ts" }, "outputChars": 8400 } ] },
+        { "say": "Looking for time-dependent code.", "tools": [ { "name": "fs_search", "args": { "pattern": "Date\\.now|new Date\\(", "glob": "src/**/*.ts" }, "outputChars": 2900 } ] },
+        { "say": "Running only the failing case with a fixed seed.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/checkout.test.ts -t 'applies tax at midnight' --rerun-each 20" }, "outputChars": 9100, "ok": false } ] },
+        { "say": "The tax rate switches at midnight; injecting a clock.", "tools": [ { "name": "fs_edit", "args": { "path": "src/services/checkout.ts", "find": "const now = Date.now();", "replace": "const now = deps.clock.now();" }, "outputChars": 60 } ] },
+        { "say": "Running the case again.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/checkout.test.ts -t 'applies tax at midnight' --rerun-each 20" }, "outputChars": 9000, "ok": false } ] },
+        { "say": "The test still builds the service without a clock.", "tools": [ { "name": "fs_edit", "args": { "path": "tests/checkout.test.ts", "find": "createCheckout({ db, payments })", "replace": "createCheckout({ db, payments, clock: fixedClock(1_700_000_000_000) })", "all": true }, "outputChars": 60 } ] },
+        { "say": "Filing the root cause.", "tools": [ { "name": "report_issue", "args": { "title": "Checkout tax depends on wall clock", "detail": "checkout.ts read Date.now(), so runs near midnight UTC used the next day's tax table. Fixed by injecting a clock.", "file": "src/services/checkout.ts", "severity": "low" }, "outputChars": 120 } ] },
+        { "say": "Twenty runs of the file.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/checkout.test.ts --rerun-each 20" }, "outputChars": 18500 } ] },
+        { "say": "Checking other services for the same pattern.", "tools": [ { "name": "fs_read", "args": { "path": "src/services/tax.ts" }, "outputChars": 4800 } ] },
+        { "say": "Full suite once.", "tools": [ { "name": "shell_run", "args": { "command": "bun test" }, "outputChars": 12100 } ] },
+        { "say": "Recording the lesson.", "tools": [ { "name": "record_lesson", "args": { "text": "Services that depend on the time of day must take a clock dependency so tests can pin it." }, "outputChars": 40 } ] },
+        { "say": "Done.", "tools": [ { "name": "finish", "args": { "summary": "Root cause: wall clock in checkout tax. Injected a clock and pinned it in tests; 20 runs green.", "files": ["src/services/checkout.ts", "tests/checkout.test.ts"], "ok": true }, "outputChars": 20 } ] }
+      ]
+    },
+    {
+      "id": "reviewer-payments",
+      "role": "reviewer",
+      "project": "shop-api",
+      "goal": "Move payment calls behind a provider interface.",
+      "workspaceDigest": "shop-api (Bun, Hono, SQLite). src/payments/ new: provider.ts, stripe.ts, mock.ts. src/services/checkout.ts changed. 9 files changed, 412 insertions, 188 deletions.",
+      "lessons": [],
+      "task": {
+        "title": "Review the payments refactor",
+        "spec": "Review the diff that moves payment calls behind a PaymentProvider interface. Check correctness, error handling on declined cards, and that no API key is logged.",
+        "acceptance": ["verdict submitted", "every note has a file and a line"]
+      },
+      "steps": [
+        { "say": "Listing the changed area.", "tools": [ { "name": "fs_list", "args": { "path": "src/payments", "depth": 1 }, "outputChars": 600 } ] },
+        { "say": "Reading the diff.", "tools": [ { "name": "shell_run", "args": { "command": "git diff main --stat && git diff main -- src" }, "outputChars": 16800 } ] },
+        { "say": "Reading the provider interface and the adapter.", "tools": [ { "name": "fs_read", "args": { "path": "src/payments/provider.ts" }, "outputChars": 2600 }, { "name": "fs_read", "args": { "path": "src/payments/stripe.ts" }, "outputChars": 7400 } ] },
+        { "say": "Checking the checkout call site.", "tools": [ { "name": "fs_read", "args": { "path": "src/services/checkout.ts", "from": 60, "to": 180 }, "outputChars": 4900 } ] },
+        { "say": "Looking for logging near the key.", "tools": [ { "name": "fs_search", "args": { "pattern": "console\\.|logger\\.", "glob": "src/payments/**" }, "outputChars": 1300 } ] },
+        { "say": "Running the payment tests.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/payments" }, "outputChars": 7200 } ] },
+        { "say": "Reading the declined card path.", "tools": [ { "name": "fs_read", "args": { "path": "src/payments/mock.ts" }, "outputChars": 3300 } ] },
+        { "say": "Submitting the review.", "tools": [ { "name": "submit_review", "args": { "verdict": "changes", "notes": [ { "file": "src/payments/stripe.ts", "line": 88, "severity": "important", "text": "Declined cards throw a generic Error; map them to PaymentDeclined so checkout returns 402." }, { "file": "src/payments/stripe.ts", "line": 21, "severity": "minor", "text": "Log the request id, not the whole options object." } ] }, "outputChars": 80 } ] },
+        { "say": "Review sent.", "tools": [ { "name": "finish", "args": { "summary": "Requested changes: declined card mapping and one logging nit.", "ok": true }, "outputChars": 20 } ] }
+      ]
+    },
+    {
+      "id": "researcher-search-index",
+      "role": "researcher",
+      "project": "docs-site",
+      "goal": "Add full text search to the docs site.",
+      "workspaceDigest": "docs-site (Bun, static build). content/ 214 markdown pages. No search today.",
+      "lessons": [],
+      "task": {
+        "title": "Compare search options for 200 markdown pages",
+        "spec": "Compare SQLite FTS5, an in-process BM25 index built at build time, and a hosted search service for a static docs site of about 200 pages. Cover size, latency, build time, cost and maintenance. Write a short recommendation with sources.",
+        "acceptance": ["notes/search-options.md written", "every claim has a source url", "one clear recommendation"]
+      },
+      "steps": [
+        { "say": "Searching for current comparisons.", "tools": [ { "name": "web_search", "args": { "query": "static site full text search bm25 index vs sqlite fts5 2026", "limit": 8 }, "outputChars": 3200 } ] },
+        { "say": "Reading the FTS5 docs.", "tools": [ { "name": "web_fetch", "args": { "url": "https://sqlite.org/fts5.html", "max_chars": 20000 }, "outputChars": 20000 } ] },
+        { "say": "Reading a BM25 build-time index write-up.", "tools": [ { "name": "web_fetch", "args": { "url": "https://example.org/blog/bm25-static-search", "max_chars": 20000 }, "outputChars": 11400 } ] },
+        { "say": "Searching for hosted pricing.", "tools": [ { "name": "web_search", "args": { "query": "hosted docs search pricing free tier 2026", "limit": 6 }, "outputChars": 2800 } ] },
+        { "say": "Reading the hosted service pricing page.", "tools": [ { "name": "web_fetch", "args": { "url": "https://example.com/pricing", "max_chars": 20000 }, "outputChars": 9600 } ] },
+        { "say": "Checking index size numbers.", "tools": [ { "name": "web_fetch", "args": { "url": "https://example.net/benchmarks/client-side-search-index-size", "max_chars": 20000 }, "outputChars": 13200 } ] },
+        { "say": "Writing the notes.", "tools": [ { "name": "fs_write", "args": { "path": "notes/search-options.md", "content": "# Search options\n\nRecommendation: build-time BM25 index shipped as a static JSON shard per section. FTS5 needs a server; hosted adds cost and a vendor.\n\n| option | size | latency | cost |\n..." }, "outputChars": 60 } ] },
+        { "say": "Done.", "tools": [ { "name": "finish", "args": { "summary": "Recommended a build-time BM25 index; notes with sources in notes/search-options.md.", "files": ["notes/search-options.md"], "ok": true }, "outputChars": 20 } ] }
+      ]
+    },
+    {
+      "id": "security-audit",
+      "role": "security",
+      "project": "shop-api",
+      "goal": "Prepare shop-api for its first public release.",
+      "workspaceDigest": "shop-api (Bun, Hono, SQLite). bun.lock with 184 packages. Dockerfile, docker-compose.yml, .env.example. src/app.ts sets CORS and cookies.",
+      "lessons": ["CORS must be an exact origin allowlist, never a wildcard with credentials."],
+      "task": {
+        "title": "Security review before release",
+        "spec": "Run the dependency, secret and config scans, confirm each finding against the code, and report confirmed findings graded by impact.",
+        "acceptance": ["all three scans run", "each confirmed finding reported with file and line", "false positives explained"]
+      },
+      "steps": [
+        { "say": "Dependency audit.", "tools": [ { "name": "scan_deps", "args": {}, "outputChars": 6400 } ] },
+        { "say": "Secret scan.", "tools": [ { "name": "scan_secrets", "args": {}, "outputChars": 2300 } ] },
+        { "say": "Config review.", "tools": [ { "name": "scan_config", "args": {}, "outputChars": 3400 } ] },
+        { "say": "Confirming the CORS finding.", "tools": [ { "name": "fs_read", "args": { "path": "src/app.ts" }, "outputChars": 5100 } ] },
+        { "say": "Confirming the Dockerfile finding.", "tools": [ { "name": "fs_read", "args": { "path": "Dockerfile" }, "outputChars": 1900 } ] },
+        { "say": "Checking where the session cookie is set.", "tools": [ { "name": "fs_search", "args": { "pattern": "setCookie|cookie\\(", "glob": "src/**/*.ts" }, "outputChars": 1700 } ] },
+        { "say": "Reporting the confirmed findings.", "tools": [ { "name": "report_issue", "args": { "title": "CORS reflects any origin with credentials", "detail": "src/app.ts line 14 returns the request origin for every caller while credentials are on.", "file": "src/app.ts", "line": 14, "severity": "high" }, "outputChars": 120 }, { "name": "report_issue", "args": { "title": "Container runs as root", "detail": "Dockerfile has no USER line.", "file": "Dockerfile", "line": 1, "severity": "low" }, "outputChars": 120 } ] },
+        { "say": "Noting the false positive.", "tools": [ { "name": "note", "args": { "text": "The secret scan hit in tests/fixtures/stripe.json is a documented test key, not live." }, "outputChars": 40 } ] },
+        { "say": "Done.", "tools": [ { "name": "finish", "args": { "summary": "2 confirmed findings (1 high CORS, 1 low Dockerfile), 1 false positive explained, 3 dependency advisories below medium.", "ok": true }, "outputChars": 20 } ] }
+      ]
+    },
+    {
+      "id": "lead-plan",
+      "role": "lead",
+      "project": "shop-api",
+      "goal": "Let shoppers save carts and come back to them later on any device.",
+      "workspaceDigest": "shop-api (Bun, Hono, SQLite). src/ 42 files, tests/ 18 files. Auth via session cookie. No saved carts today.",
+      "lessons": ["Plans with more than 6 tasks for a single feature usually over-split; keep each task to one role and one area."],
+      "task": null,
+      "steps": [
+        { "say": "Getting the layout.", "tools": [ { "name": "fs_list", "args": { "depth": 2 }, "outputChars": 2600 } ] },
+        { "say": "Reading the README and the cart service.", "tools": [ { "name": "fs_read", "args": { "path": "README.md" }, "outputChars": 4400 }, { "name": "fs_read", "args": { "path": "src/services/cart.ts", "from": 1, "to": 80 }, "outputChars": 3300 } ] },
+        { "say": "Checking how sessions map to users.", "tools": [ { "name": "fs_search", "args": { "pattern": "userId|session", "glob": "src/**/*.ts", "limit": 40 }, "outputChars": 1900 } ] },
+        { "say": "Planning the work.", "tools": [ { "name": "create_tasks", "args": { "tasks": [ { "title": "Persist carts per user", "spec": "Add a saved_carts table and save or restore on login.", "role": "engineer", "acceptance": ["cart survives logout and login"], "review": true }, { "title": "Tests for saved carts", "spec": "Cover save, restore and merge with an anonymous cart.", "role": "qa", "deps": [0] }, { "title": "Security check of cart restore", "spec": "Make sure a user cannot restore another user's cart.", "role": "security", "deps": [0] } ] }, "outputChars": 420 } ] },
+        { "say": "Checking the crew.", "tools": [ { "name": "crew_status", "args": {}, "outputChars": 700 } ] },
+        { "say": "Plan ready.", "tools": [ { "name": "finish", "args": { "summary": "3 tasks planned: engineer, then qa and security in parallel.", "ok": true }, "outputChars": 20 } ] }
+      ]
+    },
+    {
+      "id": "engineer-settings-migration",
+      "role": "engineer",
+      "project": "notes-app",
+      "goal": "Move user settings from JSON files to SQLite.",
+      "workspaceDigest": "notes-app (Bun, Hono, React). server/ 61 files: settings/ (store.ts reads and writes data/settings/*.json), db/ (sqlite.ts, migrations/), routes/. web/ 88 files. tests/ 31 files.",
+      "lessons": [
+        "Migrations in this repo are plain SQL files under server/db/migrations, numbered, never edited after merge.",
+        "The settings store is read on every request; keep reads cached."
+      ],
+      "task": {
+        "title": "Migrate the settings store to SQLite",
+        "spec": "Replace the JSON file settings store with a settings table. Write a migration, a one-time import of existing JSON files, keep the SettingsStore interface unchanged, keep reads cached, and delete the JSON code path when the import has run.",
+        "acceptance": ["migration file added", "existing JSON settings imported on first start", "SettingsStore interface unchanged", "bun test passes", "typecheck passes"]
+      },
+      "steps": [
+        { "say": "Looking at the server layout.", "tools": [ { "name": "fs_list", "args": { "path": "server", "depth": 2 }, "outputChars": 2200 } ] },
+        { "say": "Reading the current store.", "tools": [ { "name": "fs_read", "args": { "path": "server/settings/store.ts" }, "outputChars": 8900 } ] },
+        { "say": "Reading the db helper and an existing migration.", "tools": [ { "name": "fs_read", "args": { "path": "server/db/sqlite.ts" }, "outputChars": 4300 }, { "name": "fs_read", "args": { "path": "server/db/migrations/0007_notes_tags.sql" }, "outputChars": 1200 } ] },
+        { "say": "Finding every caller of the store.", "tools": [ { "name": "fs_search", "args": { "pattern": "settingsStore\\.|SettingsStore", "glob": "server/**/*.ts" }, "outputChars": 3600 } ] },
+        { "say": "Reading the store tests.", "tools": [ { "name": "fs_read", "args": { "path": "tests/settings-store.test.ts" }, "outputChars": 7200 } ] },
+        { "say": "Writing the migration.", "tools": [ { "name": "fs_write", "args": { "path": "server/db/migrations/0008_settings.sql", "content": "create table settings (user_id text not null, key text not null, value text not null, updated_at integer not null, primary key (user_id, key));" }, "outputChars": 60 } ] },
+        { "say": "Adding the SQLite implementation.", "tools": [ { "name": "fs_write", "args": { "path": "server/settings/sqlite-store.ts", "content": "export function createSqliteSettingsStore(db: Db): SettingsStore { const cache = new Map<string, Settings>(); return { async get(userId) { ... }, async set(userId, patch) { ... } }; }" }, "outputChars": 60 } ] },
+        { "say": "Running the store tests against it.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/settings-store.test.ts" }, "outputChars": 9800, "ok": false } ] },
+        { "say": "The cache is not invalidated on set.", "tools": [ { "name": "fs_edit", "args": { "path": "server/settings/sqlite-store.ts", "find": "async set(userId, patch) {", "replace": "async set(userId, patch) { cache.delete(userId);" }, "outputChars": 60 } ] },
+        { "say": "Re-running.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/settings-store.test.ts" }, "outputChars": 5400 } ] },
+        { "say": "Writing the JSON import.", "tools": [ { "name": "fs_write", "args": { "path": "server/settings/import-json.ts", "content": "export async function importJsonSettings(dir: string, store: SettingsStore): Promise<number> { ... }" }, "outputChars": 60 } ] },
+        { "say": "Reading the startup sequence.", "tools": [ { "name": "fs_read", "args": { "path": "server/index.ts" }, "outputChars": 5600 } ] },
+        { "say": "Running the import once on start.", "tools": [ { "name": "fs_edit", "args": { "path": "server/index.ts", "find": "await migrate(db);", "replace": "await migrate(db);\nawait importJsonSettings(join(dataDir, 'settings'), settingsStore);" }, "outputChars": 60 } ] },
+        { "say": "Testing the import.", "tools": [ { "name": "fs_write", "args": { "path": "tests/settings-import.test.ts", "content": "test('imports every json file once', async () => { ... });" }, "outputChars": 60 }, { "name": "shell_run", "args": { "command": "bun test tests/settings-import.test.ts" }, "outputChars": 7600, "ok": false } ] },
+        { "say": "The import runs twice on restart; reading the import.", "tools": [ { "name": "fs_read", "args": { "path": "server/settings/import-json.ts" }, "outputChars": 2400 } ] },
+        { "say": "Marking the import as done in the db.", "tools": [ { "name": "fs_edit", "args": { "path": "server/settings/import-json.ts", "find": "for (const file of files) {", "replace": "if (await store.imported()) return 0;\n  for (const file of files) {" }, "outputChars": 60 } ] },
+        { "say": "Re-running the import test.", "tools": [ { "name": "shell_run", "args": { "command": "bun test tests/settings-import.test.ts" }, "outputChars": 4100 } ] },
+        { "say": "Switching callers to the new store.", "tools": [ { "name": "fs_edit", "args": { "path": "server/index.ts", "find": "createJsonSettingsStore(join(dataDir, 'settings'))", "replace": "createSqliteSettingsStore(db)" }, "outputChars": 60 } ] },
+        { "say": "Typecheck.", "tools": [ { "name": "shell_run", "args": { "command": "bun run typecheck" }, "outputChars": 6900, "ok": false } ] },
+        { "say": "One route still imports the JSON store type.", "tools": [ { "name": "fs_read", "args": { "path": "server/routes/settings.ts" }, "outputChars": 3800 } ] },
+        { "say": "Fixing the import.", "tools": [ { "name": "fs_edit", "args": { "path": "server/routes/settings.ts", "find": "import type { JsonSettingsStore } from '../settings/store';", "replace": "import type { SettingsStore } from '../settings/types';" }, "outputChars": 60 } ] },
+        { "say": "Removing the JSON code path.", "tools": [ { "name": "fs_delete", "args": { "path": "server/settings/store.ts" }, "outputChars": 40 } ] },
+        { "say": "Full suite and typecheck.", "tools": [ { "name": "shell_run", "args": { "command": "bun run typecheck && bun test" }, "outputChars": 15600 } ] },
+        { "say": "Done.", "tools": [ { "name": "finish", "args": { "summary": "Settings now live in SQLite (0008_settings.sql), JSON imported once on start, interface unchanged, JSON store removed. Tests and typecheck pass.", "files": ["server/db/migrations/0008_settings.sql", "server/settings/sqlite-store.ts", "server/settings/import-json.ts", "server/index.ts", "server/routes/settings.ts", "tests/settings-import.test.ts"], "ok": true }, "outputChars": 20 } ] }
+      ]
+    },
+    {
+      "id": "designer-landing-hero",
+      "role": "designer",
+      "project": "notes-app",
+      "goal": "Refresh the landing page hero.",
+      "workspaceDigest": "notes-app web/ (React). web/src/landing/Hero.tsx, web/src/styles/tokens.css. assets/ has logo.svg only.",
+      "lessons": [],
+      "task": {
+        "title": "New hero illustration and styles",
+        "spec": "Generate a hero illustration that matches the existing tokens (white background, one accent color), save it under assets/, and update the hero styles to use it.",
+        "acceptance": ["assets/hero.png exists", "Hero.tsx uses it with alt text", "only token colors are used"]
+      },
+      "steps": [
+        { "say": "Reading the tokens and the hero.", "tools": [ { "name": "fs_read", "args": { "path": "web/src/styles/tokens.css" }, "outputChars": 3100 }, { "name": "fs_read", "args": { "path": "web/src/landing/Hero.tsx" }, "outputChars": 2700 } ] },
+        { "say": "Generating the illustration.", "tools": [ { "name": "generate_image", "args": { "prompt": "Minimal line illustration of a notebook with a cat sitting on it, white background, single teal accent, lots of whitespace", "size": "1536x1024", "path": "assets/hero.png" }, "outputChars": 160 } ] },
+        { "say": "A second variant with a tighter crop.", "tools": [ { "name": "generate_image", "args": { "prompt": "Same notebook and cat, tighter crop, cat looking at the reader", "size": "1536x1024", "path": "assets/hero-alt.png" }, "outputChars": 160 } ] },
+        { "say": "Using the first one in the hero.", "tools": [ { "name": "fs_edit", "args": { "path": "web/src/landing/Hero.tsx", "find": "<div className=\"hero-art\" />", "replace": "<img className=\"hero-art\" src=\"/assets/hero.png\" alt=\"A cat sitting on an open notebook\" width={1536} height={1024} />" }, "outputChars": 60 } ] },
+        { "say": "Adjusting the hero styles.", "tools": [ { "name": "fs_edit", "args": { "path": "web/src/landing/hero.css", "find": ".hero-art {", "replace": ".hero-art { max-width: 100%; height: auto;" }, "outputChars": 60 } ] },
+        { "say": "Done.", "tools": [ { "name": "finish", "args": { "summary": "Hero illustration generated (assets/hero.png, alternate kept) and wired into Hero.tsx with alt text.", "files": ["assets/hero.png", "web/src/landing/Hero.tsx", "web/src/landing/hero.css"], "ok": true }, "outputChars": 20 } ] }
+      ]
+    }
+  ]
+}

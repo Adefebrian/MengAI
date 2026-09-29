@@ -1,0 +1,15 @@
+// context module public API. Service only (no routes): the runs module and
+// the evals harness receive `service` through core/container.ts.
+import type { MountedModule, ModuleContext } from "../../core/module";
+import type { ContextService } from "../../core/services";
+import { createContextService } from "./service";
+
+export type ContextModuleDeps = Record<string, never>;
+
+export function createContextModule(
+  ctx: ModuleContext,
+  _deps: ContextModuleDeps = {},
+): MountedModule & { service: ContextService } {
+  const service = createContextService({ clock: ctx.clock });
+  return { name: "context", service };
+}
