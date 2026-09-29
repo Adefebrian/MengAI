@@ -1,0 +1,3 @@
+# ui_shots and ad hoc browser probes are local evidence, never source
+.shots/
+.probe*.ts
