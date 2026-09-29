@@ -1,0 +1,60 @@
+/*
+ * Motion module styles (import once, after kit.css). The Lenis rules are
+ * the ones its own lenis.css ships, restated here so the app imports one
+ * file; tokens only, same law as kit.css.
+ */
+
+/* Lenis 1.3.26's own lenis.css, restated. Lenis moves the native scroll
+   position, so html and body keep their natural height and CSS smooth
+   scrolling never fights it. The lenis classes sit on html on a document
+   shell and on main.shell-main on a contained one. */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+/* Plus one guard: CSS smooth scrolling on the scroller would ease every
+   position Lenis writes a second time. */
+html.lenis.lenis-smooth,
+.lenis.lenis-smooth {
+  scroll-behavior: auto;
+}
+
+.lenis:not(.lenis-autoToggle).lenis-stopped {
+  overflow: clip;
+}
+
+/* Inner scrollers keep native scrolling and never chain into the page. */
+.lenis [data-lenis-prevent],
+.lenis [data-lenis-prevent-wheel],
+.lenis [data-lenis-prevent-touch],
+.lenis [data-lenis-prevent-vertical],
+.lenis [data-lenis-prevent-horizontal] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-smooth iframe {
+  pointer-events: none;
+}
+
+.lenis.lenis-autoToggle {
+  transition-property: overflow;
+  transition-duration: 1ms;
+  transition-behavior: allow-discrete;
+}
+
+/* SplitText line masks (split.ts, class kit-line-mask): room below the line
+   for descenders while it rises, given back by the negative margin, so the
+   heading's box and its line breaks never change. The split reverts once
+   the lines land. */
+.kit-line-mask {
+  padding-block-end: 0.12em;
+  margin-block-end: -0.12em;
+}
+
+/* SmoothScroll's single wrapper, the one element a contained shell's main
+   holds (Lenis measures it as the scroll content). A plain block. */
+.motion-root {
+  display: block;
+  min-width: 0;
+}
