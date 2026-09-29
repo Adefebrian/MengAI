@@ -1,10 +1,12 @@
 // Providers (/app/providers): bring your own key. Connected providers as
 // rows with a real connection test (JEV core.list.actions), the add form
 // beside them (card, the key field never echoes and clears after save),
-// then model routing per tier, per role and for media (divided section).
+// then model routing per tier, per role and for media (divided section of
+// three settings tables on one column grid, closed by one save row).
 import {
   AGENT_ROLES,
   DEFAULT_CHAT_MODEL,
+  DEFAULT_CHAT_PRESET,
   ROLE_LABEL,
   TIERS,
   findPreset,
@@ -15,7 +17,7 @@ import {
   type Tier,
 } from "@mengai/shared";
 import { EmptyState, ProductIcon, Sheet, SkeletonRows } from "@mengai/ui/src/product";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { useApp } from "../context";
 import { fmtAgo } from "../format";
 import { useAction, useNow, useResource } from "../hooks";
@@ -23,9 +25,9 @@ import { FormStatus, Page, PageHead, Region, SelectField, TextField } from "../u
 
 const TIER_WORD: Record<Tier, string> = { fast: "Fast", balanced: "Balanced", deep: "Deep" };
 const TIER_JOB: Record<Tier, string> = {
-  fast: "Short steps, scans and summaries",
-  balanced: "Most coding and review steps",
-  deep: "Planning and the hardest calls",
+  fast: "Scans and short steps",
+  balanced: "Most coding and review",
+  deep: "Planning and hard calls",
 };
 
 function ProviderRow({ p, now, onChange, onRemove }: { p: ProviderDTO; now: number; onChange: (p: ProviderDTO) => void; onRemove: (id: string) => void }) {
@@ -222,64 +224,169 @@ function AddProvider({ presets, onAdded }: { presets: ProviderPreset[]; onAdded:
   );
 }
 
+const ROUTED_ROLES = AGENT_ROLES.filter((r): r is Exclude<AgentRole, "operator"> => r !== "operator");
+const MEDIA = [
+  { kind: "image", word: "Image", noun: "images" },
+  { kind: "video", word: "Video", noun: "videos" },
+] as const;
+
+/** One comparable shape per routing, so the status line knows when the draft differs from what is saved. */
+function routingKey(r: ModelRouting): string {
+  return JSON.stringify({
+    tiers: TIERS.map((t) => {
+      const m = r.tiers.find((x) => x.tier === t);
+      return [m?.providerId ?? null, m?.model ?? null];
+    }),
+    roles: ROUTED_ROLES.map((role) => r.roleTiers[role] ?? null),
+    image: [r.image.providerId, r.image.model],
+    video: [r.video.providerId, r.video.model],
+  });
+}
+
+/** The column heads of one routing table, shown once above its rows from 768px. Each control carries its own name. */
+function RoutingHead({ cols }: { cols: readonly [string, string, string] }) {
+  return (
+    <div className="rt-head" aria-hidden="true">
+      {cols.map((c) => (
+        <span key={c}>{c}</span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Model routing as three settings tables on one column grid (JEV
+ * ui.component_recipe core.settings_table): the name, the choice, then the
+ * model it resolves to, so every control column lines up down the section.
+ * Below 768px each row stacks and the column names turn into labels.
+ */
 function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; routing: ModelRouting; onSaved: (r: ModelRouting) => void }) {
   const { api } = useApp();
+  const uid = useId();
   const [draft, setDraft] = useState<ModelRouting>(routing);
-  const [ok, setOk] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const [tried, setTried] = useState(false);
   const save = useAction();
   useEffect(() => setDraft(routing), [routing]);
+  const draftKey = routingKey(draft);
+  const dirty = draftKey !== routingKey(routing);
+  // an edit answers the last error: the status line goes back to the draft's state
+  useEffect(() => save.setError(null), [draftKey, save.setError]);
   const chat = providers.filter((p) => p.caps.includes("chat"));
+  const labelOf = (id: string | null) => providers.find((p) => p.id === id)?.label ?? "a removed provider";
+  const modelsOf = (id: string | null) => providers.find((p) => p.id === id)?.models ?? [];
   const tier = (t: Tier) => draft.tiers.find((x) => x.tier === t) ?? { tier: t, providerId: null, model: null };
   const setTier = (t: Tier, patch: { providerId?: string | null; model?: string | null }) =>
     setDraft((d) => {
       const rest = d.tiers.filter((x) => x.tier !== t);
       return { ...d, tiers: [...rest, { ...tier(t), ...patch }].sort((a, b) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier)) };
     });
-  const modelsOf = (id: string | null) => providers.find((p) => p.id === id)?.models ?? [];
+  const hasDefault = providers.some((p) => p.preset === DEFAULT_CHAT_PRESET && p.hasKey);
+  const defaultUse = hasDefault ? `${DEFAULT_CHAT_MODEL} on OpenAI` : "Falls back to another mapped tier";
+  const tierUse = (t: Tier) => {
+    const m = tier(t);
+    if (!m.providerId) return defaultUse;
+    return m.model ? `${m.model} on ${labelOf(m.providerId)}` : `${TIER_WORD[t]} has no model yet`;
+  };
+  const mediaUse = (kind: "image" | "video", noun: string) => {
+    const cur = draft[kind];
+    if (cur.providerId) return cur.model ?? `First ${kind} model on ${labelOf(cur.providerId)}`;
+    return providers.some((p) => p.caps.includes(kind)) ? `First provider that makes ${noun}` : `Add a provider that makes ${noun}`;
+  };
+  const missing = TIERS.filter((t) => tier(t).providerId && !tier(t).model);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    setOk(null);
+    setOk(false);
+    setTried(true);
+    if (missing.length) {
+      save.setError(`Pick a model for ${missing.map((t) => TIER_WORD[t]).join(" and ")}.`);
+      return;
+    }
     void save.run(async () => {
       const r = await api.call("PUT /api/routing", { body: draft });
       onSaved(r);
-      setOk("Routing saved. New steps use it right away.");
+      setOk(true);
     });
   };
 
+  const status = save.error
+    ? { tone: "danger", icon: "alertCircle" as const, text: save.error }
+    : dirty
+      ? { tone: "neutral", icon: "pen" as const, text: "Unsaved changes" }
+      : ok
+        ? { tone: "success", icon: "checkCircle" as const, text: "Saved. New steps use it right away." }
+        : { tone: "neutral", icon: "checkCircle" as const, text: "Saved" };
+
   return (
-    <form className="routing" onSubmit={submit} noValidate>
-      <div className="routing-group">
-        <h3 className="app-h3">Tiers</h3>
-        <p className="app-region-meta">Unmapped tiers use OpenAI {DEFAULT_CHAT_MODEL} whenever an OpenAI key is present.</p>
-        <div className="routing-rows">
+    <form className="routing" data-density="comfortable" onSubmit={submit} noValidate>
+      <div className="rt-group">
+        <div className="rt-intro">
+          <h3 className="app-h3">Tiers</h3>
+          <p className="app-region-meta">A tier left on Default uses OpenAI {DEFAULT_CHAT_MODEL} whenever an OpenAI key is present.</p>
+        </div>
+        <div className="rt-table">
+          <RoutingHead cols={["Tier", "Provider", "Model"]} />
           {TIERS.map((t) => {
             const m = tier(t);
             const list = modelsOf(m.providerId);
+            const id = `${uid}-${t}`;
             return (
-              <div className="routing-row" key={t}>
-                <p className="routing-name">
-                  <span>{TIER_WORD[t]}</span>
-                  <span className="routing-job">{TIER_JOB[t]}</span>
+              <div className="rt-row" data-kind="tier" role="group" aria-labelledby={`${id}-name`} key={t}>
+                <p className="rt-name">
+                  <span className="rt-title" id={`${id}-name`}>
+                    {TIER_WORD[t]}
+                  </span>
+                  <span className="rt-sub">{TIER_JOB[t]}</span>
                 </p>
-                <div className="field-row">
-                  <SelectField label={`${TIER_WORD[t]} provider`} value={m.providerId ?? ""} onChange={(e) => setTier(t, { providerId: e.target.value || null, model: null })}>
+                <div className="rt-cell rt-prov">
+                  <label className="rt-cap" htmlFor={`${id}-prov`}>
+                    Provider
+                  </label>
+                  <select
+                    id={`${id}-prov`}
+                    aria-label={`${TIER_WORD[t]} provider`}
+                    value={m.providerId ?? ""}
+                    onChange={(e) => setTier(t, { providerId: e.target.value || null, model: null })}
+                  >
                     <option value="">Default</option>
                     {chat.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.label}
                       </option>
                     ))}
-                  </SelectField>
-                  <SelectField label={`${TIER_WORD[t]} model`} value={m.model ?? ""} onChange={(e) => setTier(t, { model: e.target.value || null })} disabled={!m.providerId}>
-                    <option value="">{m.providerId ? "Pick a model" : DEFAULT_CHAT_MODEL}</option>
-                    {list.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.label ?? x.id}
-                      </option>
-                    ))}
-                    {m.model && !list.some((x) => x.id === m.model) ? <option value={m.model}>{m.model}</option> : null}
-                  </SelectField>
+                  </select>
+                </div>
+                <div className="rt-cell rt-model">
+                  {m.providerId ? (
+                    <>
+                      <label className="rt-cap" htmlFor={`${id}-model`}>
+                        Model
+                      </label>
+                      <select
+                        id={`${id}-model`}
+                        aria-label={`${TIER_WORD[t]} model`}
+                        aria-invalid={tried && !m.model ? true : undefined}
+                        value={m.model ?? ""}
+                        onChange={(e) => setTier(t, { model: e.target.value || null })}
+                      >
+                        <option value="">Pick a model</option>
+                        {list.map((x) => (
+                          <option key={x.id} value={x.id}>
+                            {x.label ?? x.id}
+                          </option>
+                        ))}
+                        {m.model && !list.some((x) => x.id === m.model) ? <option value={m.model}>{m.model}</option> : null}
+                      </select>
+                    </>
+                  ) : (
+                    <>
+                      <span className="rt-cap" aria-hidden="true">
+                        Model
+                      </span>
+                      <p className="rt-use rt-inherit">{defaultUse}</p>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -287,69 +394,105 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
         </div>
       </div>
 
-      <div className="routing-group">
-        <h3 className="app-h3">Roles</h3>
-        <p className="app-region-meta">Pin a role to one tier. Otherwise JEV picks the tier for each task.</p>
-        <div className="routing-roles">
-          {AGENT_ROLES.filter((r) => r !== "operator").map((role: AgentRole) => (
-            <SelectField
-              key={role}
-              label={ROLE_LABEL[role]}
-              value={draft.roleTiers[role] ?? ""}
-              onChange={(e) =>
-                setDraft((d) => {
-                  const next = { ...d.roleTiers };
-                  if (e.target.value) next[role] = e.target.value as Tier;
-                  else delete next[role];
-                  return { ...d, roleTiers: next };
-                })
-              }
-            >
-              <option value="">Per task</option>
-              {TIERS.map((t) => (
-                <option key={t} value={t}>
-                  Always {TIER_WORD[t].toLowerCase()}
-                </option>
-              ))}
-            </SelectField>
-          ))}
+      <div className="rt-group">
+        <div className="rt-intro">
+          <h3 className="app-h3">Roles</h3>
+          <p className="app-region-meta">Pin a role to one tier. Per task means JEV picks the tier for each task.</p>
         </div>
-      </div>
-
-      <div className="routing-group">
-        <h3 className="app-h3">Media</h3>
-        <p className="app-region-meta">Used by the designer cat and on the Assets page.</p>
-        <div className="routing-roles">
-          {(["image", "video"] as const).map((kind) => {
-            const cap = kind === "image" ? "image" : "video";
-            const list = providers.filter((p) => p.caps.includes(cap) || p.preset === "openai");
-            const cur = draft[kind];
+        <div className="rt-table">
+          <RoutingHead cols={["Role", "Tier", "Model"]} />
+          {ROUTED_ROLES.map((role) => {
+            const id = `${uid}-${role}`;
+            const pinned = draft.roleTiers[role];
             return (
-              <SelectField
-                key={kind}
-                label={kind === "image" ? "Image provider" : "Video provider"}
-                value={cur.providerId ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, [kind]: { providerId: e.target.value || null, model: cur.model } }))}
-                hint={cur.model ? `Model ${cur.model}` : "No model routed yet"}
-              >
-                <option value="">Not routed</option>
-                {list.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </SelectField>
+              <div className="rt-row" data-kind="pick" key={role}>
+                <label className="rt-title rt-name" htmlFor={id}>
+                  {ROLE_LABEL[role]}
+                </label>
+                <select
+                  id={id}
+                  className="rt-ctl"
+                  aria-describedby={`${id}-use`}
+                  value={pinned ?? ""}
+                  onChange={(e) =>
+                    setDraft((d) => {
+                      const next = { ...d.roleTiers };
+                      if (e.target.value) next[role] = e.target.value as Tier;
+                      else delete next[role];
+                      return { ...d, roleTiers: next };
+                    })
+                  }
+                >
+                  <option value="">Per task</option>
+                  {TIERS.map((t) => (
+                    <option key={t} value={t}>
+                      {TIER_WORD[t]}
+                    </option>
+                  ))}
+                </select>
+                <p className="rt-use" id={`${id}-use`}>
+                  {pinned ? tierUse(pinned) : "Depends on the task"}
+                </p>
+              </div>
             );
           })}
         </div>
       </div>
 
-      <div className="app-form-actions">
+      <div className="rt-group">
+        <div className="rt-intro">
+          <h3 className="app-h3">Media</h3>
+          <p className="app-region-meta">Used by the designer cat and on the Assets page.</p>
+        </div>
+        <div className="rt-table">
+          <RoutingHead cols={["Media", "Provider", "Model"]} />
+          {MEDIA.map(({ kind, word, noun }) => {
+            const id = `${uid}-${kind}`;
+            const cur = draft[kind];
+            const saved = routing[kind];
+            return (
+              <div className="rt-row" data-kind="pick" key={kind}>
+                <label className="rt-title rt-name" htmlFor={id}>
+                  {word}
+                </label>
+                <select
+                  id={id}
+                  className="rt-ctl"
+                  aria-label={`${word} provider`}
+                  aria-describedby={`${id}-use`}
+                  value={cur.providerId ?? ""}
+                  onChange={(e) => {
+                    const next = e.target.value || null;
+                    setDraft((d) => ({ ...d, [kind]: { providerId: next, model: next && next === saved.providerId ? saved.model : null } }));
+                  }}
+                >
+                  <option value="">Default</option>
+                  {providers
+                    .filter((p) => p.caps.includes(kind))
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                </select>
+                <p className="rt-use" id={`${id}-use`}>
+                  {mediaUse(kind, noun)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rt-actions">
+        <p className="rt-status" data-tone={status.tone} aria-live="polite">
+          <ProductIcon name={status.icon} size={16} />
+          <span>{status.text}</span>
+        </p>
         <button type="submit" aria-busy={save.busy || undefined}>
           Save routing
         </button>
       </div>
-      <FormStatus ok={ok} error={save.error} />
     </form>
   );
 }

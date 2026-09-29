@@ -2452,63 +2452,196 @@ a.queue-row:focus-visible {
   gap: var(--space-8px);
 }
 
+/* Model routing: three settings tables on one column grid (JEV
+   ui.component_recipe core.settings_table; ui.density comfortable for this
+   form). Phone: a tier row stacks name, provider, model with the column
+   names as labels; a role or media row puts its name and resolved model
+   beside the select (24 + 20 = the 44px control). From 768px every table
+   runs name, choice, model on 2fr 3fr 3fr tracks with its column heads
+   shown once, so the control columns line up down the section. Rows are
+   open, split by one hairline; the save row closes the form under one
+   hairline, status on the content line, Save on the table's right edge
+   (a sticky bar would sit over the rows, so it stays in flow). */
 .routing {
   display: grid;
-  gap: var(--space-24px);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-32px);
   min-width: 0;
   max-inline-size: 960px;
 }
-.routing-group {
-  display: grid;
-  gap: var(--space-12px);
-  min-width: 0;
-}
-.routing-rows {
-  display: grid;
-  gap: var(--space-12px);
-  min-width: 0;
-}
-.routing-row {
+.rt-group {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-8px);
+  gap: var(--space-12px);
   min-width: 0;
 }
-.routing-name {
+.rt-intro {
   display: grid;
-  gap: var(--space-2px);
-  margin: 0;
-  font-weight: var(--weight-medium);
+  gap: var(--space-4px);
+  min-width: 0;
 }
-.routing-job {
+.rt-table {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.rt-head {
+  display: none;
+}
+.rt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: var(--space-16px);
+  row-gap: var(--space-12px);
+  align-items: center;
+  min-width: 0;
+  padding-block: var(--space-12px);
+  border-top: 1px solid var(--color-border);
+}
+.rt-row > *,
+.rt-head > * {
+  min-width: 0;
+}
+.rt-row[data-kind="tier"] {
+  grid-template-areas:
+    "name"
+    "prov"
+    "model";
+}
+.rt-row[data-kind="pick"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "name ctl"
+    "use ctl";
+  row-gap: 0;
+}
+.rt-name {
+  grid-area: name;
+  display: grid;
+  margin: 0;
+}
+.rt-row[data-kind="pick"] > .rt-name {
+  align-self: end;
+}
+.rt-prov {
+  grid-area: prov;
+}
+.rt-model {
+  grid-area: model;
+}
+.rt-ctl {
+  grid-area: ctl;
+}
+.rt-row[data-kind="pick"] > .rt-use {
+  grid-area: use;
+  align-self: start;
+}
+.rt-title {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+.rt-sub,
+.rt-use {
+  margin: 0;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
-  font-weight: var(--weight-regular);
   color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
-.routing-roles {
+.rt-cell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-16px);
-  align-items: start;
+  gap: var(--space-6px);
   min-width: 0;
 }
+.rt-cap {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+/* An inherited default reads as text, never as a greyed-out select. */
+.rt-inherit {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--control-h);
+}
+.rt-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-16px);
+  min-width: 0;
+  padding-block-start: var(--space-16px);
+  border-top: 1px solid var(--color-border);
+}
+.rt-status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6px);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.rt-status > :first-child {
+  flex: 0 0 auto;
+  padding-top: var(--space-2px);
+}
+.rt-status > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rt-status[data-tone="success"] {
+  color: var(--color-success);
+}
+.rt-status[data-tone="danger"] {
+  color: var(--color-danger);
+}
 @media (min-width: 640px) {
-  .routing-roles {
+  .rt-row[data-kind="tier"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "name name"
+      "prov model";
+  }
+}
+@media (min-width: 768px) {
+  .rt-head,
+  .rt-row[data-kind] {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) minmax(0, 3fr);
+    column-gap: var(--space-24px);
+    row-gap: 0;
+  }
+  .rt-row[data-kind="tier"] {
+    grid-template-areas: "name prov model";
+  }
+  .rt-row[data-kind="pick"] {
+    grid-template-areas: "name ctl use";
+  }
+  .rt-row[data-kind="pick"] > .rt-name,
+  .rt-row[data-kind="pick"] > .rt-use {
+    align-self: center;
+  }
+  .rt-head {
+    display: grid;
+    padding-block-end: var(--space-8px);
+    font-size: var(--text-n1);
+    line-height: var(--line-n1);
+    font-weight: var(--weight-medium);
+    color: var(--color-ink-muted);
+  }
+  .rt-cap {
+    display: none;
   }
 }
 @media (min-width: 1024px) {
-  .routing-row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-    column-gap: var(--space-24px);
-    align-items: start;
-  }
-  .routing-name {
-    padding-top: var(--space-24px);
-  }
-  .routing-roles {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .rt-row {
+    padding-block: var(--density-row-pad-block);
   }
 }
 
