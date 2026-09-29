@@ -106,6 +106,10 @@ export interface EventMap {
   "request.raised": { requestId: string; fromAgentId: string; toAgentId: string | null; question: string; toOwner: boolean };
   "request.decided": { requestId: string; byAgentId: string | null; byOwner: boolean; answer: string; approved: boolean };
   error: { message: string; code: string | null };
+  /** a trade was proposed, decided or filled (paper or live) */
+  "trade.order": { order: import("./capabilities").OrderDTO };
+  "trade.positions": { positions: import("./capabilities").PositionDTO[] };
+  "connector.status": { connectorId: string; status: "connected" | "error" | "disabled"; error: string | null };
 }
 
 export type EventType = keyof EventMap;
@@ -162,6 +166,9 @@ export const EVENT_TYPES = [
   "role.created",
   "run.stage",
   "error",
+  "trade.order",
+  "trade.positions",
+  "connector.status",
 ] as const satisfies readonly EventType[];
 
 /** SSE event name used on the wire for every MengaiEvent (data is the JSON envelope). */

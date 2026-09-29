@@ -78,7 +78,7 @@ export interface ProviderTestResult {
 // projects and runs
 export interface CreateProjectBody { name: string; workspacePath?: string }
 /** budgetTokens and budgetUsd: 0 means unlimited */
-export interface CreateRunBody { projectId: string; goal: string; budgetTokens?: number; budgetUsd?: number }
+export interface CreateRunBody { projectId: string; goal: string; budgetTokens?: number; budgetUsd?: number; company?: import("./capabilities").CompanyKind }
 export interface EstimateRunBody { projectId: string; goal: string }
 export interface RunEstimate { tasks: number; tokens: number; costUsd: number; basis: "history" | "heuristic" }
 export interface HumanMessageBody { text: string; agentId?: string }
@@ -252,6 +252,18 @@ export interface Routes {
   "GET /api/automation/audit": [never, AuditEntryDTO[]];
   "GET /api/automation/audit/verify": [never, AuditVerify];
   "GET /api/automation/frames/:id": [never, never];
+
+  "GET /api/connectors": [never, import("./capabilities").ConnectorDTO[]];
+  "POST /api/connectors": [import("./capabilities").CreateConnectorBody, import("./capabilities").ConnectorDTO];
+  "PATCH /api/connectors/:id": [import("./capabilities").UpdateConnectorBody, import("./capabilities").ConnectorDTO];
+  "DELETE /api/connectors/:id": [never, { ok: true }];
+  "POST /api/connectors/:id/test": [never, import("./capabilities").ConnectorDTO];
+
+  "GET /api/trading/settings": [never, import("./capabilities").TradingSettings];
+  "PUT /api/trading/settings": [import("./capabilities").TradingSettings, import("./capabilities").TradingSettings];
+  "GET /api/trading/orders": [never, import("./capabilities").OrderDTO[]];
+  "GET /api/trading/positions": [never, import("./capabilities").PositionDTO[]];
+  "POST /api/trading/orders/:id/decision": [{ decision: "approve" | "reject" }, import("./capabilities").OrderDTO];
 
   /** always mounted in both modes; stops every run, and in local mode all automation */
   "POST /api/killswitch": [KillSwitchBody, KillSwitchResult];

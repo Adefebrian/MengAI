@@ -83,6 +83,8 @@ export interface RunDTO {
   startedAt: number | null;
   endedAt: number | null;
   createdAt: number;
+  /** studio (default) or fund; drives roles, tracker stages and the office theme */
+  company?: import("./capabilities").CompanyKind;
 }
 
 export interface CatLook {

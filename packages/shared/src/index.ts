@@ -7,3 +7,4 @@ export * from "./cats";
 export * from "./providers";
 export * from "./hands";
 export * from "./pricing";
+export * from "./capabilities";
