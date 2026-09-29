@@ -78,7 +78,7 @@ priming. Legacy's static part is counted as its measured constants.
 **Cache model.** A prefix counts as cached when it is byte-identical to a
 prefix of the previous call with the same cache key and at least 1,024 tokens,
 rounded down to 128-token blocks, at any message boundary. That is how
-OpenAI's automatic prompt caching treats the default model (gpt-4o-mini);
+OpenAI style automatic prompt caching, priced at a reference model (gpt-4o-mini);
 v2 also sends `prompt_cache_key` = hash(role, run) so one agent's calls share
 a cache. Legacy is uncached, as in the recorded legacy baseline (0% cache).
 

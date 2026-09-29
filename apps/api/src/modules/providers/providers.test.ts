@@ -439,36 +439,35 @@ describe("tier routing", () => {
     const err = (await env.mod.service.llm.resolve({ tier: "fast" }).catch((e) => e)) as LlmError;
     expect(err).toBeInstanceOf(LlmError);
     expect(err.kind).toBe("not_found");
-    expect(err.message).toContain("gpt-4o-mini");
+    expect(err.message).toContain("Add any provider");
+    expect(err.message).not.toContain("gpt-4o-mini");
   });
 
-  test("JAL default: an OpenAI provider and no routing means gpt-4o-mini on every tier", async () => {
-    await add(env, { preset: "anthropic", apiKey: ANTHROPIC_KEY });
-    const openai = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
+  test("provider agnostic: with no routing, the first provider the owner added serves every tier with its first model", async () => {
+    const anthropic = await add(env, { preset: "anthropic", apiKey: ANTHROPIC_KEY });
+    await add(env, { preset: "openai", apiKey: OPENAI_KEY });
     for (const tier of ["fast", "balanced", "deep"] as const) {
       const r = await env.mod.service.llm.resolve({ tier });
-      expect([tier, r.model, r.provider.id, r.contextWindow]).toEqual([tier, "gpt-4o-mini", openai.id, 128_000]);
+      expect([tier, r.provider.id, r.model]).toEqual([tier, anthropic.id, "claude-sonnet-5-5"]);
     }
     expect(await env.mod.service.llm.configured()).toBe(true);
   });
 
-  test("unmapped tiers take gpt-4o-mini when OpenAI is present, never a pricier mapped tier", async () => {
+  test("an unmapped tier borrows the nearest mapped tier before any unmapped provider", async () => {
     const a = await add(env, { preset: "anthropic", apiKey: ANTHROPIC_KEY });
-    const o = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
+    await add(env, { preset: "openai", apiKey: OPENAI_KEY });
     expect((await env.req("PUT", "/api/routing", routing([{ tier: "deep", providerId: a.id, model: "claude-opus-5-5" }]))).status).toBe(200);
-    for (const tier of ["fast", "balanced"] as const) {
+    for (const tier of ["fast", "balanced", "deep"] as const) {
       const r = await env.mod.service.llm.resolve({ tier });
-      expect([tier, r.provider.id, r.model]).toEqual([tier, o.id, "gpt-4o-mini"]);
+      expect([tier, r.provider.id, r.model]).toEqual([tier, a.id, "claude-opus-5-5"]);
     }
     const deep = await env.mod.service.llm.resolve({ tier: "deep" });
-    expect([deep.provider.id, deep.model, deep.contextWindow]).toEqual([a.id, "claude-opus-5-5", 200_000]);
+    expect(deep.contextWindow).toBe(200_000);
     expect(deep.provider.protocol).toBe("anthropic_messages");
   });
 
-  test("without OpenAI an unmapped tier borrows the nearest mapped tier, cheaper first", async () => {
+  test("borrowing goes cheaper first when both neighbours are mapped", async () => {
     const a = await add(env, { preset: "anthropic", apiKey: ANTHROPIC_KEY });
-    expect(await env.mod.service.llm.configured()).toBe(false);
-    await expect(env.mod.service.llm.resolve({ tier: "balanced" })).rejects.toMatchObject({ kind: "not_found" });
     await env.req("PUT", "/api/routing", routing([
       { tier: "fast", providerId: a.id, model: "claude-haiku-4-5" },
       { tier: "deep", providerId: a.id, model: "claude-opus-5-5" },
@@ -478,7 +477,6 @@ describe("tier routing", () => {
     await env.req("PUT", "/api/routing", routing([{ tier: "deep", providerId: a.id, model: "claude-opus-5-5" }]));
     // nothing cheaper is mapped: the only way to serve fast is up
     expect((await env.mod.service.llm.resolve({ tier: "fast" })).model).toBe("claude-opus-5-5");
-    expect(await env.mod.service.llm.configured()).toBe(true);
   });
 
   test("role override and full mapping", async () => {
@@ -486,15 +484,16 @@ describe("tier routing", () => {
     const o = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
     await env.req("PUT", "/api/routing", routing([{ tier: "fast", providerId: o.id, model: "gpt-4.1-mini" }], { reviewer: "deep", lead: "deep" }));
     expect((await env.mod.service.llm.resolve({ tier: "fast" })).model).toBe("gpt-4.1-mini");
-    expect((await env.mod.service.llm.resolve({ tier: "deep" })).model).toBe("gpt-4o-mini");
-    expect((await env.mod.service.llm.resolve({ tier: "fast", role: "lead" })).model).toBe("gpt-4o-mini");
+    // deep is unmapped: it borrows balanced (unmapped), then fast
+    expect((await env.mod.service.llm.resolve({ tier: "deep" })).model).toBe("gpt-4.1-mini");
+    expect((await env.mod.service.llm.resolve({ tier: "fast", role: "lead" })).model).toBe("gpt-4.1-mini");
 
     await env.req(
       "PUT",
       "/api/routing",
       routing(
         [
-          { tier: "fast", providerId: o.id, model: "gpt-4o-mini" },
+          { tier: "fast", providerId: o.id, model: "gpt-4.1-mini" },
           { tier: "balanced", providerId: o.id, model: "gpt-4.1" },
           { tier: "deep", providerId: a.id, model: "claude-opus-5-5" },
         ],
@@ -502,7 +501,7 @@ describe("tier routing", () => {
       ),
     );
     expect((await env.mod.service.llm.resolve({ tier: "fast", role: "reviewer" })).model).toBe("claude-opus-5-5");
-    expect((await env.mod.service.llm.resolve({ tier: "fast", role: "engineer" })).model).toBe("gpt-4o-mini");
+    expect((await env.mod.service.llm.resolve({ tier: "fast", role: "engineer" })).model).toBe("gpt-4.1-mini");
     expect((await env.mod.service.llm.resolve({ tier: "balanced" })).model).toBe("gpt-4.1");
   });
 

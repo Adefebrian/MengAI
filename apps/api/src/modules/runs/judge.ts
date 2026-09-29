@@ -27,7 +27,7 @@ export const UNVERIFIED = "UNVERIFIED BY JEV";
 export const LOW_CONFIDENCE = 0.5;
 export const CACHE_TTL_SEC = 600;
 
-const PRODUCT = "MengAI: an autonomous AI agent company where every agent is a cat; owners bring their own model keys, gpt-4o-mini by default.";
+const PRODUCT = "MengAI: an autonomous AI agent company where every agent is a cat; owners bring their own model keys for any provider and any model.";
 
 export interface BrainOutcome<R> {
   result: R;

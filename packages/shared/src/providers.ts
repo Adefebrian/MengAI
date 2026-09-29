@@ -333,6 +333,10 @@ export function findPreset(id: string): ProviderPreset | undefined {
   return PROVIDER_PRESETS.find((p) => p.id === id);
 }
 
-/** JAL default: every fresh install routes all tiers to OpenAI gpt-4o-mini until the owner changes it. */
+/**
+ * @deprecated MengAI is provider agnostic and has no default model: an
+ * unmapped tier uses the owner's own providers (see the providers module).
+ * Kept only until the UI stops importing it; never show it to users.
+ */
 export const DEFAULT_CHAT_PRESET = "openai";
 export const DEFAULT_CHAT_MODEL = "gpt-4o-mini";

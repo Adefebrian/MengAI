@@ -4,8 +4,6 @@
 // moment they are seen; no DTO, log line or error message ever carries one.
 import {
   AGENT_ROLES,
-  DEFAULT_CHAT_MODEL,
-  DEFAULT_CHAT_PRESET,
   PROVIDER_PRESETS,
   TIERS,
   findPreset,
@@ -63,11 +61,11 @@ const CHAT_PROTOCOLS: ReadonlySet<ProviderProtocol> = new Set(["openai_chat", "a
 const MEDIA_PROTOCOLS: ReadonlySet<ProviderProtocol> = new Set(["openai_images", "gemini_media", "fal_queue", "replicate"]);
 
 /**
- * Tier resolution (JEV be.tier_fallback_order: default_first). A tier's own
- * mapping wins; an unmapped tier takes the JAL default gpt-4o-mini whenever
- * a usable OpenAI preset row exists; only without one does it borrow the
- * nearest mapped tier, cheaper first, so cost never escalates silently.
- * This table is that last step: the other tiers in borrowing order.
+ * Tier resolution, provider agnostic (Brian: no built-in default model).
+ * A tier's own mapping wins; an unmapped tier borrows the nearest mapped
+ * tier, cheaper first, so cost never escalates silently; with nothing mapped
+ * at all it uses the first usable chat provider the owner added, with that
+ * provider's first model. This table is the borrowing order.
  */
 export const TIER_FALLBACK: Record<Tier, Tier[]> = {
   fast: ["balanced", "deep"],
@@ -273,6 +271,13 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
     return named?.id ?? null;
   }
 
+  /** The model a provider row serves by default: its first listed chat model, else its preset's first suggestion. */
+  function firstChatModel(row: ProviderRow): string | null {
+    const listed = row.models.find((m) => !m.caps || m.caps.includes("chat") || m.caps.includes("tools"));
+    if (listed) return listed.id;
+    return presetOf(row)?.suggestedModels[0] ?? null;
+  }
+
   async function loadRouting(): Promise<ModelRouting> {
     return normalizeRouting(await repo.getRouting());
   }
@@ -288,12 +293,15 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
     };
     const own = mapped(tier);
     if (own) return own;
-    // JAL default: an unmapped tier runs on OpenAI gpt-4o-mini whenever an OpenAI key is present
-    const openai = rows.find((r) => r.preset === DEFAULT_CHAT_PRESET && usableChat(r));
-    if (openai) return { row: openai, model: DEFAULT_CHAT_MODEL };
     for (const t of TIER_FALLBACK[tier]) {
       const hit = mapped(t);
       if (hit) return hit;
+    }
+    // Nothing mapped: the first usable chat provider the owner added, with its first model.
+    for (const row of rows) {
+      if (!usableChat(row)) continue;
+      const model = firstChatModel(row);
+      if (model) return { row, model };
     }
     return null;
   }
@@ -306,7 +314,7 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
       if (hit) return { provider: await llmFor(hit.row), model: hit.model, contextWindow: windowFor(hit.row, hit.model) };
       throw new LlmError(
         "not_found",
-        `No chat model is configured for the ${effective} tier. Add an OpenAI key (default model ${DEFAULT_CHAT_MODEL}) or map a model to a tier in Providers.`,
+        `No chat model is configured for the ${effective} tier. Add any provider with a model, or map a model to a tier, in Providers.`,
       );
     },
     /** true only when resolve({ tier: "balanced" }) would succeed and its key is still in the vault */

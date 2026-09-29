@@ -8,9 +8,12 @@
 //                cacheSystem, then messages flagged cacheBreakpoint); this is the
 //                Anthropic cache_control behavior and the conservative default.
 //   prefix:      at any message boundary, rounded down to 128-token blocks; this
-//                is OpenAI's automatic prompt caching (gpt-4o-mini, the default).
-import { DEFAULT_CHAT_MODEL, priceFor } from "@mengai/shared";
+//                is OpenAI style automatic prompt caching, priced at a reference model.
+import { priceFor } from "@mengai/shared";
 import type { ChatMessage, ToolSpec } from "../../core/ports/llm";
+
+/** Reference price used only to express benchmark results in USD; not a product default. */
+const BENCH_PRICE_MODEL = "gpt-4o-mini";
 
 export type Estimator = (text: string) => number;
 
@@ -22,9 +25,9 @@ export const PREFIX_BLOCK_TOKENS = 128;
 
 export type CacheModel = "breakpoints" | "prefix";
 
-/** Cached prompt tokens are weighted at the default model's cached/input price ratio (gpt-4o-mini: 0.5). */
+/** Cached prompt tokens are weighted at the reference model's cached/input price ratio (0.5). */
 export const CACHED_WEIGHT = (() => {
-  const p = priceFor(DEFAULT_CHAT_MODEL).price;
+  const p = priceFor(BENCH_PRICE_MODEL).price;
   return p.input > 0 ? p.cachedInput / p.input : 1;
 })();
 

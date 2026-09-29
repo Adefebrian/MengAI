@@ -103,7 +103,7 @@ Replaces legacy self-tuning prompt rewrites (bloated prompts, and was a no-op on
 - Precheck in code first, JEV second, catalog thresholds, confidence < 0.5 -> runner-up rule, outage or no key -> deterministic fallback stamped `UNVERIFIED BY JEV`. Every decision persisted and streamed (`decision` event), visible in the Decisions panel.
 
 ## 10. BYOK providers
-Presets: openai, anthropic (native, cache_control), gemini (OpenAI-compatible endpoint for chat, native for Imagen/Veo), openrouter, groq, deepseek, mistral, xai, together, fireworks, ollama, lmstudio, custom (any OpenAI-compatible base URL); media: fal, replicate; judge: jev. Default tier model: OpenAI gpt-4o-mini (JAL default).
+Presets: openai, anthropic (native, cache_control), gemini (OpenAI-compatible endpoint for chat, native for Imagen/Veo), openrouter, groq, deepseek, mistral, xai, together, fireworks, ollama, lmstudio, custom (any OpenAI-compatible base URL); media: fal, replicate; judge: jev. No default model: MengAI is provider agnostic; an unmapped tier borrows the nearest mapped tier, and with nothing mapped the first chat provider the owner added serves with its first model.
 Key hygiene: key sent once, stored in vault, DB keeps key_ref + 4-char hint only, never returned, never logged, never in events or prompts; active key values are fingerprinted and scrubbed from any tool output; custom base URLs in server mode must resolve to public IPs (SSRF guard); local mode allows localhost for Ollama and LM Studio.
 
 ## 11. Assets

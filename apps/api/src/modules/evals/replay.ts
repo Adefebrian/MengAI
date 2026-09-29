@@ -7,13 +7,16 @@
 //           summarize call is charged), simulated vendor prefix cache.
 // Both policies replay the identical scripted steps, so output tokens match
 // and only the prompt policy differs.
-import { DEFAULT_CHAT_MODEL, priceFor, type EvalRunDTO, type LessonDTO } from "@mengai/shared";
+import { priceFor, type EvalRunDTO, type LessonDTO } from "@mengai/shared";
 import type { ToolCall, ToolSpec } from "../../core/ports/llm";
 import type { ContextInput, ContextService, StepRecord } from "../../core/services";
 import { LEGACY, LEGACY_PLANNING_NUDGE, legacyConversation, legacyRawCap, legacyToolOutput, type LegacyMessage } from "./legacy";
 import { billableInput, measurePrompt, PrefixCache, toolCallsJson, type CacheModel, type Estimator } from "./meter";
 import type { ScenarioFixture, SuiteFixture } from "./suites";
 import { synthOutput } from "./synth";
+
+/** Reference price used only to express benchmark results in USD; not a product default. */
+const BENCH_PRICE_MODEL = "gpt-4o-mini";
 
 export type Policy = "legacy" | "v2";
 export type Metrics = EvalRunDTO["metrics"];
@@ -290,7 +293,7 @@ export interface SuiteBrain {
 
 /** Output tokens weigh this much input at the default model's prices (gpt-4o-mini: 0.60 / 0.15 = 4). */
 export const OUTPUT_WEIGHT = (() => {
-  const p = priceFor(DEFAULT_CHAT_MODEL).price;
+  const p = priceFor(BENCH_PRICE_MODEL).price;
   return p.input > 0 ? p.output / p.input : 1;
 })();
 
