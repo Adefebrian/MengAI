@@ -22,7 +22,7 @@ export const LIMITS = {
   focusedSteps: 6,
   frustratedFailures: 2,
   sayChars: 280,
-  statusChars: 140,
+  statusChars: 80,
   resultChars: 2000,
   noteChars: 2000,
   depSummaryChars: 400,
@@ -51,7 +51,9 @@ export const OUTPUT_CAP: Record<AgentRole, number> = {
 /** Titles the engine generates; kinds are inferred from them after a restart. */
 export const TITLES = {
   plan: "Plan the work",
-  final: "Final report",
+  final: "Report to the owner",
+  /** final report title used before the rename; still recognized on hydrate */
+  legacyFinal: "Final report",
   reviewPrefix: "Review: ",
   fixPrefix: "Fix: ",
   depBlocked: "Blocked: a dependency failed or is blocked",
@@ -105,17 +107,36 @@ function sortKeys(v: unknown): unknown {
   return v;
 }
 
-/** Per-task repeat counters for the identical call and identical error guards. */
+/**
+ * Per-task repeat guards.
+ * Identical call guard: counts a streak of identical consecutive calls that
+ * also returned identical results. Any different call, or the same call with
+ * a different result, restarts the streak, so a normal test, edit, test loop
+ * never trips it. Identical error guard: counts one exact error over the task.
+ */
 export class RepeatGuard {
-  private calls = new Map<string, number>();
+  private lastCall: string | null = null;
+  private lastResult: string | null = null;
+  private streak = 0;
   private errors = new Map<string, number>();
 
-  /** returns how many times this exact call has now been seen */
-  call(tool: string, rawArgs: string): number {
-    const key = tool + "\u0000" + stableArgs(rawArgs);
-    const n = (this.calls.get(key) ?? 0) + 1;
-    this.calls.set(key, n);
-    return n;
+  private static key(tool: string, rawArgs: string): string {
+    return tool + "\u0000" + stableArgs(rawArgs);
+  }
+
+  /** how many identical calls in a row this call would make, when every earlier one returned the same result */
+  wouldRepeat(tool: string, rawArgs: string): number {
+    return this.lastCall === RepeatGuard.key(tool, rawArgs) ? this.streak + 1 : 1;
+  }
+
+  /** records a finished call in model order; returns the current identical streak */
+  record(tool: string, rawArgs: string, output: string, ok: boolean): number {
+    const call = RepeatGuard.key(tool, rawArgs);
+    const result = (ok ? "ok\u0000" : "err\u0000") + output.trim().slice(0, 2000);
+    this.streak = call === this.lastCall && result === this.lastResult ? this.streak + 1 : 1;
+    this.lastCall = call;
+    this.lastResult = result;
+    return this.streak;
   }
 
   /** returns how many times this exact error has now been seen */

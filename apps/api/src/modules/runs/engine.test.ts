@@ -3,9 +3,16 @@ import type { MengaiEvent, TaskDTO } from "@mengai/shared";
 import { LlmError } from "../../core/ports";
 import { createTestDb, fakeClock } from "../../testing";
 import { deferred, fakeDecisions, fakeTools, harness } from "./testkit";
+import { VOICE } from "./voice";
 
 const byTitle = (tasks: TaskDTO[], title: string) => tasks.find((t) => t.title === title)!;
 const idx = (events: MengaiEvent[], pred: (e: MengaiEvent) => boolean) => events.findIndex(pred);
+/** a second process on the same database: its fake clock must not hand out ids the first one used */
+function restartClock() {
+  const c = fakeClock();
+  const next = c.id;
+  return Object.assign(c, { id: () => next().replace("0192f0aa", "0192f0bb") });
+}
 
 describe("runs engine: full scenario", () => {
   test("plan -> two tasks with a dependency -> handoff -> review fail -> fix -> done", async () => {
@@ -62,7 +69,7 @@ describe("runs engine: full scenario", () => {
       "Review: Build feature",
       "Fix: Build feature",
       "Review: Build feature",
-      "Final report",
+      "Report to the owner",
     ]);
     expect(tasks.every((t) => t.status === "done")).toBe(true);
     const build = byTitle(tasks, "Build feature");
@@ -263,7 +270,7 @@ describe("runs engine: guards", () => {
     expect(snap.run.statusReason).toBe("budget");
     // the in-flight step finished (the note ran), then the loop parked at the checkpoint
     expect(h.events.ofType("tool.result").map((e) => e.data.tool)).toEqual(["note"]);
-    await h.until(() => h.events.ofType("agent.status").some((e) => e.data.statusText === "Paused"), "agent parked");
+    await h.until(() => h.events.ofType("agent.status").some((e) => e.data.statusText === VOICE.paused), "agent parked");
     expect(h.llm.calls).toHaveLength(1);
     await expect(h.svc.resume(run.id)).rejects.toMatchObject({ status: 409, code: "budget_exhausted" });
     const raised = await h.svc.setBudget(run.id, { budgetTokens: 50_000 });
@@ -271,8 +278,9 @@ describe("runs engine: guards", () => {
     await h.svc.resume(run.id);
     await h.untilStatus(run.id, "done");
     snap = await h.svc.snapshot(run.id);
-    expect(h.llm.calls).toHaveLength(2);
-    expect(snap.run.usage.inputTokens).toBe(1200);
+    // the plan step, the step after resume, then the report to the owner
+    expect(h.llm.calls).toHaveLength(3);
+    expect(snap.run.usage.inputTokens).toBe(1300);
   });
 
   test("USD budget pauses too", async () => {
@@ -308,7 +316,7 @@ describe("runs engine: guards", () => {
     expect((await h.svc.snapshot(run.id)).run.statusReason).toContain("provider: overloaded 529");
     await h.svc.resume(run.id);
     await h.untilStatus(run.id, "done");
-    expect(h.llm.calls).toHaveLength(2);
+    expect(h.llm.calls).toHaveLength(3);
   });
 });
 
@@ -326,13 +334,13 @@ describe("runs engine: control", () => {
     expect(paused.status).toBe("paused");
     await expect(h.svc.pause(run.id)).rejects.toMatchObject({ status: 409 });
     gate.resolve();
-    await h.until(() => h.events.ofType("agent.status").some((e) => e.data.statusText === "Paused"), "agent parked");
+    await h.until(() => h.events.ofType("agent.status").some((e) => e.data.statusText === VOICE.paused), "agent parked");
     expect(h.events.ofType("tool.result").map((e) => e.data.tool)).toEqual(["note"]);
     expect(h.llm.calls).toHaveLength(1);
     const resumed = await h.svc.resume(run.id);
     expect(resumed.status).toBe("running");
     await h.untilStatus(run.id, "done");
-    expect(h.llm.calls).toHaveLength(2);
+    expect(h.llm.calls).toHaveLength(3);
     const statuses = h.events.ofType("run.status").map((e) => e.data.status);
     expect(statuses).toEqual(["paused", "running", "done"]);
     await expect(h.svc.resume(run.id)).rejects.toMatchObject({ status: 409 });
@@ -472,7 +480,7 @@ describe("runs engine: control", () => {
     await first.until(() => first.llm.calls.length === 1, "in flight");
     await first.mod.close!();
 
-    const second = await harness({ db, script: { lead: [{ calls: [{ name: "finish", args: { summary: "finished after restart" } }] }] } });
+    const second = await harness({ db, clock: restartClock(), script: { lead: [{ calls: [{ name: "finish", args: { summary: "finished after restart" } }] }] } });
     let snap = await second.svc.snapshot(run.id);
     expect(snap.run.status).toBe("paused");
     expect(snap.run.statusReason).toBe("restart");
@@ -508,7 +516,7 @@ describe("runs engine: more control paths", () => {
     gate.resolve();
     await h.untilStatus(run.id, "done");
     const titles = (await h.svc.snapshot(run.id)).tasks.map((t) => t.title);
-    expect(titles).toEqual(["Plan the work", "Long work", "Human message", "Final report"]);
+    expect(titles).toEqual(["Plan the work", "Long work", "Human message", "Report to the owner"]);
   });
 
   test("patchTask requeues a failed task and its blocked dependents come back", async () => {
@@ -531,7 +539,7 @@ describe("runs engine: more control paths", () => {
     });
     const run = await h.svc.create({ projectId: "p1", goal: "Retry a failed task" });
     // the final report waits on the human, so the run stays open while we requeue
-    await h.until(async () => (await h.svc.snapshot(run.id)).tasks.some((t) => t.title === "Final report" && t.status === "waiting"), "final report waiting");
+    await h.until(async () => (await h.svc.snapshot(run.id)).tasks.some((t) => t.title === "Report to the owner" && t.status === "waiting"), "final report waiting");
     let tasks = (await h.svc.snapshot(run.id)).tasks;
     expect(byTitle(tasks, "Flaky").status).toBe("failed");
     expect(byTitle(tasks, "Next").status).toBe("blocked");
@@ -652,5 +660,181 @@ describe("runs engine: review loop exit and mood", () => {
     expect(moods.at(-1)).toBe("proud");
     const t = (await h.svc.snapshot(run.id)).tasks[0]!;
     expect(t.status).toBe("done");
+  });
+});
+
+describe("runs engine: review fixes", () => {
+  const plan = (tasks: unknown[]) => ({ calls: [{ name: "create_tasks", args: { tasks } }, { name: "finish", args: { summary: "planned" } }] });
+
+  test("tools execute with the model's exact arguments; only logs, events and history are redacted", async () => {
+    const content = 'export const schema = z.object({ password: z.string().min(8) });';
+    const h = await harness({
+      script: (info) => {
+        if (info.role === "lead") return info.n === 0 ? plan([{ title: "Schema", spec: "write it", role: "engineer" }]) : { calls: [{ name: "finish", args: { summary: "report" } }] };
+        if (info.n === 0) return { calls: [{ name: "fs_write", args: { path: "src/schema.ts", content } }] };
+        return { calls: [{ name: "finish", args: { summary: "schema written" } }] };
+      },
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Write the login schema" });
+    await h.untilStatus(run.id, "done");
+    const write = h.tools.executed.find((x) => x.call.name === "fs_write")!;
+    expect(JSON.parse(write.call.arguments).content).toBe(content);
+    // published and persisted copies stay redacted
+    expect(JSON.stringify(h.events.events)).not.toContain("z.string().min(8)");
+    const detail = await h.svc.toolCall(run.id, write.callId);
+    expect(JSON.stringify(detail)).not.toContain("z.string().min(8)");
+    // the step history the model sees next is the redacted copy
+    const next = h.context.builds.filter((b) => b.role === "engineer")[1]!;
+    expect(JSON.stringify(next.steps)).not.toContain("z.string().min(8)");
+  });
+
+  test("the run does not end when the plan finishes after the crew: the lead reports to the owner first", async () => {
+    const crewDone = deferred();
+    const h = await harness({
+      script: (info) => {
+        if (info.role === "lead") {
+          if (info.n === 0) return { calls: [{ name: "create_tasks", args: { tasks: [{ title: "Quick fix", spec: "x", role: "engineer" }] } }] };
+          if (info.n === 1) return { wait: crewDone.promise, calls: [{ name: "finish", args: { summary: "planned one fix" } }] };
+          return { calls: [{ name: "finish", args: { summary: `Owner report: quick fix shipped (${info.title})` } }] };
+        }
+        return { calls: [{ name: "finish", args: { summary: "fixed" } }] };
+      },
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Fix one small thing" });
+    await h.until(async () => (await h.svc.snapshot(run.id)).tasks.some((t) => t.title === "Quick fix" && t.status === "done"), "crew done first");
+    crewDone.resolve();
+    await h.untilStatus(run.id, "done");
+    const snap = await h.svc.snapshot(run.id);
+    expect(snap.tasks.map((t) => [t.title, t.status])).toEqual([
+      ["Plan the work", "done"],
+      ["Quick fix", "done"],
+      ["Report to the owner", "done"],
+    ]);
+    const report = byTitle(snap.tasks, "Report to the owner");
+    expect(report.resultSummary).toBe("Owner report: quick fix shipped (Report to the owner)");
+    expect(Math.max(...snap.tasks.map((t) => t.endedAt ?? 0))).toBe(report.endedAt!);
+    expect(snap.run.statusReason).toBeNull();
+    expect(h.memory.log.digests[0]!.text).toContain("Owner report: quick fix shipped");
+  });
+
+  test("a trivial goal done inside the plan still ends with the report to the owner", async () => {
+    const h = await harness({
+      script: { lead: [{ calls: [{ name: "finish", args: { summary: "did it inline" } }] }, { calls: [{ name: "finish", args: { summary: "Report: done inline" } }] }] },
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Say hi" });
+    await h.untilStatus(run.id, "done");
+    const snap = await h.svc.snapshot(run.id);
+    expect(snap.tasks.map((t) => t.title)).toEqual(["Plan the work", "Report to the owner"]);
+    expect(h.memory.log.digests[0]!.text).toContain("Report: done inline");
+  });
+
+  test("a normal test, edit, test loop does not trip the identical call guard", async () => {
+    let runs = 0;
+    const tools = fakeTools((call) => {
+      if (call.name !== "shell_run") return { output: "edited", ok: true, durationMs: 1 };
+      runs++;
+      return runs < 3 ? { output: `1 fail: case ${runs}`, ok: false, durationMs: 1 } : { output: "3 pass", ok: true, durationMs: 1 };
+    });
+    const test_ = { name: "shell_run", args: { command: "bun test" } };
+    const h = await harness({
+      tools,
+      script: (info) => {
+        if (info.role === "lead") return info.n === 0 ? plan([{ title: "Make tests pass", spec: "x", role: "engineer" }]) : { calls: [{ name: "finish", args: { summary: "report" } }] };
+        const loop = [
+          { calls: [test_] },
+          { calls: [{ name: "fs_edit", args: { path: "a.ts", find: "1", replace: "2" } }] },
+          { calls: [test_] },
+          { calls: [{ name: "fs_edit", args: { path: "a.ts", find: "2", replace: "3" } }] },
+          { calls: [test_] },
+          { calls: [{ name: "finish", args: { summary: "green" } }] },
+        ];
+        return loop[info.n] ?? { calls: [{ name: "finish", args: { summary: "green" } }] };
+      },
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Get the suite green" });
+    await h.untilStatus(run.id, "done");
+    const t = byTitle((await h.svc.snapshot(run.id)).tasks, "Make tests pass");
+    expect(t.status).toBe("done");
+    expect(runs).toBe(3);
+  });
+
+  test("the same call repeated with changing results keeps going; identical results in a row trip it", async () => {
+    let polls = 0;
+    const tools = fakeTools((call) => ({ output: call.name === "shell_run" ? `build ${++polls * 25}%` : "ok", ok: true, durationMs: 1 }));
+    const h = await harness({
+      tools,
+      script: (info) => {
+        if (info.role === "lead") return info.n === 0 ? plan([{ title: "Wait for build", spec: "x", role: "engineer" }]) : { calls: [{ name: "finish", args: { summary: "report" } }] };
+        if (info.n < 4) return { calls: [{ name: "shell_run", args: { command: "cat build.log" } }] };
+        return { calls: [{ name: "finish", args: { summary: "build finished" } }] };
+      },
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Poll the build" });
+    await h.untilStatus(run.id, "done");
+    expect(byTitle((await h.svc.snapshot(run.id)).tasks, "Wait for build").status).toBe("done");
+    expect(polls).toBe(4);
+  });
+
+  test("workspace tools are logged once, by the tools service, under its callId", async () => {
+    const h = await harness({
+      script: (info) => {
+        if (info.role === "lead") return info.n === 0 ? plan([{ title: "Edit", spec: "x", role: "engineer" }]) : { calls: [{ name: "finish", args: { summary: "report" } }] };
+        if (info.n === 0) return { calls: [{ name: "fs_read", args: { path: "a.ts" } }, { name: "fs_read", args: { path: "b.ts" } }, { name: "fs_write", args: { path: "a.ts", content: "x" } }] };
+        return { calls: [{ name: "finish", args: { summary: "edited" } }] };
+      },
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Edit a file" });
+    await h.untilStatus(run.id, "done");
+    const workspace = new Set(["fs_read", "fs_write"]);
+    const calls = h.events.ofType("tool.call").filter((e) => workspace.has(e.data.tool));
+    const results = h.events.ofType("tool.result").filter((e) => workspace.has(e.data.tool));
+    const ids = h.tools.executed.map((x) => x.callId);
+    expect(calls.map((e) => e.data.callId).sort()).toEqual([...ids].sort());
+    expect(results.map((e) => e.data.callId).sort()).toEqual([...ids].sort());
+    for (const id of ids) expect((await h.svc.toolCall(run.id, id)).id).toBe(id);
+    // one row per call: workspace rows from the tools service, control rows (create_tasks, finish) from the engine
+    const controlCalls = h.events.ofType("tool.call").length - calls.length;
+    const rows = await h.db.query<{ n: number }>`select count(*) as n from tool_calls where run_id = ${run.id}`;
+    expect(Number(rows[0]!.n)).toBe(ids.length + controlCalls);
+  });
+
+  test("agent.status on every step boundary with a short cat voice line, never raw tool output", async () => {
+    const marker = "RAW_TOOL_OUTPUT_7f3a";
+    const tools = fakeTools(() => ({ output: `${marker} ${"x".repeat(400)}`, ok: true, durationMs: 1 }));
+    const gate = deferred();
+    const h = await harness({
+      tools,
+      script: (info) => {
+        if (info.role === "lead") return info.n === 0 ? plan([{ title: "Settings page", spec: "x", role: "engineer" }]) : { calls: [{ name: "finish", args: { summary: "report" } }] };
+        if (info.role === "designer") return { wait: gate.promise, calls: [{ name: "finish", args: { summary: "icon drawn" } }] };
+        if (info.n === 0) return { calls: [{ name: "fs_read", args: { path: "bun.lock" } }] };
+        if (info.n === 1) return { calls: [{ name: "fs_write", args: { path: "src/pages/settings.tsx", content: "export {}" } }] };
+        if (info.n === 2) return { calls: [{ name: "handoff", args: { to_role: "designer", title: "Gear icon", spec: "draw it" } }] };
+        return { calls: [{ name: "finish", args: { summary: "settings page done" } }] };
+      },
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Build the settings page" });
+    await h.until(() => h.llm.calls.some((c) => c.role === "designer"), "designer working");
+    const engineer = (await h.svc.snapshot(run.id)).agents.find((a) => a.role === "engineer")!;
+    gate.resolve();
+    await h.untilStatus(run.id, "done");
+
+    const mine = h.events.ofType("agent.status").filter((e) => e.agentId === engineer.id);
+    const texts = mine.map((e) => e.data.statusText);
+    // thinking before every model call
+    const thinking = mine.filter((e) => e.data.status === "thinking");
+    expect(thinking.length).toBeGreaterThanOrEqual(h.llm.calls.filter((c) => c.role === "engineer").length);
+    // tool activity during tools, in a cat voice
+    expect(mine.some((e) => e.data.status === "working" && e.data.activity === "read" && /^(Sniffing|Pawing|Reading) .*the lockfile/.test(e.data.statusText ?? ""))).toBe(true);
+    expect(mine.some((e) => e.data.status === "working" && e.data.activity === "code" && /^(Kneading|Shaping) the settings page/.test(e.data.statusText ?? ""))).toBe(true);
+    // waiting during the handoff
+    expect(mine.some((e) => e.data.status === "waiting" && e.data.statusText === "Waiting by the door for Designer: Gear icon")).toBe(true);
+    for (const text of texts) {
+      if (text === null) continue;
+      expect(text.length).toBeLessThanOrEqual(80);
+      expect(text).not.toContain(marker);
+    }
+    const all = h.events.ofType("agent.status").map((e) => e.data.statusText ?? "");
+    expect(all.some((x) => x.includes(marker))).toBe(false);
   });
 });

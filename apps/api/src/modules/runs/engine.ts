@@ -50,6 +50,7 @@ import {
 import { LIMITS, OUTPUT_CAP, RepeatGuard, TITLES, bounded, moodFor, roleCap } from "./policy";
 import type { RunsDeps } from "./ports";
 import { emptyUsage, progressOf, type RunsRepo } from "./repo";
+import { VOICE, batchLine, statusLine, thinkingLine, toolLine } from "./voice";
 
 // ------------------------------------------------------------------ types
 type TaskKind = "plan" | "final" | "work" | "review" | "fix" | "handoff";
@@ -212,7 +213,8 @@ export class RunEngine {
   private finishing = false;
   private closed = false;
   private finalReports = 0;
-  private lastEvent: "lead_done" | "lead_failed" | "other" = "other";
+  /** the most recent task event: the run can only end right after the lead's final report is done */
+  private lastEvent: "final_done" | "lead_failed" | "other" = "other";
   private leadFailure: string | null = null;
   private brief: Brief | null = null;
   private history: string | null | undefined = undefined;
@@ -282,7 +284,7 @@ export class RunEngine {
       const kind: TaskKind =
         dto.role === "lead" && dto.title === TITLES.plan
           ? "plan"
-          : dto.role === "lead" && dto.title.startsWith(TITLES.final)
+          : dto.role === "lead" && (dto.title.startsWith(TITLES.final) || dto.title.startsWith(TITLES.legacyFinal))
             ? "final"
             : dto.parentId && dto.role === "reviewer" && dto.title.startsWith(TITLES.reviewPrefix)
               ? "review"
@@ -320,7 +322,7 @@ export class RunEngine {
     const lastEnded = [...e.tasks.values()]
       .filter((t) => t.dto.endedAt !== null)
       .sort((x, y) => (y.dto.endedAt ?? 0) - (x.dto.endedAt ?? 0))[0];
-    if (lastEnded?.dto.role === "lead" && lastEnded.dto.status === "done") e.lastEvent = "lead_done";
+    if (lastEnded?.kind === "final" && lastEnded.dto.status === "done") e.lastEvent = "final_done";
     else if (lastEnded?.dto.role === "lead" && lastEnded.dto.status === "failed") {
       e.lastEvent = "lead_failed";
       e.leadFailure = lastEnded.dto.resultSummary;
@@ -562,9 +564,17 @@ export class RunEngine {
     });
   }
 
-  /** Persist and publish agent.status whenever status, activity, mood, text or task change. */
-  private async setAgent(a: LiveAgent, patch: Partial<Pick<AgentDTO, "status" | "activity" | "statusText" | "currentTaskId" | "steps">>): Promise<void> {
+  /**
+   * Persist and publish agent.status whenever status, activity, mood, text or task change.
+   * `boundary` publishes even without a visible change: every step boundary reaches the UI.
+   */
+  private async setAgent(
+    a: LiveAgent,
+    patch: Partial<Pick<AgentDTO, "status" | "activity" | "statusText" | "currentTaskId" | "steps">>,
+    boundary = false,
+  ): Promise<void> {
     if (this.closed) return;
+    if (patch.statusText) patch = { ...patch, statusText: statusLine(patch.statusText, LIMITS.statusChars) };
     const prev = a.dto;
     const next: AgentDTO = { ...prev, ...patch };
     if (patch.status && patch.activity === undefined) next.activity = activityForStatus(patch.status);
@@ -576,10 +586,10 @@ export class RunEngine {
       next.mood !== prev.mood ||
       next.statusText !== prev.statusText ||
       next.currentTaskId !== prev.currentTaskId;
-    if (!visible && next.steps === prev.steps) return;
+    if (!visible && !boundary && next.steps === prev.steps) return;
     next.updatedAt = this.ctx.clock.now();
     await this.repo.saveAgentState(next);
-    if (visible) {
+    if (visible || boundary) {
       await this.emit(
         "agent.status",
         { status: next.status, activity: next.activity, mood: next.mood, statusText: next.statusText, taskId: next.currentTaskId },
@@ -729,7 +739,8 @@ export class RunEngine {
   }
 
   private onTerminal(t: LiveTask): void {
-    if (t.dto.role !== "lead") this.lastEvent = "other";
+    // completeWork and failTask set final_done / lead_failed right after this
+    this.lastEvent = "other";
     const waiters = t.waiters;
     t.waiters = [];
     for (const w of waiters) w();
@@ -896,7 +907,8 @@ export class RunEngine {
       if (changed) this.dirty = true;
       return;
     }
-    if (this.lastEvent === "lead_done") {
+    // done only when the lead's final report is the last thing that ended, after every other task ended
+    if (this.lastEvent === "final_done") {
       const bad = [...this.tasks.values()].filter((t) => t.dto.status === "failed" || t.dto.status === "blocked").length;
       return this.finishRun("done", bad > 0 ? `${bad} task${bad === 1 ? "" : "s"} failed or blocked` : null);
     }
@@ -906,7 +918,7 @@ export class RunEngine {
     const lead = this.lead();
     const t = this.makeTask({
       title: this.finalReports === 1 ? TITLES.final : `${TITLES.final} ${this.finalReports}`,
-      spec: "Every crew task has ended. Read the results below, then call finish with the final report for the human: what was done, what failed or is blocked, and the next steps.",
+      spec: "Every crew task has ended. Read the results below, then call finish with the final report for the owner: what was done, what failed or is blocked, and the next steps.",
       acceptance: ["States what was delivered", "Lists anything failed or blocked"],
       role: "lead",
       deps: [],
@@ -930,7 +942,7 @@ export class RunEngine {
     this.run.endedAt = now;
     await this.repo.setRunStatus(this.run.id, status, reason, now, now);
     for (const a of this.agents.values()) {
-      if (alive(a)) await this.setAgent(a, { status: status === "done" ? "done" : "idle", currentTaskId: null, statusText: null });
+      if (alive(a)) await this.setAgent(a, { status: status === "done" ? "done" : "idle", currentTaskId: null, statusText: status === "done" ? VOICE.done : null });
     }
     await this.emitUsage();
     await this.emit("run.status", { status, reason });
@@ -964,7 +976,8 @@ export class RunEngine {
         memory.reflect({ runId, taskId: t.dto.id, projectId, role: t.dto.role, taskTitle: t.dto.title, outcome: bounded(outcome, 400), notes }),
       );
     }
-    const leadTasks = this.taskList().filter((t) => t.role === "lead" && t.status === "done");
+    const finals = this.taskList().filter((t) => t.role === "lead" && t.status === "done" && this.tasks.get(t.id)?.kind === "final");
+    const leadTasks = finals.length ? finals : this.taskList().filter((t) => t.role === "lead" && t.status === "done");
     const report = leadTasks[leadTasks.length - 1]?.resultSummary ?? "";
     await safe("saveRunDigest", () => memory.saveRunDigest({ projectId, runId, text: bounded(`Goal: ${this.run.goal}\nOutcome: ${report}`, 1500) }));
     const promote = memory.promoteEligible;
@@ -1011,7 +1024,7 @@ export class RunEngine {
     a.busy = false;
     a.waiting = false;
     if (alive(a) && !TERMINAL_RUN.has(this.run.status) && this.run.status !== "stopping") {
-      await this.setAgent(a, { status: "idle", currentTaskId: null, statusText: null });
+      await this.setAgent(a, { status: "idle", currentTaskId: null, statusText: VOICE.idle });
     }
   }
 
@@ -1023,7 +1036,7 @@ export class RunEngine {
     }
     await this.saveTask(t, { status: "running", assigneeId: a.dto.id, attempts: t.dto.attempts + 1, startedAt: t.dto.startedAt ?? now });
     a.cleanSteps = 0;
-    await this.setAgent(a, { status: "thinking", currentTaskId: t.dto.id, statusText: clip(t.dto.title, LIMITS.statusChars) });
+    await this.setAgent(a, { status: "thinking", currentTaskId: t.dto.id, statusText: thinkingLine(a.dto.role, t.dto.title, 0, false) });
     if (t.handoffId) {
       const h = this.handoffs.get(t.handoffId);
       if (h && h.toAgentId !== a.dto.id) {
@@ -1069,7 +1082,7 @@ export class RunEngine {
     }
     await this.saveTask(t, { status: "done", resultSummary: result, endedAt: now });
     await this.markPass(a);
-    if (a.dto.role === "lead") this.lastEvent = "lead_done";
+    if (t.kind === "final") this.lastEvent = "final_done";
   }
 
   private async startReview(target: LiveTask, summary: string, ownerId: string | null): Promise<void> {
@@ -1236,17 +1249,20 @@ export class RunEngine {
     let stepCount = 0;
     let textOnly = 0;
     let overflowRetried = false;
+    let lastFailed = false;
 
     while (true) {
       await this.checkpoint(a, t, signal, timer);
       if (stepCount >= LIMITS.maxStepsPerTask) return { kind: "failed", reason: `step limit reached (${LIMITS.maxStepsPerTask} steps)` };
       if (timer.elapsed() > LIMITS.taskWallClockMs) return { kind: "failed", reason: "time limit reached (15 minutes of work on one task)" };
       a.justPassed = false;
-      await this.setAgent(a, { status: "thinking" });
+      // step boundary: the UI always hears that this cat is thinking before the model call
+      await this.setAgent(a, { status: "thinking", statusText: thinkingLine(role, t.dto.title, stepCount, lastFailed) }, true);
 
       const input = this.contextInput(a, t, specs, brief, lessons, steps, summary, resolved, textOnly > 0);
       let build = this.deps.context.build(input);
       if (build.needsCompaction && steps.length > 1) {
+        await this.setAgent(a, { statusText: VOICE.compacting });
         const c = await this.compact(a, t, steps, summary, LIMITS.keepRecentSteps, signal);
         steps = c.steps;
         summary = c.summary;
@@ -1262,6 +1278,7 @@ export class RunEngine {
         if (e instanceof LlmError) {
           if (e.kind === "context_length" && !overflowRetried && steps.length > 1) {
             overflowRetried = true;
+            await this.setAgent(a, { statusText: VOICE.compacting });
             const c = await this.compact(a, t, steps, summary, 1, signal);
             steps = c.steps;
             summary = c.summary;
@@ -1286,14 +1303,18 @@ export class RunEngine {
 
       if (result.toolCalls.length === 0) {
         textOnly++;
+        lastFailed = false;
         steps.push({ assistant: { text: redact(result.text), toolCalls: [] }, results: [] });
         if (textOnly >= LIMITS.noProgressLimit) return { kind: "failed", reason: `no progress: ${LIMITS.noProgressLimit} replies without a tool call` };
         continue;
       }
       textOnly = 0;
-      const calls = result.toolCalls.map((c) => ({ ...c, arguments: redact(c.arguments) }));
-      const exec = await this.executeCalls(a, t, calls, signal, guard, timer);
-      steps.push({ assistant: { text: redact(result.text), toolCalls: calls }, results: exec.results });
+      // tools run with the model's exact arguments (file content must land on disk unchanged);
+      // only what is kept, published or shown is redacted
+      const exec = await this.executeCalls(a, t, result.toolCalls, signal, guard, timer);
+      const shown = result.toolCalls.map((c) => ({ ...c, arguments: redact(c.arguments) }));
+      steps.push({ assistant: { text: redact(result.text), toolCalls: shown }, results: exec.results });
+      lastFailed = exec.anyError;
       a.cleanSteps = exec.anyError ? 0 : a.cleanSteps + 1;
       await this.setAgent(a, {});
       if (exec.tripped) return { kind: "failed", reason: exec.tripped };
@@ -1307,13 +1328,13 @@ export class RunEngine {
     if (this.run.status === "running" && this.overBudget()) await this.pause("budget");
     if (this.run.status !== "paused") return;
     timer.stop();
-    await this.setAgent(a, { status: "waiting", statusText: "Paused" });
+    await this.setAgent(a, { status: "waiting", statusText: VOICE.paused });
     while (this.run.status === "paused") {
       await abortable<void>(signal, (resolve) => this.resumeWaiters.push(resolve));
     }
     if (signal.aborted) throw signal.reason;
     timer.start();
-    await this.setAgent(a, { status: "thinking", statusText: clip(t.dto.title, LIMITS.statusChars) });
+    await this.setAgent(a, { status: "thinking", statusText: VOICE.resumed(t.dto.title) });
   }
 
   private async resolveModel(a: LiveAgent, t: LiveTask, signal: AbortSignal, timer: TaskTimer): Promise<ResolvedModel> {
@@ -1542,6 +1563,12 @@ export class RunEngine {
     return isControlTool(name) || this.deps.tools.isControl(name);
   }
 
+  /**
+   * Runs one step's calls in model order. `calls` carry the model's exact
+   * arguments: workspace tools execute with them untouched (the tools service
+   * redacts its own events and tool_calls row); control tools only persist or
+   * publish, so they get redacted arguments.
+   */
   private async executeCalls(
     a: LiveAgent,
     t: LiveTask,
@@ -1554,11 +1581,18 @@ export class RunEngine {
     let tripped: string | null = null;
     let end: Outcome | null = null;
     let anyError = false;
+    const limit = LIMITS.identicalCallLimit;
     const skipped = (c: ToolCall): StepResult => ({ callId: c.id, tool: c.name, output: "Skipped: the task already ended.", ok: false });
-    const blocked = (c: ToolCall): StepResult => ({ callId: c.id, tool: c.name, output: `Blocked: the same ${c.name} call was repeated ${LIMITS.identicalCallLimit} times.`, ok: false });
-    const repeated = (c: ToolCall) => guard.call(c.name, c.arguments) >= LIMITS.identicalCallLimit;
-    const settle = (r: StepResult) => {
+    const blocked = (c: ToolCall): StepResult => ({
+      callId: c.id,
+      tool: c.name,
+      output: `Blocked: the same ${c.name} call was repeated ${limit} times in a row with the same result.`,
+      ok: false,
+    });
+    const tripReason = (tool: string) => `the same ${tool} call was repeated ${limit} times in a row with the same result`;
+    const settle = (c: ToolCall, r: StepResult) => {
       results.push(r);
+      if (!tripped && guard.record(c.name, c.arguments, r.output, r.ok) >= limit) tripped = tripReason(c.name);
       if (!r.ok) {
         anyError = true;
         if (!tripped && guard.error(r.tool, r.output) >= LIMITS.identicalErrorLimit) tripped = `the same ${r.tool} error happened ${LIMITS.identicalErrorLimit} times`;
@@ -1579,69 +1613,54 @@ export class RunEngine {
         while (i < calls.length && !this.isControl(calls[i]!.name) && this.deps.tools.isReadOnly(calls[i]!.name)) batch.push(calls[i++]!);
         const plan = batch.map((c): { call: ToolCall; pre: StepResult | null } => {
           if (tripped) return { call: c, pre: skipped(c) };
-          if (repeated(c)) {
-            tripped = `the same ${c.name} call was repeated ${LIMITS.identicalCallLimit} times`;
+          if (guard.wouldRepeat(c.name, c.arguments) >= limit) {
+            tripped = tripReason(c.name);
             return { call: c, pre: blocked(c) };
           }
           return { call: c, pre: null };
         });
+        const live = plan.filter((p) => !p.pre).map((p) => p.call);
+        if (live.length) await this.setAgent(a, { status: "working", activity: activityForTool(live[0]!.name), statusText: batchLine(live, a.dto.steps) }, true);
         const outs = await Promise.all(plan.map((p) => (p.pre ? Promise.resolve(p.pre) : this.runTool(a, t, p.call, signal))));
-        for (const r of outs) settle(r);
+        for (let k = 0; k < outs.length; k++) {
+          const p = plan[k]!;
+          if (p.pre) results.push(p.pre);
+          else settle(p.call, outs[k]!);
+        }
         continue;
       }
       i++;
-      if (repeated(call)) {
-        tripped = `the same ${call.name} call was repeated ${LIMITS.identicalCallLimit} times`;
+      if (guard.wouldRepeat(call.name, call.arguments) >= limit) {
+        tripped = tripReason(call.name);
         results.push(blocked(call));
         continue;
       }
       if (this.isControl(call.name)) {
-        const r = await this.runControl(a, t, call, signal, timer);
-        settle(r.result);
+        const r = await this.runControl(a, t, { ...call, arguments: redact(call.arguments) }, signal, timer);
+        settle(call, r.result);
         if (r.end) end = r.end;
       } else {
-        settle(await this.runTool(a, t, call, signal));
+        await this.announce(a, call);
+        settle(call, await this.runTool(a, t, call, signal));
       }
     }
     return { results, anyError, tripped, end };
   }
 
-  private async announce(a: LiveAgent, t: LiveTask, call: ToolCall, callId: string): Promise<void> {
-    const activity = activityForTool(call.name);
-    await this.setAgent(a, { status: "working", activity });
-    await this.emit("tool.call", { callId, tool: call.name, activity, argsPreview: clip(call.arguments, LIMITS.previewChars) }, a.dto.id, t.dto.id);
+  /** Step boundary during tools: the cat's activity and a friendly line for this call. */
+  private async announce(a: LiveAgent, call: ToolCall): Promise<void> {
+    await this.setAgent(a, { status: "working", activity: activityForTool(call.name), statusText: toolLine(call.name, call.arguments, a.dto.steps) }, true);
   }
 
-  private async settleTool(a: LiveAgent, t: LiveTask, call: ToolCall, callId: string, res: ToolResult): Promise<StepResult> {
-    const output = redact(res.output ?? "");
-    const durationMs = Math.max(0, Math.round(res.durationMs || 0));
-    if (!this.closed) {
-      try {
-        await this.repo.insertToolCall({
-          id: callId,
-          runId: this.run.id,
-          agentId: a.dto.id,
-          taskId: t.dto.id,
-          tool: call.name,
-          args: call.arguments.slice(0, LIMITS.argsStoreChars),
-          output: output.slice(0, LIMITS.toolOutputStoreChars),
-          ok: res.ok,
-          durationMs,
-          createdAt: this.ctx.clock.now(),
-        });
-      } catch (e) {
-        this.log.log("warn", "tool call log failed", { error: redact(errMsg(e)) });
-      }
-    }
-    await this.emit("tool.result", { callId, tool: call.name, ok: res.ok, summary: clip(output, LIMITS.previewChars), durationMs }, a.dto.id, t.dto.id);
-    return { callId: call.id, tool: call.name, output: this.deps.context.truncateOutput(output), ok: res.ok };
-  }
-
+  /**
+   * Workspace tools: the tools service validates, runs, redacts, inserts the
+   * tool_calls row and publishes tool.call / tool.result under its own callId
+   * (the id the UI resolves through toolCall()). The engine adds nothing to
+   * that log; it only turns the result into the model's step record.
+   */
   private async runTool(a: LiveAgent, t: LiveTask, call: ToolCall, signal: AbortSignal): Promise<StepResult> {
-    const callId = this.ctx.clock.id();
-    await this.announce(a, t, call, callId);
     const started = this.ctx.clock.now();
-    let res: ToolResult;
+    let res: ToolResult & { callId?: string };
     try {
       res = await this.deps.tools.execute(call, {
         runId: this.run.id,
@@ -1654,16 +1673,21 @@ export class RunEngine {
       });
     } catch (e) {
       if (signal.aborted) throw signal.reason;
+      this.log.log("warn", "tool execute threw", { tool: call.name, error: redact(errMsg(e)) });
       res = { output: `Tool error: ${errMsg(e)}`, ok: false, durationMs: this.ctx.clock.now() - started };
     }
     if (signal.aborted) throw signal.reason;
+    if (!res.callId) this.log.log("warn", "tools service returned no callId: the call is not inspectable", { tool: call.name });
     if (res.ok && !this.deps.tools.isReadOnly(call.name)) this.digestStale = true;
-    return this.settleTool(a, t, call, callId, res);
+    return { callId: call.id, tool: call.name, output: this.deps.context.truncateOutput(redact(res.output ?? "")), ok: res.ok };
   }
 
+  /** Control tools never reach the tools service: the engine logs and publishes them itself. */
   private async runControl(a: LiveAgent, t: LiveTask, call: ToolCall, signal: AbortSignal, timer: TaskTimer): Promise<{ result: StepResult; end?: Outcome }> {
     const callId = this.ctx.clock.id();
-    await this.announce(a, t, call, callId);
+    const activity = activityForTool(call.name);
+    await this.announce(a, call);
+    await this.emit("tool.call", { callId, tool: call.name, activity, argsPreview: clip(call.arguments, LIMITS.previewChars) }, a.dto.id, t.dto.id);
     const started = this.ctx.clock.now();
     let out: ControlOut;
     try {
@@ -1672,8 +1696,28 @@ export class RunEngine {
       if (signal.aborted) throw signal.reason;
       out = { output: `Error: ${errMsg(e)}`, ok: false };
     }
-    const result = await this.settleTool(a, t, call, callId, { output: out.output, ok: out.ok, durationMs: this.ctx.clock.now() - started });
-    return { result, end: out.end };
+    const output = redact(out.output);
+    const durationMs = Math.max(0, this.ctx.clock.now() - started);
+    if (!this.closed) {
+      try {
+        await this.repo.insertToolCall({
+          id: callId,
+          runId: this.run.id,
+          agentId: a.dto.id,
+          taskId: t.dto.id,
+          tool: call.name,
+          args: call.arguments.slice(0, LIMITS.argsStoreChars),
+          output: output.slice(0, LIMITS.toolOutputStoreChars),
+          ok: out.ok,
+          durationMs,
+          createdAt: this.ctx.clock.now(),
+        });
+      } catch (e) {
+        this.log.log("warn", "tool call log failed", { error: redact(errMsg(e)) });
+      }
+    }
+    await this.emit("tool.result", { callId, tool: call.name, ok: out.ok, summary: clip(output, LIMITS.previewChars), durationMs }, a.dto.id, t.dto.id);
+    return { result: { callId: call.id, tool: call.name, output: this.deps.context.truncateOutput(output), ok: out.ok }, end: out.end };
   }
 
   private findTask(ref: string): LiveTask | undefined {
@@ -1703,7 +1747,7 @@ export class RunEngine {
       case "note": {
         const p = parseArgs("note", noteArgs, call.arguments);
         if (!p.ok) return fail(p.error);
-        await this.setAgent(a, { statusText: clip(p.value.text, LIMITS.statusChars) });
+        await this.setAgent(a, { statusText: statusLine(p.value.text, LIMITS.statusChars) });
         return { output: "Noted.", ok: true };
       }
       case "ask_human":
@@ -1766,7 +1810,7 @@ export class RunEngine {
     await this.saveTask(t, { status: "waiting" });
     timer.stop();
     a.waiting = true;
-    await this.setAgent(a, { status: "approval", statusText: clip(question, LIMITS.statusChars) });
+    await this.setAgent(a, { status: "approval", statusText: VOICE.asking(question) });
     await this.emit("agent.say", { text: clip(question, LIMITS.sayChars), to: "human" }, a.dto.id, t.dto.id);
     this.kick();
     const answer = await abortable<string>(signal, (resolve) => {
@@ -1776,7 +1820,7 @@ export class RunEngine {
     a.waiting = false;
     timer.start();
     await this.saveTask(t, { status: "running" });
-    await this.setAgent(a, { status: "working", statusText: clip(t.dto.title, LIMITS.statusChars) });
+    await this.setAgent(a, { status: "working", statusText: VOICE.resumed(t.dto.title) });
     return { output: `The human replied: ${answer}`, ok: true };
   }
 
@@ -1823,7 +1867,7 @@ export class RunEngine {
     await this.saveTask(t, { status: "waiting" });
     timer.stop();
     a.waiting = true;
-    await this.setAgent(a, { status: "waiting", statusText: clip(`Waiting on ${ROLE_LABEL[toRole]}: ${child.dto.title}`, LIMITS.statusChars) });
+    await this.setAgent(a, { status: "waiting", statusText: VOICE.waitingOn(ROLE_LABEL[toRole], child.dto.title) });
     this.kick();
     await abortable<void>(signal, (resolve) => {
       if (isTerminal(child)) resolve();
@@ -1832,7 +1876,7 @@ export class RunEngine {
     a.waiting = false;
     timer.start();
     await this.saveTask(t, { status: "running" });
-    await this.setAgent(a, { status: "working", statusText: clip(t.dto.title, LIMITS.statusChars) });
+    await this.setAgent(a, { status: "working", statusText: VOICE.resumed(t.dto.title) });
     const who = child.dto.assigneeId ? this.agents.get(child.dto.assigneeId)?.dto.name : null;
     return {
       output: `Handoff to ${who ?? ROLE_LABEL[toRole]} (${toRole}) ended ${child.dto.status}: ${child.dto.resultSummary ?? "no summary"}`,

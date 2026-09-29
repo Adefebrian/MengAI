@@ -1,7 +1,7 @@
 // Fakes for the runs tests: a scripted LlmRouter and in-memory stand-ins for
 // every service the orchestrator depends on. Test-only; nothing imports this
 // outside *.test.ts files.
-import { ROLE_TOOLS, type AgentRole, type DecisionDTO, type LlmCallDTO, type OwnerSettings, type ProjectDTO, type Tier } from "@mengai/shared";
+import { ROLE_TOOLS, activityForTool, type AgentRole, type DecisionDTO, type LlmCallDTO, type OwnerSettings, type ProjectDTO, type Tier } from "@mengai/shared";
 import type { AppConfig, ModuleContext } from "../../core/module";
 import { LlmError, type BlobStore, type ChatRequest, type ChatResult, type LlmProvider, type LlmRouter, type ToolCall, type Usage } from "../../core/ports";
 import type {
@@ -25,6 +25,8 @@ import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLo
 import { CONTROL_TOOLS } from "./controls";
 import { createRunsModule } from "./index";
 import type { MemoryPromotion, RunsDeps } from "./ports";
+import { bounded } from "./policy";
+import { createRunsRepo } from "./repo";
 
 export interface Reply {
   text?: string;
@@ -183,17 +185,38 @@ export function fakeContext(opts: { compactWhen?: (input: ContextInput) => boole
 
 const READ_ONLY = new Set(["fs_list", "fs_read", "fs_search", "recall", "web_fetch", "web_search"]);
 
+/**
+ * Stand-in for the tools service with the same logging contract as the real
+ * one: once bound to the module context (the harness does it), every execute
+ * publishes tool.call and tool.result and inserts the tool_calls row under its
+ * own callId, with redacted args and output, and returns that callId.
+ * Redaction here goes through policy.bounded (same patterns as lib/redact).
+ */
 export function fakeTools(handler?: (call: ToolCall, ctx: ToolContext) => ToolResult | Promise<ToolResult>) {
-  const executed: Array<{ call: ToolCall; ctx: ToolContext }> = [];
-  const service: ToolsService & { executed: typeof executed } = {
+  const executed: Array<{ call: ToolCall; ctx: ToolContext; callId: string }> = [];
+  let bound: ModuleContext | null = null;
+  let n = 0;
+  const service: ToolsService & { executed: typeof executed; bind(ctx: ModuleContext): void } = {
     executed,
+    bind(ctx) {
+      bound = ctx;
+    },
     specsFor: (role) => ROLE_TOOLS[role].map((name) => ({ name, description: name, parameters: { type: "object" } })),
     isControl: (n) => (CONTROL_TOOLS as readonly string[]).includes(n),
     isReadOnly: (n) => READ_ONLY.has(n),
     async execute(call, ctx) {
-      executed.push({ call, ctx });
-      if (handler) return handler(call, ctx);
-      return { output: `ok ${call.name}`, ok: true, durationMs: 4 };
+      const callId = `tc_${++n}`;
+      executed.push({ call, ctx, callId });
+      const who = { runId: ctx.runId, agentId: ctx.agentId, taskId: ctx.taskId };
+      const argsJson = bounded(call.arguments, 50_000);
+      if (bound) await bound.events.publish({ type: "tool.call", ...who, data: { callId, tool: call.name, activity: activityForTool(call.name), argsPreview: bounded(argsJson, 160) } });
+      const res = handler ? await handler(call, ctx) : { output: `ok ${call.name}`, ok: true, durationMs: 4 };
+      const output = bounded(res.output, 200_000);
+      if (bound) {
+        await createRunsRepo(bound.db).insertToolCall({ id: callId, ...who, tool: call.name, args: argsJson, output, ok: res.ok, durationMs: res.durationMs, createdAt: bound.clock.now() });
+        await bound.events.publish({ type: "tool.result", ...who, data: { callId, tool: call.name, ok: res.ok, summary: bounded(output, 160), durationMs: res.durationMs } });
+      }
+      return { ...res, output, callId };
     },
   };
   return service;
@@ -450,6 +473,7 @@ export async function harness(opts: HarnessOptions) {
   const ctx: ModuleContext = { config: CONFIG, db, kv: memoryKv(), blob: noBlob, vault: memoryVault(), clock, logger: silentLogger, events };
   const llm = scriptedRouter(opts.script);
   const tools = opts.tools ?? fakeTools();
+  tools.bind(ctx);
   const usage = fakeUsage();
   const memory = fakeMemory();
   const decisions = opts.decisions ?? fakeDecisions();

@@ -7,6 +7,7 @@ import { createTasksArgs, parseArgs, resolveDeps, submitReviewArgs } from "./con
 import { HEURISTIC, RepeatGuard, estimatePlan, heuristicTaskCount, moodFor, stableArgs, type MoodInput } from "./policy";
 import { createRunsRepo, emptyUsage } from "./repo";
 import { fakeContext, harness } from "./testkit";
+import { STATUS_MAX, batchLine, commandNoun, pathNoun, thinkingLine, toolLine } from "./voice";
 
 function app(routes: Hono) {
   const a = new Hono();
@@ -66,8 +67,9 @@ describe("runs routes", () => {
     res = await api.request("/api/runs/unknown-run");
     expect(res.status).toBe(404);
 
+    // plan (note, finish) then the report to the owner
     res = await api.request(`/api/runs/${run.id}/calls`);
-    expect(((await res.json()) as unknown[]).length).toBe(2);
+    expect(((await res.json()) as unknown[]).length).toBe(3);
 
     const noteCall = h.events.ofType("tool.call")[0]!;
     res = await api.request(`/api/runs/${run.id}/tools/${noteCall.data.callId}`);
@@ -192,14 +194,52 @@ describe("runs policy", () => {
     expect(moodFor({ ...base, cleanSteps: 6, runElapsedMs: 50 * 60_000 })).toBe("focused");
   });
 
-  test("repeat guard counts identical calls regardless of key order", () => {
+  test("repeat guard counts identical consecutive calls with identical results, regardless of key order", () => {
     const g = new RepeatGuard();
     expect(stableArgs('{"b":1,"a":{"d":2,"c":3}}')).toBe('{"a":{"c":3,"d":2},"b":1}');
-    expect(g.call("fs_read", '{"a":1,"b":2}')).toBe(1);
-    expect(g.call("fs_read", '{"b":2,"a":1}')).toBe(2);
-    expect(g.call("fs_read", '{"a":1}')).toBe(1);
+    expect(g.wouldRepeat("fs_read", '{"a":1,"b":2}')).toBe(1);
+    expect(g.record("fs_read", '{"a":1,"b":2}', "same", true)).toBe(1);
+    expect(g.wouldRepeat("fs_read", '{"b":2,"a":1}')).toBe(2);
+    expect(g.record("fs_read", '{"b":2,"a":1}', "same", true)).toBe(2);
+    expect(g.wouldRepeat("fs_read", '{"a":1,"b":2}')).toBe(3);
+    // a different result restarts the streak
+    expect(g.record("fs_read", '{"a":1,"b":2}', "changed", true)).toBe(1);
+    // a different call in between restarts it too
+    expect(g.record("fs_edit", '{"path":"a"}', "ok", true)).toBe(1);
+    expect(g.wouldRepeat("fs_read", '{"a":1,"b":2}')).toBe(1);
+    expect(g.record("shell_run", '{"command":"bun test"}', "1 fail", false)).toBe(1);
+    expect(g.record("shell_run", '{"command":"bun test"}', "1 fail", true)).toBe(1);
     expect(g.error("shell_run", "boom")).toBe(1);
     expect(g.error("shell_run", "boom ")).toBe(2);
+  });
+
+  test("cat voice status lines: friendly nouns, no secrets, at most 80 characters", () => {
+    expect(STATUS_MAX).toBe(80);
+    expect(pathNoun("bun.lock")).toBe("the lockfile");
+    expect(pathNoun("apps/web/src/pages/settings.tsx")).toBe("the settings page");
+    expect(pathNoun("src/routes/billing/index.tsx")).toBe("the billing page");
+    expect(pathNoun("src/lib/format.ts")).toBe("format.ts");
+    expect(pathNoun(".")).toBe("the workspace");
+    expect(commandNoun("OPENAI_API_KEY=sk-proj-" + "a".repeat(30) + " bun test --watch")).toBe("bun test");
+    expect(commandNoun("git -C . status")).toBe("git");
+    expect(toolLine("shell_run", JSON.stringify({ command: "bun test" }))).toBe("Watching bun test like a bird at the window");
+    expect(toolLine("fs_read", JSON.stringify({ path: "bun.lock" }))).toBe("Sniffing through the lockfile");
+    expect(toolLine("fs_write", JSON.stringify({ path: "src/pages/settings.tsx", content: "password: hunter22" }))).toBe("Kneading the settings page");
+    expect(toolLine("web_fetch", JSON.stringify({ url: "https://docs.example.com/a?token=abc" }))).toBe("Peeking out the window at docs.example.com");
+    expect(batchLine([{ name: "fs_read", arguments: '{"path":"a"}' }, { name: "fs_read", arguments: '{"path":"b"}' }])).toBe("Sniffing through 2 files");
+    const long = "x".repeat(500);
+    for (const line of [
+      toolLine("fs_read", JSON.stringify({ path: `${long}.ts` })),
+      toolLine("fs_search", JSON.stringify({ pattern: long })),
+      toolLine("note", JSON.stringify({ text: long })),
+      toolLine("some_future_tool", "{}"),
+      thinkingLine("engineer", long, 3, false),
+      thinkingLine("reviewer", "Review: Build feature", 0, false),
+    ]) {
+      expect(line.length).toBeLessThanOrEqual(80);
+    }
+    expect(thinkingLine("reviewer", "Review: Build feature", 0, false)).toBe("Eyeing Build feature closely");
+    expect(toolLine("note", JSON.stringify({ text: "key sk-proj-" + "b".repeat(30) }))).not.toContain("bbbbbbbb");
   });
 
   test("estimate math", () => {
