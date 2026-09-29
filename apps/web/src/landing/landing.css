@@ -756,6 +756,16 @@
   color: var(--color-ink-subtle);
 }
 
+/* The base JAL button paints every enabled button with the primary ink on
+   hover and press. Step buttons are text rows, so they opt out of that fill
+   in every state; only the inactive rows get their own faint hover tint. */
+.lp .lp-step-button:enabled:hover,
+.lp .lp-step-button:enabled:active {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-ink);
+}
+
 @media (hover: hover) {
   .lp .lp-step:not([data-active]) .lp-step-button:hover {
     background: color-mix(in oklab, var(--color-ink) 4%, transparent);

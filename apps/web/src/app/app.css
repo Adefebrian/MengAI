@@ -327,6 +327,12 @@ button.app-check[aria-checked="true"] .app-check-box {
   background: var(--color-ink);
   border-color: var(--color-ink);
 }
+/* Opt out of the base button's ink fill on hover (button:enabled:hover). */
+button.app-check:enabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-ink);
+}
 @media (hover: hover) {
   button.app-check:enabled:hover .app-check-box {
     border-color: var(--color-ink);
