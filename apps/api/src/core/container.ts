@@ -220,7 +220,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
     const projects = createProjectsModule(ctx, { workspace: workspace.service });
     const context = createContextModule(ctx);
     const llm: LlmRouter = demoOpts
-      ? createDemoRouter({ charter: (role) => context.service.charter(role), paceMs: demoOpts.paceMs })
+      ? createDemoRouter({ charter: (role) => context.service.charter(role), paceMs: demoOpts.paceMs, securityScan: true })
       : providers.service.llm;
     const memory = createMemoryModule(ctx, { llm, decisions: jev.service, usage: usage.service });
     const assets = createAssetsModule(ctx, {
@@ -257,6 +257,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       killswitch: namespacedKillSwitch(killswitch, "orchestrator"),
       automation: automation ?? automationUnavailable,
       workspace: workspace.service,
+      eventLog: events.service,
     });
     killswitch.register("runner", () => runner.killAll());
     const evals = createEvalsModule(ctx, { context: context.service, tools: tools.service });

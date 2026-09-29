@@ -258,8 +258,8 @@ describe("container", () => {
       expect(status).toBe("done");
       expect(snap.run.goal).toBe(DEMO_GOAL);
 
-      // six cats, one per role
-      expect(snap.agents.map((a) => a.role).sort()).toEqual(["designer", "engineer", "lead", "qa", "researcher", "reviewer"]);
+      // seven cats, one per role
+      expect(snap.agents.map((a) => a.role).sort()).toEqual(["designer", "engineer", "lead", "qa", "researcher", "reviewer", "security"]);
       const byTitle = new Map(snap.tasks.map((t) => [t.title, t] as const));
       for (const title of ["Plan the work", "Scaffold the landing page", "Draft the landing copy", "Wire the copy into the page", "Smoke check the page", "Write the project README"]) {
         expect(byTitle.get(title)?.status).toBe("done");
