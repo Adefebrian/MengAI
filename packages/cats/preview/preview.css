@@ -1,5 +1,6 @@
-/* Cats preview only: the board grid, the pose index, the rows, the sizes.
-   Tokens only, same law as cats.css. */
+/* Cats preview only: the board grid, the scenario index, the rows, the sizes.
+   Tokens only, same law as cats.css. Every track is minmax(0, 1fr) and
+   every child min-width 0, so nothing leaves its cell at 320. */
 html,
 body {
   overflow-x: clip;
@@ -15,6 +16,11 @@ body {
   min-width: 0;
 }
 
+.pv-step {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .pv-crew {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -22,14 +28,14 @@ body {
   min-width: 0;
 }
 
-.pv-poses {
+.pv-scenes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-24px) var(--space-16px);
   min-width: 0;
 }
 
-.pv-pose {
+.pv-scene {
   display: flex;
   flex-direction: column;
   align-items: start;
@@ -38,7 +44,13 @@ body {
   margin: 0;
 }
 
-.pv-pose-text,
+/* Tiles read from the start edge: the still label sits under the cat, left aligned. */
+.pv-scene .cat {
+  align-items: flex-start;
+  text-align: start;
+}
+
+.pv-scene-text,
 .pv-row-text {
   display: flex;
   flex-direction: column;
@@ -51,6 +63,7 @@ body {
   line-height: var(--line-0);
   font-weight: var(--weight-medium);
   color: var(--color-ink);
+  overflow-wrap: anywhere;
 }
 
 .pv-lists {
@@ -114,8 +127,8 @@ body {
   .pv-crew {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .pv-poses {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .pv-scenes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -129,7 +142,7 @@ body {
   .pv-crew {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
-  .pv-poses {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+  .pv-scenes {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }

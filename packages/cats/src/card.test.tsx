@@ -73,6 +73,26 @@ describe("CatCard", () => {
     }
   });
 
+  test("near the budget limit the meter says so and the cat turns tired", () => {
+    mounted = mount(<CatCard {...card({ energy: 0.92 })} />);
+    expect(mounted.host.querySelector(".cat-card-meter-low")?.textContent).toBe("Running low");
+    expect(mounted.host.querySelector(".cat-card")?.getAttribute("data-energy")).toBe("low");
+    expect(mounted.host.querySelector(".cat")?.getAttribute("data-energy")).toBe("low");
+    mounted.render(<CatCard {...card({ energy: 0.4 })} />);
+    expect(mounted.host.querySelector(".cat-card-meter-low")).toBeNull();
+    expect(mounted.host.querySelector(".cat")?.hasAttribute("data-energy")).toBe(false);
+  });
+
+  test("the cat keeps its reserved square: the card carries its size", () => {
+    for (const size of [48, 64, 96, 160] as const) {
+      mounted = mount(<CatCard {...card({ size })} />);
+      expect(mounted.host.querySelector(".cat-card")?.getAttribute("data-size")).toBe(String(size));
+      expect(mounted.host.querySelector(".cat-card-media svg")?.getAttribute("width")).toBe(String(size));
+      mounted.unmount();
+      mounted = null;
+    }
+  });
+
   test("selectable: one button hit target, selection as a pressed state", () => {
     let picks = 0;
     mounted = mount(<CatCard {...card({ onSelect: () => picks++, selected: true, interactive: true })} />);

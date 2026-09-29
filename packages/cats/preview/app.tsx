@@ -1,83 +1,43 @@
-// Cats preview: the crew board on a scripted timeline (with one handoff),
-// every pose live, moods and statuses, the four sizes, and the reduced
-// motion stills. Composed from the JAL Core kit and AppShell.
+// Cats preview: the crew board on a scripted timeline that cycles every
+// scenario (each role plays its own work beats, with handoffs, a catch, an
+// error, a stop, approvals, done, and a budget running low), the scenario
+// index live, mood and status, the four sizes, and the reduced motion
+// stills. Composed from the JAL Core kit and AppShell.
 import { useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell, Masthead, Page, Section, SectionHead } from "@mengai/ui";
-import {
-  ACTIVITIES,
-  ACTIVITY_LABEL,
-  AGENT_STATUSES,
-  MOODS,
-  ROLE_LABEL,
-  STATUS_LABEL,
-  activityForStatus,
-  type Activity,
-  type AgentStatus,
-  type Mood,
-} from "@mengai/shared";
+import { AGENT_STATUSES, MOODS, ROLE_LABEL, STATUS_LABEL, activityForStatus, type AgentStatus, type Mood } from "@mengai/shared";
 import { Cat, CatCard, type CatSize } from "../src/index";
-import { CREW, TICK_MS, frame } from "./timeline";
+import { CatFigure } from "../src/cat";
+import { CREW, SCENARIOS, STEPS, TICK_MS, catLabel, frame, statusFor, type Scenario } from "./timeline";
 
 let reducedAtStart = false;
 
 const destinations = [
   { id: "crew", label: "Crew", href: "#crew" },
-  { id: "poses", label: "Poses", href: "#poses" },
+  { id: "scenarios", label: "Scenes", href: "#scenarios" },
   { id: "moods", label: "Moods", href: "#moods" },
   { id: "stills", label: "Stills", href: "#stills" },
 ];
-
-type PoseKey = Activity | "stopped";
-const POSES: PoseKey[] = [...ACTIVITIES, "stopped"];
-
-const NOTE: Record<PoseKey, string> = {
-  rest: "Breathes, tail sways, idle quirks",
-  think: "Paw to chin, slow head tilt",
-  plan: "Checks off the clipboard",
-  code: "Types with alternating paws",
-  run: "Terminal lines scroll",
-  read: "Head follows the lines",
-  review: "Magnifier sweeps the page",
-  design: "Brush strokes appear",
-  research: "Spyglass scan",
-  scan: "Shield up, looks around",
-  automate: "Moves the mouse",
-  handoff: "Carries the task card",
-  ask: "Paw raised, calling you",
-  wait: "Tail wrapped, tip flicks",
-  celebrate: "Stretches, then curls up",
-  stopped: "Lies down, dimmed",
-};
 
 const MOOD_NOTE: Record<Mood, string> = {
   calm: "Relaxed eyes, the base tempo",
   focused: "Narrowed eyes, a touch faster",
   proud: "Soft eyes and a smile",
-  frustrated: "Tilted lids, ears back, quicker",
+  frustrated: "Tilted lids, ears back, quicker, fail stamps",
   tired: "Heavy lids, drooped ears, slower",
 };
 
 const STATUS_NOTE: Record<AgentStatus, string> = {
   idle: "Rests and plays quirks",
   thinking: "Thinks it over",
-  working: "Shows the tool in use",
-  waiting: "Waits for a teammate",
-  approval: "Ears up, asks you",
-  done: "Curls up content",
-  error: "Ears back, one shake",
+  working: "Plays its role's work beat",
+  waiting: "Waits, glancing at the blocker",
+  approval: "Ears up, raises the flag",
+  done: "Stretches, curls up content",
+  error: "Ears back, one shake, a warning",
   stopped: "Lies down, dimmed",
 };
-
-function poseStatus(p: PoseKey): AgentStatus {
-  return p === "stopped" ? "stopped" : p === "rest" ? "idle" : p === "wait" ? "waiting" : p === "ask" ? "approval" : p === "celebrate" ? "done" : p === "think" ? "thinking" : "working";
-}
-function poseActivity(p: PoseKey): Activity {
-  return p === "stopped" ? "rest" : p;
-}
-function poseName(p: PoseKey): string {
-  return p === "stopped" ? "Stopped" : ACTIVITY_LABEL[p];
-}
 
 function Crew() {
   const [tick, setTick] = useState(0);
@@ -94,13 +54,16 @@ function Crew() {
       <SectionHead
         id="crew-title"
         title="The crew at work"
-        lead="Kopi hands the settings task to Mochi, the rest cycle through every activity and mood. Pick a cat to select it."
+        lead="Kopi plans and hands the settings task to Mochi, Mochi builds and tests it for Onde to review, and the rest play their own roles. Pick a cat to select it."
         action={
           <button type="button" className="btn btn-secondary" aria-pressed={!playing} onClick={() => setPlaying((p) => !p)}>
             {playing ? "Pause the timeline" : "Play the timeline"}
           </button>
         }
       />
+      <p className="pv-step kit-full kit-meta" aria-live="polite">
+        Step {(tick % STEPS) + 1} of {STEPS}
+      </p>
       <div className="pv-crew kit-full">
         {cats.map((c, i) => (
           <CatCard
@@ -116,39 +79,66 @@ function Crew() {
   );
 }
 
-function PoseTile({ pose, still }: { pose: PoseKey; still?: boolean }) {
-  const m = CREW[POSES.indexOf(pose) % CREW.length]!;
-  const status = poseStatus(pose);
-  const activity = poseActivity(pose);
+/** A scenario cat. `from` alternates the scenario with its opening state, to show a transition. */
+function SceneCat({ s, still, size = 96 }: { s: Scenario; still?: boolean; size?: CatSize }) {
+  const m = CREW.find((c) => c.role === s.role)!;
+  const [early, setEarly] = useState(Boolean(s.from) && !still && !reducedAtStart);
+  useEffect(() => {
+    if (!s.from || still || reducedAtStart) return;
+    const timer = setTimeout(() => setEarly((e) => !e), early ? 2400 : 5200);
+    return () => clearTimeout(timer);
+  }, [s.from, still, early]);
+  const activity = early && s.from ? s.from : s.activity;
+  const status = early ? statusFor(activity) : (s.status ?? statusFor(s.activity));
   return (
-    <figure className="pv-pose">
-      <Cat
-        look={{ coat: m.coat, seed: m.seed }}
-        role={m.role}
-        status={status}
-        activity={activity}
-        mood="calm"
-        label={`${m.name}, ${ROLE_LABEL[m.role]}, ${poseName(pose).toLowerCase()}`}
-        size={96}
-        still={still}
-      />
-      {still ? null : (
-        <figcaption className="pv-pose-text">
-          <span className="pv-name">{poseName(pose)}</span>
-          <span className="kit-meta">{NOTE[pose]}</span>
+    <CatFigure
+      look={{ coat: m.coat, seed: m.seed }}
+      role={s.role}
+      status={status}
+      activity={activity}
+      mood={s.mood ?? "calm"}
+      label={`${catLabel(m, status, activity)}: ${s.name.toLowerCase()}`}
+      size={size}
+      still={still}
+      energy={s.energy}
+    />
+  );
+}
+
+/** Live: the cat, then its name and what it does. Still: the name first, the cat keeps its own label under it. */
+function SceneTile({ s, still }: { s: Scenario; still?: boolean }) {
+  if (still) {
+    return (
+      <figure className="pv-scene">
+        <figcaption className="pv-scene-text">
+          <span className="pv-name">{s.name}</span>
         </figcaption>
-      )}
+        <SceneCat s={s} still />
+      </figure>
+    );
+  }
+  return (
+    <figure className="pv-scene">
+      <SceneCat s={s} />
+      <figcaption className="pv-scene-text">
+        <span className="pv-name">{s.name}</span>
+        <span className="kit-meta">{s.note}</span>
+      </figcaption>
     </figure>
   );
 }
 
-function Poses() {
+function Scenarios() {
   return (
-    <Section id="poses" tone="layer" labelledBy="poses-title" composition="custom" variant="pose-index">
-      <SectionHead id="poses-title" title="A pose for every activity" lead="Each activity has its own pose, prop, and loop. The role prop sits aside while a cat rests." />
-      <div className="pv-poses kit-full">
-        {POSES.map((p) => (
-          <PoseTile key={p} pose={p} />
+    <Section id="scenarios" tone="layer" labelledBy="scenarios-title" composition="custom" variant="scenario-index">
+      <SectionHead
+        id="scenarios-title"
+        title="Every scenario has its own beat"
+        lead="Every role plays its own work for each activity, then holds the result. At most eight cats play a full beat at once; the rest breathe and hold their pose."
+      />
+      <div className="pv-scenes kit-full">
+        {SCENARIOS.map((s) => (
+          <SceneTile key={s.key} s={s} />
         ))}
       </div>
     </Section>
@@ -168,7 +158,7 @@ function Row({ cat, name, note }: { cat: ReactNode; name: string; note: string }
 }
 
 function MoodsAndStatuses() {
-  const gray = CREW[4]!;
+  const gray = CREW[2]!;
   return (
     <Section id="moods" tone="base" labelledBy="moods-title" composition="custom" variant="rows">
       <SectionHead id="moods-title" title="Mood and status" lead="Mood changes the face and the tempo, never the pose. Status adds its own layer on top." />
@@ -220,14 +210,14 @@ function MoodsAndStatuses() {
 const SIZES: CatSize[] = [48, 64, 96, 160];
 
 function Sizes() {
-  const m = CREW[2]!;
+  const m = CREW[1]!;
   const [key, setKey] = useState(0);
   return (
     <Section id="sizes" tone="layer" labelledBy="sizes-title" composition="custom" variant="size-row">
       <SectionHead
         id="sizes-title"
         title="Readable from 48 to 160"
-        lead="One silhouette at every size. Tap a cat to see it react, or celebrate to play the one-shot."
+        lead="One silhouette and one line weight at every size. Tap a cat to see it react, or celebrate to play the one-shot."
         action={
           <button type="button" className="btn btn-secondary" onClick={() => setKey((k) => k + 1)}>
             Celebrate
@@ -259,10 +249,10 @@ function Sizes() {
 function Stills() {
   return (
     <Section id="stills" tone="base" labelledBy="stills-title" composition="custom" variant="still-index">
-      <SectionHead id="stills-title" title="Still, for reduced motion" lead="With reduced motion or the still prop, each activity keeps a distinct pose and says what it is." />
-      <div className="pv-poses kit-full">
-        {POSES.map((p) => (
-          <PoseTile key={p} pose={p} still />
+      <SectionHead id="stills-title" title="Still, for reduced motion" lead="With reduced motion or the still prop, every scenario keeps its own frame and says what it is." />
+      <div className="pv-scenes kit-full">
+        {SCENARIOS.map((s) => (
+          <SceneTile key={s.key} s={s} still />
         ))}
       </div>
     </Section>
@@ -277,7 +267,7 @@ function Preview() {
           id="top"
           variant="left"
           title="Eight cats, one crew."
-          lead="Every agent is a living cat. Its pose shows what it is doing, its face shows how it is going."
+          lead="Every agent is a living cat. What it does shows its work, its face shows how it is going."
           proof={
             <ul className="pv-coats" aria-label="The eight coats">
               {CREW.map((m) => (
@@ -298,7 +288,7 @@ function Preview() {
           }
         />
         <Crew />
-        <Poses />
+        <Scenarios />
         <MoodsAndStatuses />
         <Sizes />
         <Stills />

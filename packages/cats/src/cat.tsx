@@ -1,19 +1,25 @@
 // Cat: the living cat character. One flat SVG rig (rig.tsx) in a square
 // stage of the requested size; nothing ever leaves that box. Motion layers:
-//   status    data-status (error ears back plus one shake, stopped lies down dimmed)
-//   activity  the pose and its loop, held ACTIVITY_MIN_DWELL_MS, crossfaded over --dur-300
-//   mood      data-mood (expression and loop tempo only)
+//   beat      role x activity: its own art and loop (poses.ts beatFor), held
+//             ACTIVITY_MIN_DWELL_MS; between sitting beats the paws and head
+//             tween and the art crossfades over --dur-300
+//   status    error: ears back, one shake, a warning shape; stopped lies down dimmed
+//   mood      data-mood (expression and tempo; a frustrated cat stamps fail)
+//   energy    data-energy="low" from 85% of the budget: heavy lids, slower, nodding off
 //   quirks    seeded one-shots every 8 to 20 s while idle or waiting
+//   calm      data-calm past the eighth live cat on screen: breath and blink only
+//   catch     leaving wait for work: a task card flies into the paws once
 //   pointer   head and eyes follow the pointer, tap and focus reactions (interactive)
 //   celebrate one-shot from celebrateKey: tail up, a small hop, paw prints under 900 ms
-// Reduced motion and `still` render the static pose for the activity with
-// its label under the cat; no animation class is ever set then.
+// Reduced motion and `still` render the static pose for the beat with its
+// label under the cat; no animation class is ever set then.
 import { useEffect, useId, useRef, useState, type CSSProperties, type Ref, type RefObject } from "react";
 import { ACTIVITY_MIN_DWELL_MS } from "@mengai/shared";
 import type { CatProps } from "./contract";
-import { CELEBRATE_MS, CROSSFADE_MS, TAP_MS, useDwell, useOffscreen, usePointerFollow, useQuirks, useReducedMotion } from "./motion";
-import { QUIRK_POSES, coatOf, phaseMs, poseFor, stillCaption, type Pose } from "./poses";
-import { Cushion, PawPrints, Rig } from "./rig";
+import { CELEBRATE_MS, CROSSFADE_MS, TAP_MS, useCalm, useCatch, useDwell, useOffscreen, usePointerFollow, useQuirks, useReducedMotion } from "./motion";
+import { QUIRK_POSES, beatFor, coatOf, isLowEnergy, phaseMs, poseFor, stillCaption, type Pose } from "./poses";
+import { CatchCard, Warning } from "./props";
+import { Cushion, PawPrints, Rig, rigKind } from "./rig";
 
 export interface CatFigureProps extends CatProps {
   /** Draw the flat cushion under the cat (CatCard). */
@@ -22,9 +28,11 @@ export interface CatFigureProps extends CatProps {
   caption?: boolean;
   /** "figure" never renders a button, for a cat inside a larger hit target (CatCard). */
   host?: "auto" | "figure";
+  /** 0..1 share of the run budget used (CatCard): from 85% the cat runs low. */
+  energy?: number;
 }
 
-/** Holds the previous pose for one crossfade after the pose changes, while motion is allowed. */
+/** Holds the previous pose for one transition after the pose changes, while motion is allowed. */
 function useCrossfade(pose: Pose, live: boolean): Pose | null {
   const [state, setState] = useState<{ pose: Pose; leaving: Pose | null; n: number }>({ pose, leaving: null, n: 0 });
   let current = state;
@@ -97,24 +105,32 @@ export function CatFigure(props: CatFigureProps) {
     cushion = false,
     caption = true,
     host = "auto",
+    energy,
   } = props;
   const reduced = useReducedMotion();
   const live = !still && !reduced;
   const pose = useDwell(poseFor(status, activity), ACTIVITY_MIN_DWELL_MS);
+  const beat = beatFor(role, pose);
   const leaving = useCrossfade(pose, live);
   const rootRef = useRef<HTMLElement | null>(null);
   const offscreen = useOffscreen(rootRef, live);
-  const quirk = useQuirks(live && (status === "idle" || status === "waiting") && QUIRK_POSES.has(pose), look.seed, offscreen);
+  const calm = useCalm(rootRef, live && offscreen.onscreen);
+  const busy = live && !calm;
+  const quirk = useQuirks(busy && (status === "idle" || status === "waiting") && QUIRK_POSES.has(pose), look.seed, offscreen.ref);
   usePointerFollow(rootRef, live && interactive);
   const tapped = useTap(rootRef, live && interactive);
   const celebrating = useCelebrate(celebrateKey, live);
+  const catching = useCatch(pose, busy);
   const clipBase = idPart(useId());
+  const low = isLowEnergy(energy);
 
   const className = [
     "cat",
     live ? "cat--live" : null,
+    busy ? "cat--busy" : null,
     quirk ? `cat-quirk-${quirk}` : null,
     celebrating ? "cat-celebrate" : null,
+    catching ? "cat-catch" : null,
     tapped ? "cat-react-tap" : null,
   ]
     .filter(Boolean)
@@ -129,22 +145,42 @@ export function CatFigure(props: CatFigureProps) {
     "data-cat-status": status,
     "data-activity": activity,
     "data-pose": pose,
+    "data-beat": beat,
     "data-mood": mood,
     "data-motion": live ? "live" : "still",
+    "data-energy": low ? "low" : undefined,
+    "data-calm": calm ? "" : undefined,
     style: { "--cat-phase": `${phaseMs(look.seed)}ms` } as CSSProperties,
   };
 
+  // Sitting to sitting: one rig, parts tween. Sitting and lying: two rigs crossfade.
+  const sameKind = leaving !== null && rigKind(leaving) === rigKind(pose);
+  const leavingBeat = leaving ? beatFor(role, leaving) : null;
+
   const stage = (
     <span className="cat-stage">
-      <svg className="cat-svg" viewBox="0 0 160 160" aria-hidden="true" focusable="false">
+      <svg className="cat-svg" viewBox="0 0 160 160" width={size} height={size} aria-hidden="true" focusable="false">
         {cushion ? <Cushion /> : null}
-        {leaving ? <Rig key={leaving} pose={leaving} role={role} clipBase={clipBase} live={live} fade="out" /> : null}
-        <Rig key={pose} pose={pose} role={role} clipBase={clipBase} live={live} fade={leaving ? "in" : undefined} />
+        {leaving && !sameKind ? (
+          <Rig key={rigKind(leaving)} pose={leaving} beat={leavingBeat!} role={role} clipBase={clipBase} live={live} fade="out" />
+        ) : null}
+        <Rig
+          key={rigKind(pose)}
+          pose={pose}
+          beat={beat}
+          leaving={sameKind ? leavingBeat : null}
+          role={role}
+          clipBase={clipBase}
+          live={live}
+          fade={leaving && !sameKind ? "in" : undefined}
+        />
+        {status === "error" ? <Warning /> : null}
+        {catching ? <CatchCard key={catching} /> : null}
         {celebrating ? <PawPrints key={celebrating} /> : null}
       </svg>
     </span>
   );
-  const words = !live && caption && size >= 96 ? <span className="cat-caption">{stillCaption(pose)}</span> : null;
+  const words = !live && caption && size >= 96 ? <span className="cat-caption">{stillCaption(pose, status)}</span> : null;
 
   if (onSelect && host === "auto") {
     return (

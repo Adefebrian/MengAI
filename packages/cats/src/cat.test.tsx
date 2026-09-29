@@ -14,6 +14,9 @@ import {
   type Mood,
 } from "@mengai/shared";
 import { Cat, type CatProps } from "./index";
+import { CatFigure } from "./cat";
+import { CATCH_MS, LIVE_CAP } from "./motion";
+import { activityWords } from "./poses";
 import { emulateReducedMotion, fakeIntersection, motionClasses, mount, wait, type Mounted } from "./test-kit";
 
 function props(over: Partial<CatProps> = {}): CatProps {
@@ -88,23 +91,46 @@ describe("every status, activity and mood renders", () => {
 });
 
 describe("still and reduced motion", () => {
-  test("still renders a distinct static pose per activity, with the label text", () => {
-    const shapes = new Map<string, Activity>();
-    for (const activity of ACTIVITIES) {
-      const html = renderToStaticMarkup(<Cat {...props({ activity, status: "working", still: true })} />);
-      const host = document.createElement("div");
-      host.innerHTML = html;
-      expect(motionClasses(host)).toEqual([]);
-      expect(host.querySelector(".cat")?.getAttribute("data-motion")).toBe("still");
-      expect(host.querySelector(".cat-caption")?.textContent).toBe(ACTIVITY_LABEL[activity]);
-      expect(host.querySelector(".cat")?.getAttribute("aria-label")).toBe("Kopi, Engineer, writing code");
-      const svg = host.querySelector("svg")!;
-      svg.querySelectorAll("[data-pose]").forEach((el) => el.removeAttribute("data-pose"));
-      const drawn = svg.innerHTML;
-      expect(shapes.has(drawn)).toBe(false);
-      shapes.set(drawn, activity);
+  test("still renders a distinct static frame for every role x activity, with the label text", () => {
+    const frames = new Map<string, string>();
+    for (const role of AGENT_ROLES) {
+      for (const pose of [...ACTIVITIES, "stopped"] as const) {
+        const status: AgentStatus = pose === "stopped" ? "stopped" : "working";
+        const activity: Activity = pose === "stopped" ? "rest" : pose;
+        const html = renderToStaticMarkup(<Cat {...props({ role, activity, status, still: true })} />);
+        const host = document.createElement("div");
+        host.innerHTML = html;
+        expect(motionClasses(host)).toEqual([]);
+        expect(host.querySelector(".cat")?.getAttribute("data-motion")).toBe("still");
+        expect(host.querySelector(".cat-caption")?.textContent).toBe(pose === "stopped" ? "Stopped" : activityWords(pose));
+        expect(host.querySelector(".cat")?.getAttribute("aria-label")).toBe("Kopi, Engineer, writing code");
+        const svg = host.querySelector("svg")!;
+        // compare only what is drawn: drop the hidden parts and the naming attributes
+        svg.querySelectorAll(".cat-aside:not([data-on]), .cat-arm:not([data-on]), .cat-tail:not([data-on]), .cat-tail-wrap:not([data-on]), .cat-q-card").forEach((el) => el.remove());
+        svg.querySelectorAll("[data-pose], [data-beat]").forEach((el) => {
+          el.removeAttribute("data-pose");
+          el.removeAttribute("data-beat");
+        });
+        const drawn = svg.innerHTML.replace(/ id="[^"]*"/g, "").replace(/url\(#[^)]*\)/g, "url()");
+        const key = `${role}/${pose}`;
+        expect({ key, same: frames.get(drawn) ?? null }).toEqual({ key, same: null });
+        frames.set(drawn, key);
+      }
     }
-    expect(shapes.size).toBe(ACTIVITIES.length);
+    expect(frames.size).toBe(AGENT_ROLES.length * (ACTIVITIES.length + 1));
+  });
+
+  test("an error still shows the warning shape and says so", () => {
+    mounted = mount(<Cat {...props({ status: "error", activity: "run", still: true })} />);
+    expect(mounted.host.querySelector(".cat-warning")).not.toBeNull();
+    expect(mounted.host.querySelector(".cat-caption")?.textContent).toBe("Hit an error");
+  });
+
+  test("the svg carries its own size, so it never depends on CSS for its box", () => {
+    for (const size of [48, 64, 96, 160] as const) {
+      const html = renderToStaticMarkup(<Cat {...props({ size })} />);
+      expect(html).toContain(`width="${size}" height="${size}"`);
+    }
   });
 
   test("the stopped still lies down with its words", () => {
@@ -150,24 +176,41 @@ describe("still and reduced motion", () => {
   });
 });
 
-describe("activity dwell and crossfade", () => {
-  test("a new activity waits out the dwell, then crossfades", async () => {
+describe("activity dwell, tween and crossfade", () => {
+  test("a new activity waits out the dwell, then the parts tween and the art crossfades", async () => {
     restore = emulateReducedMotion(false);
     mounted = mount(<Cat {...props({ activity: "code" })} />);
     const root = () => mounted!.host.querySelector(".cat")!;
+    const pawStyle = () => (mounted!.host.querySelector(".cat-paw-r") as SVGElement).getAttribute("style");
+    const before = pawStyle();
     mounted.render(<Cat {...props({ activity: "read" })} />);
     mounted.render(<Cat {...props({ activity: "run" })} />);
     expect(root().getAttribute("data-pose")).toBe("code");
     await wait(ACTIVITY_MIN_DWELL_MS + 60);
     expect(root().getAttribute("data-pose")).toBe("run");
+    expect(root().getAttribute("data-beat")).toBe("run-stamp");
+    // one sitting rig stays mounted, its paws move to the new place
+    expect(mounted.host.querySelectorAll(".cat-rig").length).toBe(1);
+    expect(pawStyle()).not.toBe(before);
+    const out = mounted.host.querySelector('.cat-layer[data-fade="out"]');
+    const into = mounted.host.querySelector('.cat-layer[data-fade="in"]');
+    expect(out).not.toBeNull();
+    expect(into).not.toBeNull();
+    await wait(340);
+    expect(mounted.host.querySelector("[data-fade]")).toBeNull();
+  });
+
+  test("sitting to lying crossfades two whole rigs", async () => {
+    restore = emulateReducedMotion(false);
+    mounted = mount(<Cat {...props({ activity: "code" })} />);
+    mounted.render(<Cat {...props({ activity: "celebrate", status: "done" })} />);
+    await wait(ACTIVITY_MIN_DWELL_MS + 60);
     const rigs = mounted.host.querySelectorAll(".cat-rig");
     expect(rigs.length).toBe(2);
     expect(rigs[0]!.getAttribute("data-fade")).toBe("out");
-    expect(rigs[0]!.getAttribute("data-pose")).toBe("code");
     expect(rigs[1]!.getAttribute("data-fade")).toBe("in");
     await wait(340);
     expect(mounted.host.querySelectorAll(".cat-rig").length).toBe(1);
-    expect(mounted.host.querySelector("[data-fade]")).toBeNull();
   });
 
   test("still cats swap poses without a crossfade", async () => {
@@ -175,7 +218,52 @@ describe("activity dwell and crossfade", () => {
     mounted.render(<Cat {...props({ activity: "plan", still: true })} />);
     await wait(ACTIVITY_MIN_DWELL_MS + 60);
     expect(mounted.host.querySelectorAll(".cat-rig").length).toBe(1);
+    expect(mounted.host.querySelector("[data-fade]")).toBeNull();
     expect(mounted.host.querySelector(".cat")?.getAttribute("data-pose")).toBe("plan");
+  });
+
+  test("leaving wait for work plays the catch once", async () => {
+    restore = emulateReducedMotion(false);
+    mounted = mount(<Cat {...props({ status: "waiting", activity: "wait" })} />);
+    mounted.render(<Cat {...props({ status: "working", activity: "read" })} />);
+    await wait(ACTIVITY_MIN_DWELL_MS + 60);
+    expect(mounted.host.querySelector(".cat")?.classList.contains("cat-catch")).toBe(true);
+    expect(mounted.host.querySelector(".cat-catch-card")).not.toBeNull();
+    await wait(CATCH_MS + 60);
+    expect(mounted.host.querySelector(".cat-catch-card")).toBeNull();
+  });
+});
+
+describe("calm limit and energy", () => {
+  test("past eight live cats on screen the rest go calm, and come back when room frees up", () => {
+    restore = emulateReducedMotion(false);
+    const many = Array.from({ length: LIVE_CAP + 3 }, (_, i) => i);
+    mounted = mount(
+      <div>
+        {many.map((i) => (
+          <Cat key={i} {...props({ look: { coat: "gray", seed: i } })} />
+        ))}
+      </div>,
+    );
+    const cats = () => [...mounted!.host.querySelectorAll(".cat")];
+    expect(cats().filter((c) => c.classList.contains("cat--busy")).length).toBe(LIVE_CAP);
+    expect(cats().filter((c) => c.hasAttribute("data-calm")).length).toBe(3);
+    expect(cats().every((c) => c.classList.contains("cat--live"))).toBe(true);
+    mounted.render(
+      <div>
+        {many.slice(0, LIVE_CAP).map((i) => (
+          <Cat key={i} {...props({ look: { coat: "gray", seed: i } })} />
+        ))}
+      </div>,
+    );
+    expect(cats().filter((c) => c.hasAttribute("data-calm")).length).toBe(0);
+  });
+
+  test("a figure past 85% of its budget runs low", () => {
+    mounted = mount(<CatFigure {...props({ still: true })} energy={0.9} />);
+    expect(mounted.host.querySelector(".cat")?.getAttribute("data-energy")).toBe("low");
+    mounted.render(<CatFigure {...props({ still: true })} energy={0.5} />);
+    expect(mounted.host.querySelector(".cat")?.hasAttribute("data-energy")).toBe(false);
   });
 });
 

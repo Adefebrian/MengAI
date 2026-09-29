@@ -1,17 +1,24 @@
 /*
  * @mengai/cats: the living cat character and its card.
  *
- * One flat vector rig (rig.tsx) on a 160 x 160 viewBox, drawn with flat
- * fills and one warm ink line (JEV ui.component_recipe: ink_outline).
- * Every loop is a CSS keyframe on transform or opacity, played only under
- * .cat--live (never under reduced motion or `still`), paused offscreen
- * (data-offscreen), on the one --ease-standard curve for anything that
- * starts and stops, and linear only for constant loops. Loop tempo and
- * travel follow JEV motion.intensity: lively (a 1600ms beat, 3 to 5 units).
+ * One flat vector rig (rig.tsx) on a 160 x 160 viewBox, flat fills and one
+ * ink-muted contour (direction contract, cat rule 1: 1.5px at 48 and 64,
+ * 2px at 96, 3px at 160, set in user units per size). Every role x activity
+ * plays its own beat (poses.ts beatFor): its own art and one loop clock,
+ * set up, action, then the result mark held about a fifth of the loop
+ * (JEV motion.choreography: stagger_sequence, result_hold 1.3). Loops play
+ * only under .cat--busy (live, on screen, inside the calm limit of eight);
+ * past the limit a cat is .cat--live only: breath and blink, pose held.
+ * Nothing animates under reduced motion or `still`: each beat's default
+ * state below is its still frame. Transform and opacity only, the one
+ * --ease-standard curve for anything that starts and stops, linear and
+ * steps only for constant loops. JEV motion.intensity: tier 1 on the app
+ * (0.93), staged on the preview board (1.97).
  *
- * UI chrome uses JAL Core tokens only. The character art has its own flat
- * palette below (coats and props): art, never UI chrome, flat fills only,
- * never the purple family.
+ * UI chrome uses JAL Core tokens only. The art keeps its own flat palette:
+ * coats, neutral paper props with the one line, and three restrained result
+ * colours (pass, fail, attention) that always ride on a glyph. Never the
+ * purple family, never the accent.
  */
 
 /* CatCard styles live beside it (card/card.css). */
@@ -22,12 +29,13 @@
  * ------------------------------------------------------------------- */
 .cat {
   /* line and face */
-  --cat-line: #3a3230;
+  --cat-line: var(--color-ink-muted);
+  --cat-sw: 3.34;
   --cat-eye: #c9a646;
   --cat-inner: #e8b0a4;
   --cat-nose: #d98b86;
   --cat-mouth: #8a3d3a;
-  --cat-cushion: #eadfcf;
+  --cat-cushion: var(--color-layer-2);
   --cat-print: var(--color-ink-subtle);
 
   /* coat, ginger until data-coat says otherwise */
@@ -40,37 +48,63 @@
   --cat-mark-2: var(--cat-mark);
   --cat-lid-fill: var(--cat-fur);
 
-  /* props */
+  /* props: neutral paper and slate */
   --cat-paper: var(--color-surface);
-  --cat-steel: #c9cdd1;
-  --cat-steel-dark: #9ea4aa;
-  --cat-screen: #262a2e;
-  --cat-term: #d5dadf;
-  --cat-term-accent: #7fbf8e;
-  --cat-soft: #b9bdc1;
+  --cat-soft: #cfcfcc;
   --cat-mid: var(--color-ink-subtle);
-  --cat-wood: #c89f73;
-  --cat-brass: #c9a55a;
-  --cat-lens: #e3edf2;
-  --cat-shield: #7f9db6;
-  --cat-check: #3f8f5a;
-  --cat-paint-1: #3f7cac;
-  --cat-paint-2: #e07a5f;
-  --cat-paint-3: #5f9e6e;
+  --cat-mid-soft: #a6a6a2;
+  --cat-col: var(--color-layer-1);
+  --cat-steel: var(--color-border-strong);
+  --cat-steel-dark: #9d9d99;
+  --cat-wood: #bdbdb9;
+  --cat-lens: var(--color-layer-1);
+  --cat-shield: #8e9499;
+  --cat-screen: #3b3b3b;
+  --cat-term: #d6d6d3;
+  --cat-term-dim: #5e5e5e;
+  --cat-term-accent: #8cc79a;
+  --cat-scan: #a9cbe0;
+  --cat-code-1: #3f7cac;
+  --cat-code-2: #b9672f;
 
-  /* motion: one beat, scaled by mood; a seeded phase per cat */
+  /* result marks, always on a glyph */
+  --cat-pass: #3f8f5a;
+  --cat-fail: #c2553f;
+  --cat-attn: #d99a2b;
+
+  /* paint: the cat's own coat colours (designer) */
+  --cat-paint-1: var(--cat-mark);
+  --cat-paint-2: var(--cat-eye);
+  --cat-paint-3: var(--cat-nose);
+
+  /* motion: one beat, scaled by mood and energy; a seeded phase per cat */
   --cat-beat: var(--loop-pulse);
   --cat-tempo: 1;
+  --cat-tempo-energy: 1;
+  --cat-t: calc(var(--cat-tempo) * var(--cat-tempo-energy));
+  --cat-l2: calc(var(--cat-beat) * 2 * var(--cat-t));
+  --cat-l25: calc(var(--cat-beat) * 2.5 * var(--cat-t));
   --cat-phase: 0ms;
   --cat-quirk: 1800ms;
 
-  /* expression inputs (numbers), set by mood, status and pose */
+  /* expression inputs (numbers), set by mood, status, energy and beat */
   --cat-lid-mood: 0;
   --cat-lid-pose: 0;
+  --cat-lid-energy: 0;
   --cat-lid-tilt: 0;
   --cat-alert: 0;
   --cat-ear-mood: 0;
   --cat-ear-status: 0;
+  --cat-ear-energy: 0;
+}
+.cat[data-size="48"] {
+  --cat-sw: 5;
+}
+.cat[data-size="64"] {
+  --cat-sw: 3.75;
+}
+.cat[data-size="160"] {
+  --cat-sw: 3;
 }
 
 .cat[data-coat="ginger"] {
@@ -99,6 +133,7 @@
   --cat-eye: #d8c24c;
   --cat-inner: #7a5e5a;
   --cat-nose: #6e5654;
+  --cat-paint-1: #5a5655;
 }
 .cat[data-coat="tuxedo"] {
   --cat-fur: #2d2b2b;
@@ -107,6 +142,7 @@
   --cat-eye: #9fc05a;
   --cat-inner: #8a6a66;
   --cat-nose: #e0a3a0;
+  --cat-paint-1: #5a5655;
 }
 .cat[data-coat="calico"] {
   --cat-fur: #f7f2ea;
@@ -132,6 +168,7 @@
   --cat-lid-fill: var(--cat-fur-2);
   --cat-eye: #5f9fcf;
   --cat-inner: #9a7a6a;
+  --cat-paint-1: #6b5446;
 }
 
 /* Markings per coat. */
@@ -159,6 +196,7 @@
   display: inline-flex;
   flex-direction: column;
   align-items: center;
+  flex: none;
   gap: var(--space-4px);
   inline-size: var(--cat-size);
   min-inline-size: 0;
@@ -190,6 +228,7 @@
   flex: none;
   inline-size: var(--cat-size);
   block-size: var(--cat-size);
+  contain: layout paint;
 }
 
 .cat-svg {
@@ -208,6 +247,7 @@
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
 }
 
 /* The cat as its own hit target (onSelect): eight states, no chrome at rest.
@@ -247,7 +287,7 @@ button.cat:focus-visible {
 .c-fur {
   fill: var(--cat-fur);
   stroke: var(--cat-line);
-  stroke-width: 3;
+  stroke-width: var(--cat-sw);
   stroke-linejoin: round;
 }
 .cat-ear-l {
@@ -259,7 +299,7 @@ button.cat:focus-visible {
 .c-ear {
   fill: var(--cat-ear-fill);
   stroke: var(--cat-line);
-  stroke-width: 3;
+  stroke-width: var(--cat-sw);
   stroke-linejoin: round;
 }
 .c-inner {
@@ -289,7 +329,7 @@ button.cat:focus-visible {
 .c-eye-line {
   fill: none;
   stroke: var(--cat-line);
-  stroke-width: 2;
+  stroke-width: calc(var(--cat-sw) * 0.6);
 }
 .c-pupil {
   fill: var(--cat-line);
@@ -300,84 +340,92 @@ button.cat:focus-visible {
 .c-lid {
   fill: var(--cat-lid-fill);
   stroke: var(--cat-line);
-  stroke-width: 2;
+  stroke-width: calc(var(--cat-sw) * 0.6);
 }
 .c-eye-closed {
   fill: none;
   stroke: var(--cat-line);
-  stroke-width: 2.5;
+  stroke-width: calc(var(--cat-sw) * 0.8);
   stroke-linecap: round;
 }
 .c-nose {
   fill: var(--cat-nose);
   stroke: var(--cat-line);
-  stroke-width: 1.5;
+  stroke-width: calc(var(--cat-sw) * 0.45);
   stroke-linejoin: round;
 }
 .c-mouth {
   fill: none;
   stroke: var(--cat-line);
-  stroke-width: 2;
+  stroke-width: calc(var(--cat-sw) * 0.6);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .c-mouth-open {
   fill: var(--cat-mouth);
   stroke: var(--cat-line);
-  stroke-width: 2;
+  stroke-width: calc(var(--cat-sw) * 0.6);
 }
 .c-paw {
   fill: var(--cat-paw);
   stroke: var(--cat-line);
-  stroke-width: 3;
+  stroke-width: var(--cat-sw);
 }
 .c-tube-line {
   fill: none;
   stroke: var(--cat-line);
+  stroke-width: calc(var(--cat-tube) + var(--cat-sw) * 2);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .c-tube-tail {
   fill: none;
   stroke: var(--cat-tail);
+  stroke-width: var(--cat-tube);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .c-tube-fur {
   fill: none;
   stroke: var(--cat-fur);
+  stroke-width: var(--cat-tube);
   stroke-linecap: round;
 }
 .c-cushion {
   fill: var(--cat-cushion);
   stroke: var(--cat-line);
-  stroke-width: 3;
+  stroke-width: var(--cat-sw);
   stroke-linejoin: round;
 }
 .cat-print {
   fill: var(--cat-print);
 }
 
-/* Props. */
-.p-steel {
-  fill: var(--cat-steel);
-  stroke: var(--cat-line);
-  stroke-width: 3;
-}
-.p-steel-dark {
-  fill: var(--cat-steel-dark);
-  stroke: var(--cat-line);
-  stroke-width: 3;
-  stroke-linejoin: round;
-}
+/* Props: neutral paper and slate, the one line. */
 .p-paper {
   fill: var(--cat-paper);
   stroke: var(--cat-line);
   stroke-width: 3;
   stroke-linejoin: round;
 }
+.p-paper-thin {
+  stroke-width: 2;
+}
 .p-paper-flat {
   fill: var(--cat-paper);
+}
+.p-steel {
+  fill: var(--cat-steel);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+}
+.p-thin {
+  stroke-width: 2;
+}
+.p-wood {
+  fill: var(--cat-wood);
+  stroke: var(--cat-line);
+  stroke-width: 3;
 }
 .p-screen {
   fill: var(--cat-screen);
@@ -387,8 +435,23 @@ button.cat:focus-visible {
 .p-term {
   fill: var(--cat-term);
 }
+.p-term-dim {
+  fill: var(--cat-term-dim);
+}
 .p-term-accent {
   fill: var(--cat-term-accent);
+}
+.p-term-box {
+  fill: none;
+  stroke: var(--cat-term);
+  stroke-width: 1.2;
+}
+.p-prompt {
+  fill: none;
+  stroke: var(--cat-term-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .p-soft {
   fill: var(--cat-soft);
@@ -396,11 +459,32 @@ button.cat:focus-visible {
 .p-mid {
   fill: var(--cat-mid);
 }
+.p-mid-soft {
+  fill: var(--cat-mid-soft);
+}
+.p-col {
+  fill: var(--cat-col);
+}
+.p-code-1 {
+  fill: var(--cat-code-1);
+}
+.p-code-2 {
+  fill: var(--cat-code-2);
+}
+.p-plus {
+  fill: var(--cat-pass);
+}
+.p-minus {
+  fill: var(--cat-fail);
+}
 .p-soft-line {
   fill: none;
   stroke: var(--cat-soft);
   stroke-width: 2.5;
   stroke-linecap: round;
+}
+.p-soft-thin {
+  stroke-width: 2;
 }
 .p-tube-wood,
 .p-tube-brass,
@@ -412,7 +496,7 @@ button.cat:focus-visible {
   stroke: var(--cat-wood);
 }
 .p-tube-brass {
-  stroke: var(--cat-brass);
+  stroke: var(--cat-steel-dark);
 }
 .p-tube-steel {
   stroke: var(--cat-steel);
@@ -427,16 +511,16 @@ button.cat:focus-visible {
   stroke: var(--cat-line);
   stroke-width: 3.5;
 }
-.p-leg {
-  fill: none;
-  stroke: var(--cat-line);
-  stroke-width: 3;
-  stroke-linecap: round;
+.p-frame {
+  stroke-width: 1.5;
 }
 .p-paint {
   fill: none;
-  stroke-width: 3.5;
+  stroke-width: 4;
   stroke-linecap: round;
+}
+.p-paint-thin {
+  stroke-width: 3;
 }
 .p-paint-1 {
   stroke: var(--cat-paint-1);
@@ -446,6 +530,21 @@ button.cat:focus-visible {
 }
 .p-paint-3 {
   stroke: var(--cat-paint-3);
+}
+.p-paint-mono {
+  stroke: var(--cat-mid-soft);
+}
+rect.p-paint-1 {
+  fill: var(--cat-paint-1);
+  stroke: none;
+}
+rect.p-paint-2 {
+  fill: var(--cat-paint-2);
+  stroke: none;
+}
+rect.p-paint-3 {
+  fill: var(--cat-paint-3);
+  stroke: none;
 }
 .p-shield {
   fill: var(--cat-shield);
@@ -460,35 +559,121 @@ button.cat:focus-visible {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.p-check-thin {
+  stroke-width: 3;
+}
 .p-ink-line {
   fill: none;
   stroke: var(--cat-line);
   stroke-width: 2;
   stroke-linecap: round;
 }
-.p-wood {
-  fill: var(--cat-wood);
-  stroke: var(--cat-line);
-  stroke-width: 3;
-}
 .p-box {
   fill: var(--cat-paper);
   stroke: var(--cat-mid);
   stroke-width: 1.5;
 }
-.p-check {
+.p-check,
+.p-check-term,
+.p-cross,
+.p-cross-term {
   fill: none;
-  stroke: var(--cat-check);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.p-check {
+  stroke: var(--cat-pass);
+}
+.p-check-term {
+  stroke: var(--cat-term-accent);
+}
+.p-cross {
+  stroke: var(--cat-fail);
+}
+.p-cross-term {
+  stroke: #e9876f;
+}
+.p-pass {
+  fill: var(--cat-pass);
+  stroke: var(--cat-line);
+  stroke-width: 2.5;
+}
+.p-fail {
+  fill: var(--cat-fail);
+  stroke: var(--cat-line);
+  stroke-width: 2.5;
+}
+.p-return {
+  fill: var(--cat-attn);
+  stroke: var(--cat-line);
+  stroke-width: 2.5;
+}
+.p-glyph {
+  fill: none;
+  stroke: var(--cat-paper);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.p-pole {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.p-flag {
+  fill: var(--cat-attn);
+  stroke: var(--cat-line);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.p-scan {
+  fill: var(--cat-scan);
+}
+.p-bug {
+  fill: var(--cat-fail);
+  stroke: var(--cat-line);
+  stroke-width: 1.8;
+}
+.p-bug-head {
+  fill: var(--cat-line);
+}
+.p-bug-leg,
+.p-bug-seam {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.p-warn {
+  fill: var(--cat-attn);
+  stroke: var(--cat-line);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.p-warn-mark {
+  fill: var(--cat-line);
+}
+
+/* Result marks: a frustrated cat stamps fail (run) or return (review). */
+.cat-stamp-alt {
+  display: none;
+}
+.cat[data-mood="frustrated"] .cat-stamp-alt {
+  display: inline;
+}
+.cat[data-mood="frustrated"] .cat-stamp-pass {
+  display: none;
 }
 
 /* ---------------------------------------------------------------------
  * Pivots (user units on the viewBox, or the part's own box)
  * ------------------------------------------------------------------- */
+.cat-sit .cat-head,
 .cat-q-head,
 .cat-react-head,
+.cat-droop,
 .cat-head-loop {
   transform-origin: 80px 86px;
 }
@@ -526,14 +711,28 @@ button.cat:focus-visible {
 }
 .cat-lid-tilt,
 .cat-check,
+.cat-tick,
+.cat-stamp,
 .cat-print,
-.cat-q-card {
+.cat-q-card,
+.cat-toss,
+.cat-catch-card,
+.cat-warning,
+.cat-shield {
   transform-box: fill-box;
   transform-origin: 50% 50%;
 }
-.cat-stroke {
+.cat-stroke,
+.cat-ln,
+.cat-build,
+.cat-step,
+.cat-flip {
   transform-box: fill-box;
   transform-origin: 0% 50%;
+}
+.cat-flag {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
 }
 .cat-q-paw-l,
 .cat-q-paw-r,
@@ -544,10 +743,34 @@ button.cat:focus-visible {
 }
 
 /* ---------------------------------------------------------------------
- * Expression: mood, status and pose inputs (static, both modes)
+ * Placement: parts that switch on and off with the beat
+ * ------------------------------------------------------------------- */
+.cat-tail:not([data-on]),
+.cat-tail-wrap:not([data-on]),
+.cat-arm:not([data-on]),
+.cat-aside:not([data-on]),
+.cat-paw[data-off] {
+  opacity: 0;
+}
+.cat--live .cat-paw,
+.cat--live .cat-sit .cat-head,
+.cat--live .cat-pupil-pose {
+  transition:
+    transform var(--dur-300) var(--ease-standard),
+    opacity var(--dur-300) var(--ease-standard);
+}
+.cat--live .cat-tail,
+.cat--live .cat-tail-wrap,
+.cat--live .cat-arm,
+.cat--live .cat-aside {
+  transition: opacity var(--dur-300) var(--ease-standard);
+}
+
+/* ---------------------------------------------------------------------
+ * Expression: mood, status, energy and beat inputs (static, both modes)
  * ------------------------------------------------------------------- */
 .cat-lid {
-  --cat-lid: calc(max(var(--cat-lid-mood), var(--cat-lid-pose)) * (1 - var(--cat-alert) * 0.7));
+  --cat-lid: calc(max(var(--cat-lid-mood), var(--cat-lid-pose), var(--cat-lid-energy)) * (1 - var(--cat-alert) * 0.7));
   transform: scaleY(var(--cat-lid));
 }
 .cat-lid-q {
@@ -560,7 +783,7 @@ button.cat:focus-visible {
   transform: rotate(calc(var(--cat-lid-tilt) * -1deg));
 }
 .cat-ear-state {
-  --cat-ear: calc(var(--cat-ear-mood) + var(--cat-ear-status) - var(--cat-alert) * 6);
+  --cat-ear: calc(var(--cat-ear-mood) + var(--cat-ear-status) + var(--cat-ear-energy) - var(--cat-alert) * 6);
 }
 .cat-ear-l .cat-ear-state {
   transform: translateY(calc(max(var(--cat-ear), 0) * 0.1px)) rotate(calc(var(--cat-ear) * -1deg));
@@ -612,6 +835,16 @@ button.cat:focus-visible {
   --cat-ear-mood: 10;
 }
 
+/* Budget running low: heavier lids, drooped ears, the head sinking, slower loops. */
+.cat[data-energy="low"] {
+  --cat-tempo-energy: 1.5;
+  --cat-lid-energy: 0.66;
+  --cat-ear-energy: 14;
+}
+.cat[data-energy="low"] .cat-sit .cat-droop {
+  transform: translateY(2.5px) rotate(-3deg);
+}
+
 .cat[data-status="approval"] {
   --cat-alert: 1;
 }
@@ -622,193 +855,400 @@ button.cat:focus-visible {
   --cat-alert: 1;
 }
 
-.cat-rig[data-pose="ask"] {
+.cat-rig[data-beat="ask"] {
   --cat-alert: 1;
 }
-.cat-rig[data-pose="ask"] .cat-mouth-open {
+.cat-rig[data-beat="ask"] .cat-mouth-open {
   transform: scale(0.75);
 }
-.cat-rig[data-pose="wait"] {
+.cat-rig[data-beat="review-hunt"] {
+  --cat-alert: 1;
+}
+.cat-rig[data-beat="wait"] {
   --cat-lid-pose: 0.45;
 }
-.cat-rig[data-pose="research"] .cat-eye-r {
+.cat-rig:is([data-beat="research"], [data-beat="research-pages"]) .cat-eye-r {
   --cat-lid-pose: 1;
 }
-.cat-rig[data-pose="stopped"] {
+.cat-rig[data-beat="stopped"] {
   --cat-ear-status: 14;
 }
-.cat-rig[data-pose="stopped"] .cat-lie {
-  opacity: 0.6;
+/* Stopped: the whole stage dims as one layer (cushion included), so
+   nothing shows through the cat. */
+.cat[data-pose="stopped"] .cat-svg {
+  opacity: 0.55;
 }
-/* Still frame for typing: one paw down on the keys. */
-.cat-rig[data-pose="code"] .cat-paw-l-loop {
-  transform: translateY(4px);
-}
-/* The stretch layer of celebrate only shows while it plays. */
-.cat-rig[data-pose="celebrate"] .cat-sit {
+/* The stretch layer of done only shows while it plays. */
+.cat-rig[data-beat="celebrate"] .cat-sit {
   opacity: 0;
 }
 
 /* ---------------------------------------------------------------------
- * Live loops (motion allowed, on screen)
+ * Still frames: the default state of every beat's art (reduced motion,
+ * `still`, and the calm layer). Each reads as the beat mid-work.
+ * ------------------------------------------------------------------- */
+.cat-rig:is([data-beat="code"], [data-beat="code-build"], [data-beat="code-tests"], [data-beat="code-layout"]) .cat-paw-l-loop {
+  transform: translateY(4px);
+}
+.cat-build {
+  transform: scaleX(0.7);
+}
+.cat-rig[data-beat="plan-board"] :is(.cat-move-1, .cat-move-2) {
+  transform: translateX(44px);
+}
+.cat-rig[data-beat="automate"] .cat-step-3 {
+  transform: scaleX(0.45);
+}
+.cat-rig[data-beat="automate"] .cat-tick-4 {
+  opacity: 0;
+}
+.cat-sweep-bar {
+  transform: translateX(16px);
+}
+.cat-bug {
+  transform: translateX(14px);
+}
+.cat-flip {
+  transform: scaleX(-0.5);
+}
+.cat-rig[data-beat="wait"] .cat-head-loop {
+  transform: translate(2px, 0) rotate(4deg);
+}
+.cat-rig[data-beat="wait"] .cat-pupil-loop {
+  transform: translateX(2px);
+}
+.cat-catch-card {
+  opacity: 0;
+}
+.cat-print {
+  opacity: 0;
+}
+
+/* ---------------------------------------------------------------------
+ * Ambient loops (live and on screen, calm included): breath and blink
  * ------------------------------------------------------------------- */
 .cat--live .cat-look,
 .cat--live .cat-pupil-look,
 .cat--live .cat-ear-state {
   transition: transform var(--dur-200) var(--ease-standard);
 }
-
 .cat--live .cat-body-loop {
-  animation: cat-breathe calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
-}
-.cat--live .cat-tail-loop {
-  animation: cat-sway calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+  animation: cat-breathe var(--cat-l2) linear var(--cat-phase) infinite;
 }
 .cat--live .cat-lid {
-  animation: cat-blink calc(var(--cat-beat) * 3 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+  animation: cat-blink calc(var(--cat-beat) * 3 * var(--cat-t)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-beat="stopped"] .cat-lie-body {
+  animation: cat-breathe calc(var(--cat-beat) * 3 * var(--cat-t)) linear var(--cat-phase) infinite;
 }
 
-/* code: typing, paws alternate on the keys */
-.cat--live .cat-rig[data-pose="code"] .cat-paw-l-loop,
-.cat--live .cat-rig[data-pose="code"] .cat-paw-r-loop {
-  animation: cat-type calc(var(--cat-beat) * 0.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
-}
-.cat--live .cat-rig[data-pose="code"] .cat-paw-r-loop {
-  animation-delay: calc(var(--cat-phase) - var(--cat-beat) * 0.25 * var(--cat-tempo));
-}
-
-/* run: terminal lines scroll one line per step, the head nods with them */
-.cat--live .cat-rig[data-pose="run"] .cat-term-lines {
-  animation: cat-scroll calc(var(--cat-beat) * 2 * var(--cat-tempo)) steps(4, end) var(--cat-phase) infinite;
-}
-.cat--live .cat-rig[data-pose="run"] .cat-head-loop {
-  animation: cat-nod calc(var(--cat-beat) * 0.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+/* ---------------------------------------------------------------------
+ * Beat loops (busy: live, on screen, inside the calm limit)
+ * One clock per beat: set up, action, result held, reset.
+ * ------------------------------------------------------------------- */
+.cat--busy .cat-tail-loop {
+  animation: cat-sway var(--cat-l2) linear var(--cat-phase) infinite;
 }
 
-/* read: the head follows the lines down the page */
-.cat--live .cat-rig[data-pose="read"] .cat-head-loop {
-  animation: cat-read calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
-}
-.cat--live .cat-rig[data-pose="read"] .cat-pupil-loop {
-  animation: cat-read-eyes calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+/* rest: breath, tail sway and the idle quirks (motion.ts) */
+
+/* think: paw to chin, a slow head tilt */
+.cat--busy .cat-rig[data-beat="think"] .cat-head-loop {
+  animation: cat-ponder var(--cat-l2) linear var(--cat-phase) infinite;
 }
 
-/* review: the magnifier sweeps the page, the eyes follow it */
-.cat--live .cat-rig[data-pose="review"] .cat-mag,
-.cat--live .cat-rig[data-pose="review"] .cat-paw-r-loop {
-  animation: cat-sweep calc(var(--cat-beat) * 1.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+/* code: the paws type, lines appear one by one, then a short hold */
+.cat--busy .cat-rig:is([data-beat="code"], [data-beat="code-build"], [data-beat="code-tests"], [data-beat="code-layout"]) .cat-paw-l-loop {
+  animation: cat-type-l var(--cat-l2) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="review"] .cat-pupil-loop {
-  animation: cat-sweep-eyes calc(var(--cat-beat) * 1.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig:is([data-beat="code"], [data-beat="code-build"], [data-beat="code-tests"], [data-beat="code-layout"]) .cat-paw-r-loop {
+  animation: cat-type-r var(--cat-l2) linear var(--cat-phase) infinite;
 }
-
-/* design: brush strokes appear one by one */
-.cat--live .cat-rig[data-pose="design"] .cat-stroke-1 {
-  animation: cat-draw-1 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig:is([data-beat="code"], [data-beat="code-build"], [data-beat="code-tests"], [data-beat="code-layout"], [data-beat="code-notes"]) .cat-ln-1 {
+  animation: cat-ln-1 var(--cat-l2) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="design"] .cat-stroke-2 {
-  animation: cat-draw-2 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig:is([data-beat="code"], [data-beat="code-build"], [data-beat="code-tests"], [data-beat="code-layout"], [data-beat="code-notes"]) .cat-ln-2 {
+  animation: cat-ln-2 var(--cat-l2) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="design"] .cat-stroke-3 {
-  animation: cat-draw-3 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig:is([data-beat="code"], [data-beat="code-build"], [data-beat="code-tests"], [data-beat="code-layout"], [data-beat="code-notes"]) .cat-ln-3 {
+  animation: cat-ln-3 var(--cat-l2) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="design"] .cat-paw-r-loop {
-  animation: cat-paint calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig:is([data-beat="code"], [data-beat="code-build"], [data-beat="code-tests"], [data-beat="code-layout"]) .cat-ln-4 {
+  animation: cat-ln-4 var(--cat-l2) linear var(--cat-phase) infinite;
 }
-
-/* research: a slow spyglass scan */
-.cat--live .cat-rig[data-pose="research"] .cat-head-loop {
-  animation: cat-scan-turn calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+/* engineer: the build bar fills with the lines, full while held */
+.cat--busy .cat-rig[data-beat="code-build"] .cat-build {
+  animation: cat-build var(--cat-l2) linear var(--cat-phase) infinite;
 }
-
-/* scan: a sentinel look around, ears turning with it */
-.cat--live .cat-rig[data-pose="scan"] .cat-head-loop {
-  animation: cat-look-around calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
-}
-.cat--live .cat-rig[data-pose="scan"] .cat-pupil-loop {
-  animation: cat-look-around-eyes calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
-}
-.cat--live .cat-rig[data-pose="scan"] .cat-ear-loop {
-  animation: cat-ear-turn calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+/* researcher: the pencil writes each line of the notes */
+.cat--busy .cat-rig[data-beat="code-notes"] .cat-paw-r-loop {
+  animation: cat-write var(--cat-l2) linear var(--cat-phase) infinite;
 }
 
-/* automate: the paw moves the mouse */
-.cat--live .cat-rig[data-pose="automate"] .cat-mouse,
-.cat--live .cat-rig[data-pose="automate"] .cat-paw-r-loop {
-  animation: cat-mouse-move calc(var(--cat-beat) * 1.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+/* run: output streams one line per step, the head nods along */
+.cat--busy .cat-rig[data-beat="run"] .cat-stream {
+  animation: cat-scroll var(--cat-l2) steps(4, end) var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="run"] .cat-head-loop {
+  animation: cat-nod calc(var(--cat-beat) * 0.5 * var(--cat-t)) linear var(--cat-phase) infinite;
+}
+/* engineer runs the tests: enter, the output streams, then the stamp lands */
+.cat--busy .cat-rig[data-beat="run-stamp"] .cat-stream {
+  animation: cat-stream var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="run-stamp"] .cat-stamp {
+  animation: cat-stamp-land var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="run-stamp"] .cat-paw-r-loop {
+  animation: cat-enter var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="run-stamp"] .cat-head-loop {
+  animation: cat-nod-run var(--cat-l25) linear var(--cat-phase) infinite;
+}
+/* qa runs the suite: each test ticks in turn, a nod for each */
+.cat--busy .cat-rig:is([data-beat="run-tests"], [data-beat="automate"]) .cat-tick-1 {
+  animation: cat-tick-1 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="run-tests"], [data-beat="automate"]) .cat-tick-2 {
+  animation: cat-tick-2 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="run-tests"], [data-beat="automate"]) .cat-tick-3 {
+  animation: cat-tick-3 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="run-tests"], [data-beat="automate"]) .cat-tick-4 {
+  animation: cat-tick-4 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="run-tests"], [data-beat="automate"]) .cat-head-loop {
+  animation: cat-nod-4 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+
+/* read: the head follows the lines down the page, the eyes scan each line */
+.cat--busy .cat-rig[data-beat^="read-"] .cat-head-loop {
+  animation: cat-read var(--cat-l2) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat^="read-"] .cat-pupil-loop {
+  animation: cat-read-eyes var(--cat-l2) linear var(--cat-phase) infinite;
 }
 
 /* plan: items get checked off, the paw works down the list */
-.cat--live .cat-rig[data-pose="plan"] .cat-check-1 {
-  animation: cat-check-1 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig[data-beat="plan"] .cat-check-1 {
+  animation: cat-check-1 var(--cat-l25) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="plan"] .cat-check-2 {
-  animation: cat-check-2 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig[data-beat="plan"] .cat-check-2 {
+  animation: cat-check-2 var(--cat-l25) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="plan"] .cat-check-3 {
-  animation: cat-check-3 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig[data-beat="plan"] .cat-check-3 {
+  animation: cat-check-3 var(--cat-l25) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="plan"] .cat-paw-r-loop {
-  animation: cat-plan-paw calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig[data-beat="plan"] .cat-paw-r-loop {
+  animation: cat-plan-paw var(--cat-l25) linear var(--cat-phase) infinite;
 }
-
-/* handoff: carrying the task card, a waddle in place */
-.cat--live .cat-rig[data-pose="handoff"] .cat-walk {
-  animation: cat-walk calc(var(--cat-beat) * var(--cat-tempo)) linear var(--cat-phase) infinite;
+/* lead plans: three task cards move from to-do to done, a paw tap as each lands */
+.cat--busy .cat-rig[data-beat="plan-board"] .cat-move-1 {
+  animation: cat-move-1 var(--cat-l25) var(--ease-standard) var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="handoff"] .cat-tail-loop {
-  animation-duration: calc(var(--cat-beat) * var(--cat-tempo));
+.cat--busy .cat-rig[data-beat="plan-board"] .cat-move-2 {
+  animation: cat-move-2 var(--cat-l25) var(--ease-standard) var(--cat-phase) infinite;
 }
-
-/* ask: the paw raised and waving */
-.cat--live .cat-rig[data-pose="ask"] .cat-paw-r-loop {
-  animation: cat-wave calc(var(--cat-beat) * 0.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig[data-beat="plan-board"] .cat-move-3 {
+  animation: cat-move-3 var(--cat-l25) var(--ease-standard) var(--cat-phase) infinite;
 }
-
-/* wait: tail wrapped, the tip flicks now and then, slower breath */
-.cat--live .cat-rig[data-pose="wait"] .cat-tail-tip {
-  animation: cat-flick calc(var(--cat-beat) * 1.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+.cat--busy .cat-rig[data-beat="plan-board"] .cat-paw-r-loop {
+  animation: cat-board-paw var(--cat-l25) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="wait"] .cat-body-loop {
-  animation-duration: calc(var(--cat-beat) * 2.5 * var(--cat-tempo));
+.cat--busy .cat-rig[data-beat="plan-board"] .cat-head-loop {
+  animation: cat-board-head var(--cat-l25) linear var(--cat-phase) infinite;
 }
 
-/* think: a slow head tilt */
-.cat--live .cat-rig[data-pose="think"] .cat-head-loop {
-  animation: cat-ponder calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+/* review: the magnifier sweeps the card, the eyes follow it */
+.cat--busy .cat-rig[data-beat="review"] .cat-mag,
+.cat--busy .cat-rig[data-beat="review"] .cat-paw-r-loop {
+  animation: cat-sweep calc(var(--cat-beat) * 1.5 * var(--cat-t)) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="review"] .cat-pupil-loop {
+  animation: cat-sweep-eyes calc(var(--cat-beat) * 1.5 * var(--cat-t)) linear var(--cat-phase) infinite;
+}
+/* reviewer and security: two sweeps, then the stamp or the flag lands and holds */
+.cat--busy .cat-rig:is([data-beat="review-stamp"], [data-beat="review-flag"]) .cat-mag,
+.cat--busy .cat-rig:is([data-beat="review-stamp"], [data-beat="review-flag"]) .cat-paw-r-loop {
+  animation: cat-sweep-two var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="review-stamp"], [data-beat="review-flag"]) .cat-pupil-loop {
+  animation: cat-sweep-two-eyes var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="review-stamp"] .cat-stamp {
+  animation: cat-stamp-land var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="review-flag"], [data-beat="scan-sweep"]) .cat-flag {
+  animation: cat-flag-pop var(--cat-l25) linear var(--cat-phase) infinite;
+}
+/* qa hunts a bug: it crawls in, the cat sniffs, crouches, pounces, holds it */
+.cat--busy .cat-rig[data-beat="review-hunt"] .cat-bug {
+  animation: cat-bug-crawl var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="review-hunt"] .cat-head-loop {
+  animation: cat-sniff var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="review-hunt"] .cat-walk {
+  animation: cat-pounce var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="review-hunt"] .cat-paw-l-loop {
+  animation: cat-hunt-l var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="review-hunt"] .cat-paw-r-loop {
+  animation: cat-hunt-r var(--cat-l25) linear var(--cat-phase) infinite;
+}
+/* lead checks the crew: looks one way, nods, the other way, nods */
+.cat--busy .cat-rig[data-beat="review-crew"] .cat-head-loop {
+  animation: cat-crew-head var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="review-crew"] .cat-pupil-loop {
+  animation: cat-crew-eyes var(--cat-l25) linear var(--cat-phase) infinite;
 }
 
-/* celebrate: stretch, then curl up content */
-.cat--live .cat-rig[data-pose="celebrate"] .cat-sit {
-  animation: cat-stretch-out calc(var(--cat-beat) * 0.9375) var(--ease-standard) both;
+/* research: a slow spyglass scan */
+.cat--busy .cat-rig[data-beat="research"] .cat-head-loop {
+  animation: cat-scan-turn var(--cat-l2) linear var(--cat-phase) infinite;
 }
-.cat--live .cat-rig[data-pose="celebrate"] .cat-sit .cat-q-body {
+/* researcher: the spyglass pans, a look down, a page flips over */
+.cat--busy .cat-rig[data-beat="research-pages"] .cat-head-loop {
+  animation: cat-pages-head var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="research-pages"] .cat-flip {
+  animation: cat-flip var(--cat-l25) linear var(--cat-phase) infinite;
+}
+
+/* design: brush strokes appear one by one (in the coat's own colours for the designer) */
+.cat--busy .cat-rig:is([data-beat="design"], [data-beat="design-paint"]) .cat-stroke-1 {
+  animation: cat-draw-1 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="design"], [data-beat="design-paint"]) .cat-stroke-2 {
+  animation: cat-draw-2 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="design"], [data-beat="design-paint"]) .cat-stroke-3 {
+  animation: cat-draw-3 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig:is([data-beat="design"], [data-beat="design-paint"]) .cat-paw-r-loop {
+  animation: cat-paint var(--cat-l25) linear var(--cat-phase) infinite;
+}
+
+/* scan: a sentinel look around, ears turning with it */
+.cat--busy .cat-rig[data-beat="scan"] .cat-head-loop {
+  animation: cat-look-around var(--cat-l2) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="scan"] .cat-pupil-loop {
+  animation: cat-look-around-eyes var(--cat-l2) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="scan"] .cat-ear-loop {
+  animation: cat-ear-turn var(--cat-l2) linear var(--cat-phase) infinite;
+}
+/* security scans: the shield comes up, the scan bar sweeps the file, a flag pops on the finding */
+.cat--busy .cat-rig[data-beat="scan-sweep"] .cat-shield,
+.cat--busy .cat-rig[data-beat="scan-sweep"] .cat-paw-l-loop {
+  animation: cat-shield-up var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="scan-sweep"] .cat-sweep-bar {
+  animation: cat-sweep-bar var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="scan-sweep"] .cat-pupil-loop {
+  animation: cat-scan-eyes var(--cat-l25) linear var(--cat-phase) infinite;
+}
+
+/* automate: the runbook steps run in turn, the header ticks when all are done */
+.cat--busy .cat-rig[data-beat="automate"] .cat-step-1 {
+  animation: cat-step-1 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="automate"] .cat-step-2 {
+  animation: cat-step-2 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="automate"] .cat-step-3 {
+  animation: cat-step-3 var(--cat-l25) linear var(--cat-phase) infinite;
+}
+
+/* handoff: holds the card up, winds up, tosses it on to a teammate, watches it go */
+.cat--busy .cat-rig[data-beat="handoff"] .cat-toss {
+  animation: cat-toss var(--cat-l25) var(--ease-standard) var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="handoff"] .cat-paw-l-loop,
+.cat--busy .cat-rig[data-beat="handoff"] .cat-paw-r-loop {
+  animation: cat-toss-paw var(--cat-l25) var(--ease-standard) var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="handoff"] .cat-head-loop {
+  animation: cat-toss-head var(--cat-l25) var(--ease-standard) var(--cat-phase) infinite;
+}
+
+/* ask: the paw raised, the flag waving */
+.cat--busy .cat-rig[data-beat="ask"] .cat-paw-r-loop {
+  animation: cat-wave calc(var(--cat-beat) * 0.75 * var(--cat-t)) linear var(--cat-phase) infinite;
+}
+
+/* wait: tail wrapped, the tip flicks, a glance toward the blocking teammate */
+.cat--busy .cat-rig[data-beat="wait"] .cat-tail-tip {
+  animation: cat-flick calc(var(--cat-beat) * 1.5 * var(--cat-t)) linear var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="wait"] .cat-head-loop {
+  animation: cat-glance var(--cat-l25) var(--ease-standard) var(--cat-phase) infinite;
+}
+.cat--busy .cat-rig[data-beat="wait"] .cat-pupil-loop {
+  animation: cat-glance-eyes var(--cat-l25) var(--ease-standard) var(--cat-phase) infinite;
+}
+
+/* done: stretch with the tail up, paw prints pop, then curl up content */
+.cat--live .cat-rig[data-beat="celebrate"] .cat-sit {
+  animation: cat-stretch-out calc(var(--cat-beat) * 1.25) var(--ease-standard) both;
+}
+.cat--live .cat-rig[data-beat="celebrate"] .cat-sit .cat-q-body {
   animation: cat-stretch-body calc(var(--cat-beat) * 0.75) var(--ease-standard) both;
 }
-.cat--live .cat-rig[data-pose="celebrate"] .cat-sit .cat-q-head {
+.cat--live .cat-rig[data-beat="celebrate"] .cat-sit .cat-q-head {
   animation: cat-stretch-head calc(var(--cat-beat) * 0.75) var(--ease-standard) both;
 }
-.cat--live .cat-rig[data-pose="celebrate"] .cat-lie {
-  animation: cat-curl-in calc(var(--cat-beat) * 0.9375) var(--ease-standard) both;
+.cat--live .cat-rig[data-beat="celebrate"] .cat-sit .cat-tail-cel {
+  animation: cat-tail-up calc(var(--cat-beat) * 0.75) var(--ease-standard) both;
 }
-.cat--live .cat-rig[data-pose="celebrate"] .cat-lie .cat-tail-tip {
-  animation: cat-flick calc(var(--cat-beat) * 1.5 * var(--cat-tempo)) linear calc(var(--cat-beat) * 0.9375) infinite;
+.cat--live .cat-rig[data-beat="celebrate"] .cat-done-prints .cat-print {
+  animation: cat-print var(--dur-600) var(--ease-standard) both;
+  animation-delay: calc(var(--cat-beat) * 0.4 + var(--cat-i, 0) * var(--stagger-item));
 }
-.cat--live .cat-rig[data-pose="celebrate"] .cat-lie-body {
-  animation: cat-breathe calc(var(--cat-beat) * 2.5 * var(--cat-tempo)) linear calc(var(--cat-beat) * 0.9375) infinite;
+.cat--live .cat-rig[data-beat="celebrate"] .cat-lie {
+  animation: cat-curl-in calc(var(--cat-beat) * 1.25) var(--ease-standard) both;
+}
+.cat--busy .cat-rig[data-beat="celebrate"] .cat-lie .cat-tail-tip {
+  animation: cat-flick calc(var(--cat-beat) * 1.5 * var(--cat-t)) linear calc(var(--cat-beat) * 1.25) infinite;
+}
+.cat--live .cat-rig[data-beat="celebrate"] .cat-lie-body {
+  animation: cat-breathe calc(var(--cat-beat) * 2.5 * var(--cat-t)) linear calc(var(--cat-beat) * 1.25) infinite;
 }
 
-/* Activity crossfade: the new pose in over --dur-300, the old out over its exit. */
-.cat--live .cat-rig[data-fade="in"] {
+/* Budget running low: the head sinks as if nodding off, then snaps back up. */
+.cat--busy[data-energy="low"] .cat-sit .cat-droop {
+  animation: cat-nod-off calc(var(--cat-beat) * 3 * var(--cat-t)) var(--ease-standard) var(--cat-phase) infinite;
+}
+
+/* Activity change: the new art in over --dur-300, the old out over its exit. */
+.cat--live .cat-rig[data-fade="in"],
+.cat--live .cat-layer[data-fade="in"] {
   animation: cat-fade-in var(--dur-300) var(--ease-standard) both;
 }
-.cat--live .cat-rig[data-fade="out"] {
+.cat--live .cat-rig[data-fade="out"],
+.cat--live .cat-layer[data-fade="out"] {
   animation: cat-fade-out var(--dur-300-exit) var(--ease-standard) both;
 }
 
-/* Status: error flattens the ears and shakes once. */
+/* Status: error flattens the ears, shakes once, and the warning shape pops in. */
 .cat--live[data-status="error"] .cat-shake {
   animation: cat-shake var(--dur-300) var(--ease-standard) 1 both;
+}
+.cat--live .cat-warning {
+  animation: cat-warn-pop var(--dur-300) var(--ease-standard) both;
+}
+
+/* The catch: the awaited task card flies into the paws, a small bob. */
+.cat-catch .cat-catch-card {
+  animation: cat-catch var(--dur-600) var(--ease-standard) both;
+}
+.cat-catch .cat-react-head {
+  animation: cat-tap var(--dur-300) var(--ease-standard) both;
 }
 
 /* Quirks: one-shots while idle or waiting, on a seeded schedule (motion.ts). */
@@ -854,6 +1294,9 @@ button.cat:focus-visible {
 .cat-quirk-blink .cat-lid-q {
   animation: cat-q-lid-shut var(--cat-quirk) var(--ease-standard) both;
 }
+.cat-quirk-twitch .cat-ear-r .cat-ear-loop {
+  animation: cat-twitch var(--cat-quirk) var(--ease-standard) both;
+}
 
 /* Tap, click, or keyboard activation: a short head bob. */
 .cat-react-tap .cat-react-head {
@@ -867,15 +1310,12 @@ button.cat:focus-visible {
 .cat-celebrate .cat-tail-cel {
   animation: cat-tail-up var(--dur-600) var(--ease-standard) both;
 }
-.cat-print {
-  opacity: 0;
-}
-.cat-celebrate .cat-print {
+.cat-celebrate .cat-prints .cat-print {
   animation: cat-print var(--dur-600) var(--ease-standard) both;
   animation-delay: calc(var(--cat-i, 0) * var(--stagger-item));
 }
 
-/* Offscreen cats hold still (IntersectionObserver, motion.ts). */
+/* Offscreen cats and hidden tabs hold still (motion.ts). */
 .cat[data-offscreen],
 .cat[data-offscreen] * {
   animation-play-state: paused !important;
@@ -923,12 +1363,77 @@ button.cat:focus-visible {
   100% { transform: scaleY(var(--cat-lid)); }
   96% { transform: scaleY(1); }
 }
-@keyframes cat-type {
-  0% { transform: translateY(0); }
-  20% { transform: translateY(4px); }
-  40%,
-  100% { transform: translateY(0); }
+@keyframes cat-ponder {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(2deg); }
+  50% { transform: rotate(3deg); }
+  75% { transform: rotate(2deg); }
+  100% { transform: rotate(0deg); }
 }
+
+/* code: 8 taps a paw over 0 to 70%, then the hold */
+@keyframes cat-type-l {
+  0%, 6%, 9%, 15%, 18%, 24%, 27%, 33%, 36%, 42%, 45%, 51%, 54%, 60%, 63%, 69%, 100% { transform: translateY(0); }
+  3%, 12%, 21%, 30%, 39%, 48%, 57%, 66% { transform: translateY(4px); }
+}
+@keyframes cat-type-r {
+  0%, 1.5%, 7.5%, 10.5%, 16.5%, 19.5%, 25.5%, 28.5%, 34.5%, 37.5%, 43.5%, 46.5%, 52.5%, 55.5%, 61.5%, 64.5%, 70.5%, 100% { transform: translateY(0); }
+  4.5%, 13.5%, 22.5%, 31.5%, 40.5%, 49.5%, 58.5%, 67.5% { transform: translateY(4px); }
+}
+@keyframes cat-ln-1 {
+  0% { opacity: 0; transform: scaleX(0); }
+  2% { opacity: 1; transform: scaleX(0.1); }
+  12%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-ln-2 {
+  0%,
+  16% { opacity: 0; transform: scaleX(0); }
+  18% { opacity: 1; transform: scaleX(0.1); }
+  28%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-ln-3 {
+  0%,
+  32% { opacity: 0; transform: scaleX(0); }
+  34% { opacity: 1; transform: scaleX(0.1); }
+  44%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-ln-4 {
+  0%,
+  48% { opacity: 0; transform: scaleX(0); }
+  50% { opacity: 1; transform: scaleX(0.1); }
+  60%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-build {
+  0% { opacity: 1; transform: scaleX(0); }
+  12% { transform: scaleX(0.18); }
+  28% { transform: scaleX(0.42); }
+  44% { transform: scaleX(0.62); }
+  60% { transform: scaleX(0.84); }
+  72%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-write {
+  0% { transform: translate(-22px, 3px); }
+  12% { transform: translate(14px, 3px); }
+  16% { transform: translate(-22px, 10px); }
+  28% { transform: translate(8px, 10px); }
+  32% { transform: translate(-22px, 17px); }
+  44% { transform: translate(-2px, 17px); }
+  50%,
+  94% { transform: translate(0, 0); }
+  100% { transform: translate(-22px, 3px); }
+}
+
+/* run */
 @keyframes cat-scroll {
   from { transform: translateY(0); }
   to { transform: translateY(-32px); }
@@ -938,6 +1443,73 @@ button.cat:focus-visible {
   100% { transform: translateY(0); }
   50% { transform: translateY(1.5px); }
 }
+@keyframes cat-stream {
+  0% { opacity: 1; transform: translateY(0); }
+  15.5% { transform: translateY(0); }
+  16% { transform: translateY(-8px); }
+  31% { transform: translateY(-8px); }
+  31.5% { transform: translateY(-16px); }
+  46.5% { transform: translateY(-16px); }
+  47% { transform: translateY(-24px); }
+  62% { transform: translateY(-24px); }
+  62.5%,
+  94% { opacity: 1; transform: translateY(-32px); }
+  100% { opacity: 0; transform: translateY(-32px); }
+}
+@keyframes cat-stamp-land {
+  0%,
+  62% { opacity: 0; transform: scale(1.6); }
+  68% { opacity: 1; transform: scale(0.94); }
+  72%,
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-enter {
+  0%,
+  8%,
+  100% { transform: translateY(0); }
+  4% { transform: translateY(4px); }
+}
+@keyframes cat-nod-run {
+  0%, 12%, 20%, 28%, 36%, 44%, 52%, 60%, 100% { transform: translateY(0); }
+  16%, 32%, 48% { transform: translateY(1.5px); }
+  66% { transform: translateY(2.5px); }
+  72% { transform: translateY(0); }
+}
+@keyframes cat-tick-1 {
+  0%,
+  10% { opacity: 0; transform: scale(0.4); }
+  14%,
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-tick-2 {
+  0%,
+  26% { opacity: 0; transform: scale(0.4); }
+  30%,
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-tick-3 {
+  0%,
+  42% { opacity: 0; transform: scale(0.4); }
+  46%,
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-tick-4 {
+  0%,
+  58% { opacity: 0; transform: scale(0.4); }
+  62%,
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-nod-4 {
+  0%, 8%, 16%, 24%, 32%, 40%, 48%, 56%, 64%, 100% { transform: translateY(0); }
+  12%, 28%, 44%, 60% { transform: translateY(1.8px); }
+}
+
+/* read */
 @keyframes cat-read {
   0% { transform: translate(-1.5px, 0); }
   21% { transform: translate(1.5px, 0); }
@@ -960,6 +1532,80 @@ button.cat:focus-visible {
   71%,
   96% { transform: translateX(1.8px); }
 }
+
+/* plan */
+@keyframes cat-check-1 {
+  0%,
+  8% { opacity: 0; transform: scale(0.4); }
+  14%,
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-check-2 {
+  0%,
+  30% { opacity: 0; transform: scale(0.4); }
+  36%,
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-check-3 {
+  0%,
+  52% { opacity: 0; transform: scale(0.4); }
+  58%,
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-plan-paw {
+  0%,
+  8%,
+  14% { transform: translate(0, 0); }
+  11% { transform: translate(-2px, 2px); }
+  28%,
+  30%,
+  36% { transform: translate(0, 11px); }
+  33% { transform: translate(-2px, 13px); }
+  50%,
+  52%,
+  58%,
+  92% { transform: translate(0, 22px); }
+  55% { transform: translate(-2px, 24px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes cat-move-1 {
+  0% { opacity: 0; transform: translateX(0); }
+  4%,
+  14% { opacity: 1; transform: translateX(0); }
+  26%,
+  94% { opacity: 1; transform: translateX(44px); }
+  100% { opacity: 0; transform: translateX(44px); }
+}
+@keyframes cat-move-2 {
+  0% { opacity: 0; transform: translateX(0); }
+  4%,
+  34% { opacity: 1; transform: translateX(0); }
+  46%,
+  94% { opacity: 1; transform: translateX(44px); }
+  100% { opacity: 0; transform: translateX(44px); }
+}
+@keyframes cat-move-3 {
+  0% { opacity: 0; transform: translateX(0); }
+  4%,
+  56% { opacity: 1; transform: translateX(0); }
+  68%,
+  94% { opacity: 1; transform: translateX(44px); }
+  100% { opacity: 0; transform: translateX(44px); }
+}
+@keyframes cat-board-paw {
+  0%, 22%, 30%, 42%, 50%, 64%, 72%, 100% { transform: translate(0, 0); }
+  26%, 46%, 68% { transform: translate(-4px, 3px); }
+}
+@keyframes cat-board-head {
+  0%, 14%, 34%, 56% { transform: rotate(-3deg); }
+  26%, 46%, 68%, 94% { transform: rotate(3deg); }
+  100% { transform: rotate(-3deg); }
+}
+
+/* review */
 @keyframes cat-sweep {
   0% { transform: translateX(0); }
   12.5% { transform: translateX(-2.6px); }
@@ -978,47 +1624,95 @@ button.cat:focus-visible {
   75% { transform: translateX(-0.6px); }
   100% { transform: translateX(0.8px); }
 }
-@keyframes cat-draw-1 {
-  0% { opacity: 0; transform: scaleX(0); }
-  2% { opacity: 1; transform: scaleX(0.05); }
-  14%,
-  88% { opacity: 1; transform: scaleX(1); }
-  96%,
-  100% { opacity: 0; transform: scaleX(1); }
+@keyframes cat-sweep-two {
+  0% { transform: translateX(0); }
+  7.5% { transform: translateX(-9px); }
+  15% { transform: translateX(-18px); }
+  22.5% { transform: translateX(-9px); }
+  30% { transform: translateX(0); }
+  37.5% { transform: translateX(-9px); }
+  45% { transform: translateX(-18px); }
+  52.5% { transform: translateX(-9px); }
+  60%,
+  100% { transform: translateX(0); }
 }
-@keyframes cat-draw-2 {
+@keyframes cat-sweep-two-eyes {
   0%,
-  30% { opacity: 0; transform: scaleX(0); }
-  32% { opacity: 1; transform: scaleX(0.05); }
+  30%,
+  60% { transform: translateX(0.8px); }
+  15%,
+  45% { transform: translateX(-2px); }
+  66%,
+  92% { transform: translate(2px, -0.6px); }
+  100% { transform: translateX(0.8px); }
+}
+@keyframes cat-flag-pop {
+  0%,
+  62% { opacity: 0; transform: scaleY(0); }
+  68% { opacity: 1; transform: scaleY(1.08); }
+  72%,
+  92% { opacity: 1; transform: scaleY(1); }
+  100% { opacity: 0; transform: scaleY(1); }
+}
+@keyframes cat-bug-crawl {
+  0% { opacity: 0; transform: translate(0, 0); }
+  4% { opacity: 1; transform: translate(0, 0); }
+  12% { transform: translate(6px, -1px); }
+  22% { transform: translate(11px, 0.5px); }
+  32% { transform: translate(16px, -0.5px); }
   44%,
-  88% { opacity: 1; transform: scaleX(1); }
-  96%,
-  100% { opacity: 0; transform: scaleX(1); }
+  94% { opacity: 1; transform: translate(22px, 0); }
+  100% { opacity: 0; transform: translate(22px, 0); }
 }
-@keyframes cat-draw-3 {
-  0%,
-  58% { opacity: 0; transform: scaleX(0); }
-  60% { opacity: 1; transform: scaleX(0.05); }
-  70%,
-  88% { opacity: 1; transform: scaleX(1); }
-  96%,
-  100% { opacity: 0; transform: scaleX(1); }
+@keyframes cat-sniff {
+  0%, 12%, 24%, 36% { transform: translate(0, 0) rotate(0deg); }
+  6%, 18%, 30% { transform: translate(0, 1.5px) rotate(-1deg); }
+  44% { transform: translate(-1px, 2.5px) rotate(-2deg); }
+  52% { transform: translate(-1px, 4px) rotate(-3deg); }
+  58%,
+  92% { transform: translate(0, 2px) rotate(-1deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
 }
-@keyframes cat-paint {
+@keyframes cat-pounce {
   0%,
+  42% { transform: translate(0, 0) scale(1, 1); }
+  48% { transform: translate(0, 0) scale(1.02, 0.95); }
+  53% { transform: translate(-3px, -6px) scale(1, 1.02); }
+  57%,
+  92% { transform: translate(-3px, 0) scale(1, 1); }
+  100% { transform: translate(0, 0) scale(1, 1); }
+}
+@keyframes cat-hunt-l {
+  0%,
+  48% { transform: translate(0, 0); }
+  54% { transform: translate(-21px, -5px); }
+  57%,
+  92% { transform: translate(-21px, 0); }
   100% { transform: translate(0, 0); }
-  7% { transform: translate(5px, -3px); }
-  14% { transform: translate(9px, 0); }
-  22%,
-  30% { transform: translate(0, 0); }
-  37% { transform: translate(6px, 4px); }
-  44% { transform: translate(11px, 2px); }
-  52%,
-  58% { transform: translate(2px, 6px); }
-  64% { transform: translate(7px, 10px); }
-  70% { transform: translate(10px, 10px); }
-  80% { transform: translate(0, 0); }
 }
+@keyframes cat-hunt-r {
+  0%,
+  48% { transform: translate(0, 0); }
+  54% { transform: translate(-10px, -4px); }
+  57%,
+  92% { transform: translate(-10px, 0); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes cat-crew-head {
+  0%, 34%, 68%, 78%, 100% { transform: translate(0, 0) rotate(0deg); }
+  10%, 20% { transform: translate(-3px, 0) rotate(-6deg); }
+  15% { transform: translate(-3px, 2px) rotate(-6deg); }
+  44%, 54% { transform: translate(3px, 0) rotate(6deg); }
+  49% { transform: translate(3px, 2px) rotate(6deg); }
+  73% { transform: translate(0, 2px) rotate(0deg); }
+}
+@keyframes cat-crew-eyes {
+  0%, 34%, 68%, 100% { transform: translateX(0); }
+  10%, 20% { transform: translateX(-2.5px); }
+  44%, 54% { transform: translateX(2.5px); }
+}
+
+/* research */
 @keyframes cat-scan-turn {
   0% { transform: rotate(0deg); }
   12.5% { transform: rotate(3.5deg); }
@@ -1030,6 +1724,64 @@ button.cat:focus-visible {
   87.5% { transform: rotate(-3.5deg); }
   100% { transform: rotate(0deg); }
 }
+@keyframes cat-pages-head {
+  0%, 24%, 68%, 100% { transform: translate(0, 0) rotate(0deg); }
+  12%, 80% { transform: translate(0, 0) rotate(5deg); }
+  36% { transform: translate(0, 0) rotate(-3deg); }
+  44%,
+  60% { transform: translate(-2px, 3px) rotate(-7deg); }
+}
+@keyframes cat-flip {
+  0%,
+  46% { opacity: 1; transform: scaleX(1); }
+  52% { opacity: 1; transform: scaleX(0); }
+  58%,
+  94% { opacity: 1; transform: scaleX(-1); }
+  100% { opacity: 0; transform: scaleX(-1); }
+}
+
+/* design */
+@keyframes cat-draw-1 {
+  0% { opacity: 0; transform: scaleX(0); }
+  2% { opacity: 1; transform: scaleX(0.05); }
+  16%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-draw-2 {
+  0%,
+  26% { opacity: 0; transform: scaleX(0); }
+  28% { opacity: 1; transform: scaleX(0.05); }
+  42%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-draw-3 {
+  0%,
+  52% { opacity: 0; transform: scaleX(0); }
+  54% { opacity: 1; transform: scaleX(0.05); }
+  66%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-paint {
+  0%,
+  100% { transform: translate(0, 0); }
+  8% { transform: translate(5px, -3px); }
+  16% { transform: translate(10px, 0); }
+  22%,
+  26% { transform: translate(0, 10px); }
+  34% { transform: translate(6px, 13px); }
+  42% { transform: translate(11px, 9px); }
+  48%,
+  52% { transform: translate(1px, 22px); }
+  60% { transform: translate(7px, 22px); }
+  66% { transform: translate(10px, 22px); }
+  74%,
+  94% { transform: translate(0, 0); }
+}
+
+/* scan */
 @keyframes cat-look-around {
   0%,
   30%,
@@ -1051,60 +1803,88 @@ button.cat:focus-visible {
   50%,
   80% { transform: rotate(5deg); }
 }
-@keyframes cat-mouse-move {
-  0%,
-  100% { transform: translate(0, 0); }
-  25% { transform: translate(4px, -2px); }
-  50% { transform: translate(7px, 1px); }
-  75% { transform: translate(3px, 3px); }
-}
-@keyframes cat-check-1 {
-  0%,
-  8% { opacity: 0; transform: scale(0.4); }
+@keyframes cat-shield-up {
+  0% { transform: translateY(6px); }
+  10% { transform: translateY(-2px); }
   14%,
-  88% { opacity: 1; transform: scale(1); }
-  96%,
-  100% { opacity: 0; transform: scale(1); }
+  92% { transform: translateY(0); }
+  100% { transform: translateY(6px); }
 }
-@keyframes cat-check-2 {
+@keyframes cat-sweep-bar {
   0%,
-  33% { opacity: 0; transform: scale(0.4); }
-  39%,
-  88% { opacity: 1; transform: scale(1); }
-  96%,
-  100% { opacity: 0; transform: scale(1); }
-}
-@keyframes cat-check-3 {
-  0%,
-  58% { opacity: 0; transform: scale(0.4); }
+  16% { opacity: 0; transform: translateX(0); }
+  20% { opacity: 1; transform: translateX(2px); }
+  60% { opacity: 1; transform: translateX(32px); }
   64%,
-  88% { opacity: 1; transform: scale(1); }
-  96%,
-  100% { opacity: 0; transform: scale(1); }
+  100% { opacity: 0; transform: translateX(32px); }
 }
-@keyframes cat-plan-paw {
+@keyframes cat-scan-eyes {
   0%,
-  8%,
-  14% { transform: translate(0, 0); }
-  11% { transform: translate(-2px, 2px); }
-  30%,
-  33%,
-  39% { transform: translate(0, 11px); }
-  36% { transform: translate(-2px, 13px); }
-  55%,
+  16% { transform: translateX(-1.5px); }
+  60%,
+  92% { transform: translateX(2.5px); }
+  100% { transform: translateX(-1.5px); }
+}
+
+/* automate */
+@keyframes cat-step-1 {
+  0%,
+  6% { opacity: 1; transform: scaleX(0); }
+  18%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-step-2 {
+  0%,
+  24% { opacity: 1; transform: scaleX(0); }
+  36%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-step-3 {
+  0%,
+  42% { opacity: 1; transform: scaleX(0); }
+  54%,
+  94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+/* handoff and the catch */
+@keyframes cat-toss {
+  0% { opacity: 0; transform: translate(0, 4px) rotate(0deg); }
+  6%,
+  34% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  40% { opacity: 1; transform: translate(0, 3px) rotate(-3deg); }
+  52% { opacity: 1; transform: translate(40px, -20px) rotate(16deg); }
   58%,
-  64%,
-  88% { transform: translate(0, 22px); }
-  61% { transform: translate(-2px, 24px); }
-  100% { transform: translate(0, 0); }
+  100% { opacity: 0; transform: translate(48px, -24px) rotate(20deg); }
 }
-@keyframes cat-walk {
+@keyframes cat-toss-paw {
   0%,
-  50%,
-  100% { transform: translateY(0) rotate(0deg); }
-  25% { transform: translateY(-3px) rotate(-1.5deg); }
-  75% { transform: translateY(-3px) rotate(1.5deg); }
+  34%,
+  62%,
+  100% { transform: translate(0, 0); }
+  40% { transform: translate(0, 3px); }
+  50% { transform: translate(6px, -6px); }
 }
+@keyframes cat-toss-head {
+  0%,
+  40%,
+  92%,
+  100% { transform: translate(0, 0) rotate(0deg); }
+  52%,
+  80% { transform: translate(2px, -1px) rotate(5deg); }
+}
+@keyframes cat-catch {
+  0% { opacity: 0; transform: translate(-60px, -24px) rotate(-18deg); }
+  20% { opacity: 1; }
+  60% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  70% { transform: translate(0, 2px) rotate(0deg); }
+  80% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  100% { opacity: 0; transform: translate(0, 0) rotate(0deg); }
+}
+
+/* ask and wait */
 @keyframes cat-wave {
   0% { transform: rotate(0deg); }
   12.5% { transform: rotate(9.9deg); }
@@ -1124,16 +1904,27 @@ button.cat:focus-visible {
   72% { transform: rotate(-18deg); }
   80% { transform: rotate(4deg); }
 }
-@keyframes cat-ponder {
-  0% { transform: rotate(0deg); }
-  25% { transform: rotate(2deg); }
-  50% { transform: rotate(3deg); }
-  75% { transform: rotate(2deg); }
-  100% { transform: rotate(0deg); }
+@keyframes cat-glance {
+  0%,
+  50%,
+  86%,
+  100% { transform: translate(0, 0) rotate(0deg); }
+  58%,
+  78% { transform: translate(3px, 0) rotate(6deg); }
 }
+@keyframes cat-glance-eyes {
+  0%,
+  50%,
+  86%,
+  100% { transform: translateX(0); }
+  58%,
+  78% { transform: translateX(2.5px); }
+}
+
+/* done */
 @keyframes cat-stretch-out {
   0%,
-  80% { opacity: 1; }
+  75% { opacity: 1; }
   100% { opacity: 0; }
 }
 @keyframes cat-curl-in {
@@ -1153,6 +1944,17 @@ button.cat:focus-visible {
   30%,
   70% { transform: translateY(-7px) rotate(-4deg); }
 }
+
+/* low energy */
+@keyframes cat-nod-off {
+  0%,
+  100% { transform: translateY(2.5px) rotate(-3deg); }
+  55% { transform: translateY(5px) rotate(-6deg); }
+  62% { transform: translateY(0) rotate(1deg); }
+  72% { transform: translateY(2px) rotate(-2deg); }
+}
+
+/* crossfade, error, one-shots */
 @keyframes cat-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -1168,6 +1970,11 @@ button.cat:focus-visible {
   40% { transform: translateX(3px); }
   60% { transform: translateX(-2px); }
   80% { transform: translateX(2px); }
+}
+@keyframes cat-warn-pop {
+  0% { opacity: 0; transform: scale(0.4); }
+  60% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
 }
 @keyframes cat-groom-paw {
   0%,
@@ -1254,6 +2061,18 @@ button.cat:focus-visible {
   47% { transform: translate(6px, -9px); }
   60% { transform: translate(12px, -10px); }
   70% { transform: translate(20px, -4px); }
+}
+@keyframes cat-twitch {
+  0%,
+  20%,
+  34%,
+  60%,
+  74%,
+  100% { transform: rotate(0deg); }
+  24%,
+  64% { transform: rotate(12deg); }
+  28%,
+  68% { transform: rotate(-4deg); }
 }
 @keyframes cat-tap {
   0%,

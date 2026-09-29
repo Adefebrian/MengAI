@@ -95,7 +95,7 @@ export async function wait(ms: number): Promise<void> {
 }
 
 /** Class names that only exist while the cat animates. */
-export const MOTION_CLASS = /(^|\s)(cat--live|cat-quirk-[a-z]+|cat-celebrate|cat-react-tap)(\s|$)/;
+export const MOTION_CLASS = /(^|\s)(cat--live|cat--busy|cat-quirk-[a-z]+|cat-celebrate|cat-catch|cat-react-tap)(\s|$)/;
 
 export function motionClasses(root: ParentNode): string[] {
   const found: string[] = [];

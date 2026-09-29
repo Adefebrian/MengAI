@@ -2,12 +2,15 @@
  * CatCard: one agent at a glance (card.tsx). JAL Core tokens only, flat
  * surfaces and one hairline, selection as a tonal fill with an ink hairline
  * on all four sides. Imported by cats.css.
+ *
+ * Tidiness: the cat owns a fixed square track (--cat-card-media) and the
+ * text owns a minmax(0, 1fr) track, so the two never share space. The card
+ * never gets narrower than its square plus padding, so a collapsed parent
+ * track can never push the cat over a neighbour. Every child has min-width 0.
  */
-
-/* ---------------------------------------------------------------------
- * CatCard: the cat on its cushion, who it is, what it does, energy used
- * ------------------------------------------------------------------- */
 .cat-card {
+  --cat-card-media: var(--space-96px);
+  --cat-card-pad: var(--space-16px);
   container-type: inline-size;
   box-sizing: border-box;
   position: relative;
@@ -16,12 +19,12 @@
   align-items: stretch;
   justify-content: flex-start;
   inline-size: 100%;
-  min-inline-size: 0;
+  min-inline-size: calc(var(--cat-card-media) + var(--cat-card-pad) * 2 + 2px);
   max-inline-size: 100%;
   block-size: auto;
   min-block-size: var(--control-h);
   margin: 0;
-  padding: var(--space-16px);
+  padding: var(--cat-card-pad);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-12);
   background-color: var(--color-surface);
@@ -32,6 +35,17 @@
   font-weight: var(--weight-regular);
   white-space: normal;
   text-align: start;
+}
+.cat-card[data-size="48"] {
+  --cat-card-media: var(--space-48px);
+  --cat-card-pad: var(--space-12px);
+}
+.cat-card[data-size="64"] {
+  --cat-card-media: var(--space-64px);
+  --cat-card-pad: var(--space-12px);
+}
+.cat-card[data-size="160"] {
+  --cat-card-media: calc(var(--space-80px) * 2);
 }
 .cat-card[data-selected] {
   border-color: var(--color-ink);
@@ -69,29 +83,43 @@ button.cat-card[data-selected]:enabled:active {
   outline-offset: 2px;
 }
 
+/* Narrow: the square on top, the rows under it. */
 .cat-card-layout {
   display: grid;
   flex: 1 1 auto;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-16px);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-12px);
   min-inline-size: 0;
+  inline-size: 100%;
 }
-@container (min-width: 280px) {
+/* Wide enough for both: the square at the start, the rows beside it. */
+@container (min-width: 264px) {
   .cat-card-layout {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: var(--cat-card-media) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    column-gap: var(--space-16px);
   }
 }
 .cat-card-media {
   display: block;
+  inline-size: var(--cat-card-media);
+  block-size: var(--cat-card-media);
+  min-inline-size: 0;
   justify-self: start;
   align-self: start;
   line-height: 0;
+  contain: layout paint;
+}
+.cat-card-media > .cat {
+  inline-size: var(--cat-card-media);
 }
 .cat-card-body {
   display: flex;
   flex-direction: column;
   gap: var(--space-8px);
   min-inline-size: 0;
+  min-block-size: 0;
 }
 .cat-card-head {
   display: flex;
@@ -102,6 +130,7 @@ button.cat-card[data-selected]:enabled:active {
 }
 .cat-card-name {
   min-inline-size: 0;
+  max-inline-size: 100%;
   font-size: var(--text-1);
   line-height: var(--line-1);
   font-weight: var(--weight-semibold);
@@ -109,6 +138,7 @@ button.cat-card[data-selected]:enabled:active {
   overflow-wrap: anywhere;
 }
 .cat-card-role {
+  min-inline-size: 0;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
@@ -137,6 +167,7 @@ button.cat-card[data-selected]:enabled:active {
   line-clamp: 2;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-inline-size: 0;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink);
@@ -147,15 +178,26 @@ button.cat-card[data-selected]:enabled:active {
 }
 .cat-card-meter {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   column-gap: var(--space-8px);
   row-gap: var(--space-4px);
   margin-top: auto;
+  min-inline-size: 0;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
 }
+.cat-card-meter-label {
+  grid-column: 1;
+  min-inline-size: 0;
+}
+.cat-card-meter-low {
+  grid-column: 2;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
 .cat-card-meter-value {
+  grid-column: 3;
   color: var(--color-ink);
   font-variant-numeric: tabular-nums;
 }

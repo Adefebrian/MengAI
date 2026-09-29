@@ -1,8 +1,28 @@
 import { describe, expect, test } from "bun:test";
 import { ACTIVITIES, AGENT_ROLES, ACTIVITY_LABEL } from "@mengai/shared";
-import { QUIRKS, QUIRK_MAX_GAP_MS, QUIRK_MIN_GAP_MS, dwellWait, lookAt, quirkSchedule, seededRandom } from "./motion";
-import { ACTIVITY_PROP, MOOD_TEMPO, ROLE_PROP, SIT, clampEnergy, coatOf, energyPercent, phaseMs, poseFor, propFor, stillCaption } from "./poses";
-import { PROP_BOUNDS, asideTransform } from "./props";
+import { LIVE_CAP, QUIRKS, QUIRK_MAX_GAP_MS, QUIRK_MIN_GAP_MS, dwellWait, lookAt, quirkSchedule, seededRandom } from "./motion";
+import {
+  BEATS,
+  BEAT_PROP,
+  LOW_ENERGY,
+  MOOD_TEMPO,
+  ROLE_BEAT,
+  ROLE_ONLY_BEATS,
+  ROLE_PROP,
+  SHARED_BEATS,
+  SIT,
+  activityWords,
+  asideFor,
+  beatFor,
+  clampEnergy,
+  coatOf,
+  energyPercent,
+  isLowEnergy,
+  phaseMs,
+  poseFor,
+  stillCaption,
+  type SitBeat,
+} from "./poses";
 
 describe("dwell", () => {
   test("waits out the rest of the hold, never less than zero", () => {
@@ -48,46 +68,76 @@ describe("quirk schedule", () => {
   });
 });
 
-describe("poses", () => {
+describe("poses and beats", () => {
   test("stopped overrides the activity, everything else shows the activity", () => {
     expect(poseFor("stopped", "code")).toBe("stopped");
     for (const a of ACTIVITIES) expect(poseFor("working", a)).toBe(a);
   });
 
-  test("every activity has a sitting spec, and a still caption from the shared labels", () => {
-    for (const a of ACTIVITIES) {
-      expect(SIT[a]).toBeDefined();
-      expect(stillCaption(a)).toBe(ACTIVITY_LABEL[a]);
+  test("every role x activity resolves to a beat with a sitting spec or the lying rig", () => {
+    for (const role of AGENT_ROLES) {
+      for (const a of ACTIVITIES) {
+        const beat = beatFor(role, a);
+        expect(BEATS).toContain(beat);
+        if (a !== "celebrate") expect(SIT[beat as SitBeat]).toBeDefined();
+      }
+      expect(beatFor(role, "stopped")).toBe("stopped");
+      expect(beatFor(role, "read")).toBe(`read-${role}`);
     }
-    expect(stillCaption("stopped")).toBe("Stopped");
   });
 
-  test("props: the activity prop in use, else the role prop set aside, none while lying", () => {
+  test("the signature beats land on their roles", () => {
+    expect(beatFor("engineer", "code")).toBe("code-build");
+    expect(beatFor("engineer", "run")).toBe("run-stamp");
+    expect(beatFor("reviewer", "review")).toBe("review-stamp");
+    expect(beatFor("qa", "review")).toBe("review-hunt");
+    expect(beatFor("qa", "run")).toBe("run-tests");
+    expect(beatFor("security", "scan")).toBe("scan-sweep");
+    expect(beatFor("security", "review")).toBe("review-flag");
+    expect(beatFor("researcher", "research")).toBe("research-pages");
+    expect(beatFor("designer", "design")).toBe("design-paint");
+    expect(beatFor("lead", "plan")).toBe("plan-board");
+    expect(beatFor("lead", "review")).toBe("review-crew");
+    // a role without a signature beat plays the shared one
+    expect(beatFor("operator", "code")).toBe("code");
+  });
+
+  test("role-only beats belong to exactly one role", () => {
+    for (const beat of ROLE_ONLY_BEATS) {
+      const owners = AGENT_ROLES.filter((role) => Object.values(ROLE_BEAT[role]).includes(beat));
+      expect({ beat, owners: owners.length }).toEqual({ beat, owners: 1 });
+    }
+  });
+
+  test("shared beats keep the role's own object aside, unless the beat already uses it", () => {
+    const own = new Set(Object.values(ROLE_PROP));
+    expect(own.size).toBe(AGENT_ROLES.length);
     for (const role of AGENT_ROLES) {
-      expect(propFor("rest", role)).toEqual({ id: ROLE_PROP[role], mode: "aside" });
-      expect(propFor("stopped", role)).toBeNull();
-      expect(propFor("celebrate", role)).toBeNull();
-      for (const [activity, id] of Object.entries(ACTIVITY_PROP)) {
-        expect(propFor(activity as (typeof ACTIVITIES)[number], role)).toEqual({ id, mode: "use" });
+      expect(asideFor("rest", role)).toBe(ROLE_PROP[role]);
+      expect(asideFor("celebrate", role)).toBe(ROLE_PROP[role]);
+      expect(asideFor("code-build", role)).toBeNull();
+      for (const beat of SHARED_BEATS) {
+        const aside = asideFor(beat, role);
+        if (BEAT_PROP[beat] === ROLE_PROP[role]) expect(aside).toBeNull();
+        else expect(aside).toBe(ROLE_PROP[role]);
       }
     }
+    expect(asideFor("automate", "operator")).toBeNull();
   });
 
-  test("every role prop fits the aside corner inside the viewBox", () => {
-    for (const id of Object.values(ROLE_PROP)) {
-      const [x, y, w, h] = PROP_BOUNDS[id];
-      const m = /translate\(([-\d.]+) ([-\d.]+)\) scale\(([\d.]+)\)/.exec(asideTransform(id))!;
-      const tx = Number(m[1]);
-      const ty = Number(m[2]);
-      const s = Number(m[3]);
-      const left = tx + x * s;
-      const right = tx + (x + w) * s;
-      const top = ty + y * s;
-      const bottom = ty + (y + h) * s;
-      expect(left).toBeGreaterThanOrEqual(7.9);
-      expect(right).toBeLessThanOrEqual(44.1);
-      expect(top).toBeGreaterThanOrEqual(0);
-      expect(bottom).toBeLessThanOrEqual(148.1);
+  test("no desk, computer or furniture props", () => {
+    const banned = /laptop|desk|macbook|monitor|mouse|chair|keyboard|easel|office/i;
+    for (const id of [...Object.values(ROLE_PROP), ...Object.values(BEAT_PROP)]) {
+      if (id) expect({ id, banned: banned.test(id) }).toEqual({ id, banned: false });
+    }
+  });
+
+  test("every sitting spec keeps the paws inside the viewBox", () => {
+    for (const [beat, spec] of Object.entries(SIT)) {
+      for (const [dx, dy] of [spec.pawL, spec.pawR]) {
+        const y = 144 + dy;
+        expect({ beat, ok: y - 6 >= 8 && y + 6 <= 158 && 68 + dx - 9 >= 0 && 92 + dx + 9 <= 160 }).toEqual({ beat, ok: true });
+      }
     }
   });
 
@@ -113,6 +163,23 @@ describe("poses", () => {
     expect(clampEnergy(-1)).toBe(0);
     expect(clampEnergy(Number.POSITIVE_INFINITY)).toBe(0);
     expect(energyPercent(0.499)).toBe(50);
+    expect(isLowEnergy(undefined)).toBe(false);
+    expect(isLowEnergy(LOW_ENERGY - 0.01)).toBe(false);
+    expect(isLowEnergy(LOW_ENERGY)).toBe(true);
+    expect(isLowEnergy(4)).toBe(true);
+  });
+
+  test("still captions come from the shared labels, error says so", () => {
+    for (const a of ACTIVITIES) expect(stillCaption(a)).toBe(a === "automate" ? "Running a runbook" : ACTIVITY_LABEL[a]);
+    expect(activityWords("automate")).not.toMatch(/mac|operat/i);
+    expect(stillCaption("stopped")).toBe("Stopped");
+    expect(stillCaption("code", "error")).toBe("Hit an error");
+  });
+});
+
+describe("calm limit", () => {
+  test("eight cats play full beats at once (JEV live_cap: cap_8)", () => {
+    expect(LIVE_CAP).toBe(8);
   });
 });
 

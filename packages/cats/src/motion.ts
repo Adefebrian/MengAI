@@ -1,9 +1,10 @@
 // Motion logic for the cat: the reduced motion query, the activity dwell,
-// the seeded quirk schedule, the offscreen pause, and pointer follow. Every
-// loop itself is a CSS keyframe on transform or opacity (cats.css); this
-// file only decides which classes and attributes are on, with timeouts,
-// never an animation frame loop.
+// the seeded quirk schedule, the offscreen and hidden-tab pause, the calm
+// limit, the catch, and pointer follow. Every loop itself is a CSS keyframe
+// on transform or opacity (cats.css); this file only decides which classes
+// and attributes are on, with timeouts, never a standing animation frame loop.
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
+import { WORK_POSES, type Pose } from "./poses";
 
 const REDUCE_QUERY = "(prefers-reduced-motion: reduce)";
 
@@ -63,7 +64,7 @@ export function useDwell<T>(value: T, minMs: number): T {
   return shown;
 }
 
-export const QUIRKS = ["groom", "yawn", "stretch", "knead", "bat", "blink"] as const;
+export const QUIRKS = ["groom", "yawn", "stretch", "knead", "bat", "blink", "twitch"] as const;
 export type Quirk = (typeof QUIRKS)[number];
 
 /** How long a quirk plays: --cat-quirk in cats.css (1800ms), the same for every quirk. */
@@ -103,6 +104,10 @@ export function quirkSchedule(seed: number): () => QuirkStep {
   };
 }
 
+function tabHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
 /**
  * Plays seeded quirks while enabled. A quirk due while the cat is offscreen
  * or the tab is hidden is skipped, and the next one is planned.
@@ -116,8 +121,7 @@ export function useQuirks(enabled: boolean, seed: number, offscreen: RefObject<b
     const plan = () => {
       const step = next();
       timer = setTimeout(() => {
-        const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-        if (offscreen.current || hidden) {
+        if (offscreen.current || tabHidden()) {
           plan();
           return;
         }
@@ -137,31 +141,129 @@ export function useQuirks(enabled: boolean, seed: number, offscreen: RefObject<b
   return quirk;
 }
 
+export interface Offscreen {
+  /** Read by the quirk scheduler without a render. */
+  ref: RefObject<boolean>;
+  /** The same fact as state, for the calm limit. */
+  onscreen: boolean;
+}
+
 /**
- * Pauses every loop of an offscreen cat: data-offscreen on the root makes
- * cats.css set animation-play-state: paused. Returns a ref the quirk
- * scheduler reads.
+ * Pauses every loop of a cat that is off screen or in a hidden tab:
+ * data-offscreen on the root makes cats.css set animation-play-state:
+ * paused. A cat counts as on screen until the observer says otherwise.
  */
-export function useOffscreen(target: RefObject<Element | null>, enabled: boolean): RefObject<boolean> {
-  const offscreen = useRef(false);
+export function useOffscreen(target: RefObject<Element | null>, enabled: boolean): Offscreen {
+  const ref = useRef(false);
+  const [onscreen, setOnscreen] = useState(true);
   useEffect(() => {
     const el = target.current;
-    if (!el || !enabled || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        offscreen.current = !entry.isIntersecting;
-        if (offscreen.current) el.setAttribute("data-offscreen", "");
-        else el.removeAttribute("data-offscreen");
-      }
-    });
-    observer.observe(el);
+    if (!el || !enabled) return;
+    let intersecting = true;
+    const apply = () => {
+      const off = !intersecting || tabHidden();
+      ref.current = off;
+      if (off) el.setAttribute("data-offscreen", "");
+      else el.removeAttribute("data-offscreen");
+      setOnscreen(!off);
+    };
+    const observer =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver((entries) => {
+            for (const entry of entries) intersecting = entry.isIntersecting;
+            apply();
+          });
+    observer?.observe(el);
+    document.addEventListener("visibilitychange", apply);
     return () => {
-      observer.disconnect();
-      offscreen.current = false;
+      observer?.disconnect();
+      document.removeEventListener("visibilitychange", apply);
+      ref.current = false;
       el.removeAttribute("data-offscreen");
+      setOnscreen(true);
     };
   }, [target, enabled]);
-  return offscreen;
+  return { ref, onscreen };
+}
+
+/**
+ * The calm limit (JEV motion.intensity live_cap: cap_8). At most LIVE_CAP
+ * cats on screen play their full beat; the rest drop to the calm layer
+ * (breath and blink, the pose held, no quirks). Cats inside a CatCard come
+ * first, then document order.
+ */
+export const LIVE_CAP = 8;
+
+interface Slot {
+  el: Element;
+  rank: number;
+}
+
+const slots = new Set<Slot>();
+const slotListeners = new Set<() => void>();
+let ranked: Slot[] = [];
+
+function byPlace(a: Slot, b: Slot): number {
+  if (a.rank !== b.rank) return a.rank - b.rank;
+  if (a.el === b.el) return 0;
+  // DOCUMENT_POSITION_FOLLOWING: b comes after a
+  return a.el.compareDocumentPosition(b.el) & 4 ? -1 : 1;
+}
+
+function rerank(): void {
+  ranked = [...slots].sort(byPlace);
+  for (const listener of [...slotListeners]) listener();
+}
+
+/** Cats on screen that asked for a live slot, and how many hold one. */
+export function liveSlots(): { onscreen: number; live: number } {
+  return { onscreen: ranked.length, live: Math.min(LIVE_CAP, ranked.length) };
+}
+
+/** True while this cat is past the calm limit: it holds its pose and only breathes and blinks. */
+export function useCalm(target: RefObject<Element | null>, active: boolean): boolean {
+  const [calm, setCalm] = useState(false);
+  useEffect(() => {
+    const el = target.current;
+    if (!el || !active) return;
+    const slot: Slot = { el, rank: el.closest(".cat-card") ? 0 : 1 };
+    const update = () => setCalm(ranked.indexOf(slot) >= LIVE_CAP);
+    slotListeners.add(update);
+    slots.add(slot);
+    rerank();
+    return () => {
+      slots.delete(slot);
+      slotListeners.delete(update);
+      setCalm(false);
+      rerank();
+    };
+  }, [target, active]);
+  return active && calm;
+}
+
+/** The catch: the card flies in over --dur-600 and settles inside this window. */
+export const CATCH_MS = 700;
+
+/**
+ * The catch: a waiting cat that starts working has got what it waited for,
+ * so a task card flies into its paws once. Counts up on each catch, back to
+ * 0 after CATCH_MS.
+ */
+export function useCatch(pose: Pose, live: boolean): number {
+  const [catching, setCatching] = useState(0);
+  const prev = useRef(pose);
+  useEffect(() => {
+    const from = prev.current;
+    prev.current = pose;
+    if (live && from === "wait" && WORK_POSES.has(pose)) setCatching((c) => c + 1);
+  }, [pose, live]);
+  useEffect(() => {
+    if (!catching) return;
+    const timer = setTimeout(() => setCatching(0), CATCH_MS);
+    return () => clearTimeout(timer);
+  }, [catching]);
+  return live ? catching : 0;
 }
 
 function clampUnit(v: number): number {
@@ -221,5 +323,5 @@ export function usePointerFollow(target: RefObject<HTMLElement | null>, enabled:
 export const CELEBRATE_MS = 900;
 /** Tap reaction: --dur-300. */
 export const TAP_MS = 300;
-/** Activity crossfade: the new pose fades in over --dur-300, the old one out over --dur-300-exit. */
+/** Activity change: parts tween and art crossfades over --dur-300, the old art out over --dur-300-exit. */
 export const CROSSFADE_MS = 300;
