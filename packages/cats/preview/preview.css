@@ -146,3 +146,47 @@ body {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* /office: the story controls and the scene frames */
+.pv-office-controls,
+.pv-sizes-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+
+.pv-office-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12px) var(--space-24px);
+  min-width: 0;
+}
+
+.pv-office-time {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-office {
+  min-width: 0;
+}
+
+.pv-hero {
+  min-width: 0;
+  max-inline-size: 560px;
+}
+
+.pv-capture {
+  box-sizing: border-box;
+  padding: var(--space-16px);
+  min-width: 0;
+}
+
+.pv-figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12px);
+  margin: 0;
+}

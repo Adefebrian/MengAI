@@ -2,6 +2,7 @@
 // then serves it with the JAL Core stylesheets and the vendored fonts.
 //   bun packages/cats/preview/serve.ts [port]      (default 4191)
 //   /?reduce=1 previews reduced motion without an OS switch.
+//   /office is the living office on a scripted company day.
 import { join } from "node:path";
 
 const here = import.meta.dir;
@@ -38,7 +39,7 @@ const server = Bun.serve({
   hostname: "127.0.0.1",
   fetch(req) {
     const { pathname } = new URL(req.url);
-    if (pathname === "/") return new Response(Bun.file(join(here, "index.html")));
+    if (pathname === "/" || pathname === "/office" || pathname === "/office/") return new Response(Bun.file(join(here, "index.html")));
     if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
     const asset = assets.get(pathname);
     if (asset) return new Response(asset.body, { headers: { "content-type": asset.type } });

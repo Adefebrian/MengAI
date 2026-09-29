@@ -10,6 +10,7 @@ import { AGENT_STATUSES, MOODS, ROLE_LABEL, STATUS_LABEL, activityForStatus, typ
 import { Cat, CatCard, type CatSize } from "../src/index";
 import { CatFigure } from "../src/cat";
 import { CREW, SCENARIOS, STEPS, TICK_MS, catLabel, frame, statusFor, type Scenario } from "./timeline";
+import { OfficePreview } from "./office";
 
 let reducedAtStart = false;
 
@@ -309,5 +310,8 @@ export function start(): void {
   }
   reducedAtStart = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const mountNode = document.getElementById("root");
-  if (mountNode) createRoot(mountNode).render(<Preview />);
+  if (!mountNode) return;
+  const office = location.pathname.replace(/\/+$/, "") === "/office";
+  if (office) document.title = "MengAI office preview";
+  createRoot(mountNode).render(office ? <OfficePreview /> : <Preview />);
 }

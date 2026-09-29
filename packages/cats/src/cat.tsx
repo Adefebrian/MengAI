@@ -33,7 +33,7 @@ export interface CatFigureProps extends CatProps {
 }
 
 /** Holds the previous pose for one transition after the pose changes, while motion is allowed. */
-function useCrossfade(pose: Pose, live: boolean): Pose | null {
+export function useCrossfade(pose: Pose, live: boolean): Pose | null {
   const [state, setState] = useState<{ pose: Pose; leaving: Pose | null; n: number }>({ pose, leaving: null, n: 0 });
   let current = state;
   if (state.pose !== pose) {

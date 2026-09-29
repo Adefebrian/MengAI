@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { CROSSFADE_MS, QUIRK_MS, TAP_MS } from "./motion";
 
-// cats.css and every stylesheet it imports (card/card.css).
+// cats.css and every stylesheet it imports (card/card.css, office/office.css).
 const main = await Bun.file(new URL("./cats.css", import.meta.url)).text();
 const imported = [...main.matchAll(/@import\s+"([^"]+)"/g)].map((m) => m[1]!);
 const parts = [main, ...(await Promise.all(imported.map((p) => Bun.file(new URL(p, import.meta.url)).text())))];
@@ -44,9 +44,10 @@ function hue(hex: string): { h: number; s: number } {
 }
 
 describe("cats.css law guard", () => {
-  test("reads the card stylesheet too", () => {
-    expect(imported).toEqual(["./card/card.css"]);
+  test("reads the card and office stylesheets too", () => {
+    expect(imported).toEqual(["./card/card.css", "./office/office.css"]);
     expect(code).toContain(".cat-card-layout");
+    expect(code).toContain(".office-stage");
   });
 
   test("no gradient, shadow, blur, or glow", () => {

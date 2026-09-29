@@ -21,8 +21,9 @@
  * purple family, never the accent.
  */
 
-/* CatCard styles live beside it (card/card.css). */
+/* CatCard styles live beside it (card/card.css), the office scene in office/office.css. */
 @import "./card/card.css";
+@import "./office/office.css";
 
 /* ---------------------------------------------------------------------
  * Art tokens

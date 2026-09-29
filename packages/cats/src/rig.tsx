@@ -96,7 +96,7 @@ interface HeadProps {
 }
 
 /** Ears, head, markings, eyes, nose and mouth, in head coordinates (neck at 80, 86). */
-function Head({ pupils, eyes, clipBase, children }: HeadProps) {
+export function Head({ pupils, eyes, clipBase, children }: HeadProps) {
   return (
     <g className="cat-q-head">
       <g className="cat-react-head">

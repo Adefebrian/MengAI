@@ -1,0 +1,872 @@
+/*
+ * The office scene (office.tsx): one aria-hidden SVG floor, desk buttons
+ * over it, and the beat notes under it. Flat fills, tonal steps and
+ * hairlines only: no gradient, no shadow, no blur, no glow. The art keeps a
+ * small flat palette (floor and wall tones, birch desks, monitors, plants,
+ * the coffee machine) beside the JAL Core tokens; nothing in the purple
+ * family and never the accent. Motion is CSS keyframes on transform and
+ * opacity, on only while data-motion is "live" on the office root; walks
+ * are Web Animations translates set by the director. Linear and steps only
+ * for constant loops (the walk cycle, typing, scrolling), --ease-standard
+ * for anything that starts and stops. Under reduced motion or `still`
+ * nothing moves and every beat is also a note.
+ */
+
+.office {
+  --of-slab: #f3f2ef;
+  --of-slab-line: var(--color-border);
+  --of-rug: #e9e5dc;
+  --of-zone: #eeece7;
+  --of-sky: #e4edf2;
+  --of-room-floor: #eceae5;
+  --of-wall: var(--color-surface);
+  --of-skirt: #dedbd4;
+  --of-partition: #e3e0da;
+  --of-glass: #cfccc5;
+  --of-door: #dcd8d0;
+  --of-door-frame: #c9c4ba;
+  --of-line: var(--color-border-strong);
+  --of-desk: #e9e0d1;
+  --of-desk-front: #ddd2c0;
+  --of-desk-line: #c7b9a3;
+  --of-chair: #d3cfc7;
+  --of-chair-line: #b2ada3;
+  --of-bezel: #4d4d4b;
+  --of-stand: #a3a19c;
+  --of-screen: var(--color-surface);
+  --of-tabbar: #efefed;
+  --of-code-a: #3f7cac;
+  --of-code-b: #b9672f;
+  --of-code-c: #4f8a5b;
+  --of-code-d: #cfcfcb;
+  --of-highlight: #e3ecf3;
+  --of-scan: #a9cbe0;
+  --of-mini: #e7e7e4;
+  --of-paper: var(--color-surface);
+  --of-note: #f4f3f0;
+  --of-note-done: #ebf4ee;
+  --of-leaf: #86a66d;
+  --of-leaf-2: #6d8f57;
+  --of-pot: #d6ccbd;
+  --of-mug: var(--color-surface);
+  --of-coffee: #7a5a44;
+  --of-steam: #c9c9c5;
+  --of-machine: #4d4d4b;
+  --of-machine-panel: #7c7b77;
+  --of-fridge: #f1f0ec;
+  --of-sofa: #b9c4c9;
+  --of-sofa-2: #a7b3b9;
+  --of-water: #cfe0e8;
+  --of-pass: #3f8f5a;
+  --of-return: #b36a2c;
+  --of-sw: 2.5;
+  --of-step: calc(var(--dur-300) * 2);
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12px);
+  inline-size: 100%;
+  min-inline-size: 0;
+  box-sizing: border-box;
+}
+
+.office-stage {
+  position: relative;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.office-art {
+  position: absolute;
+  inset: 0;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  font-family: var(--font-sans);
+}
+
+/* ---------------------------------------------------------------------
+ * Text in the art
+ * ------------------------------------------------------------------- */
+.of-t {
+  font-family: var(--font-sans);
+  font-weight: var(--weight-regular);
+  letter-spacing: 0;
+}
+.of-t-n1 {
+  font-size: var(--text-n1);
+}
+.of-t-n2 {
+  font-size: var(--text-n2);
+}
+.of-mono {
+  font-family: var(--font-mono);
+}
+.of-medium {
+  font-weight: var(--weight-medium);
+}
+.of-num {
+  font-variant-numeric: tabular-nums;
+}
+.of-ink {
+  fill: var(--color-ink);
+}
+.of-muted {
+  fill: var(--color-ink-muted);
+}
+.of-subtle {
+  fill: var(--color-ink-subtle);
+}
+.of-tone-warning {
+  fill: var(--color-warning);
+  color: var(--color-warning);
+}
+.of-tone-danger {
+  fill: var(--color-danger);
+  color: var(--color-danger);
+}
+.of-tone-success {
+  fill: var(--color-success);
+  color: var(--color-success);
+}
+.of-tone-muted {
+  fill: var(--color-ink-muted);
+  color: var(--color-ink-muted);
+}
+.of-glyph path {
+  fill: currentColor;
+}
+
+/* ---------------------------------------------------------------------
+ * Structure
+ * ------------------------------------------------------------------- */
+.of-slab {
+  fill: var(--of-slab);
+  stroke: var(--of-slab-line);
+  stroke-width: 1;
+}
+.of-room-floor {
+  fill: var(--of-room-floor);
+}
+.of-wall {
+  fill: var(--of-wall);
+}
+.of-skirting {
+  fill: var(--of-skirt);
+}
+.of-partition {
+  fill: var(--of-partition);
+  stroke: var(--of-glass);
+  stroke-width: 1;
+}
+.of-glass {
+  fill: none;
+  stroke: var(--of-glass);
+  stroke-width: 1.5;
+}
+.of-door-frame {
+  fill: var(--of-door-frame);
+}
+.of-doorway {
+  fill: var(--of-door);
+}
+
+/* ---------------------------------------------------------------------
+ * Furniture
+ * ------------------------------------------------------------------- */
+.of-desk-top {
+  fill: var(--of-desk);
+  stroke: var(--of-desk-line);
+  stroke-width: 1;
+}
+.of-desk-front {
+  fill: var(--of-desk-front);
+  stroke: var(--of-desk-line);
+  stroke-width: 1;
+}
+.of-chair {
+  fill: var(--of-chair);
+  stroke: var(--of-chair-line);
+  stroke-width: 1;
+}
+.of-stool {
+  fill: var(--of-chair);
+  stroke: var(--of-chair-line);
+  stroke-width: 1;
+}
+.of-card-paper {
+  fill: var(--of-paper);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+.of-leaf {
+  fill: var(--of-leaf);
+}
+.of-leaf-2 {
+  fill: var(--of-leaf-2);
+}
+.of-pot {
+  fill: var(--of-pot);
+  stroke: var(--of-desk-line);
+  stroke-width: 1;
+}
+.of-mug {
+  fill: var(--of-mug);
+  stroke: var(--color-ink-muted);
+  stroke-width: 3;
+}
+.of-mug.of-thin {
+  stroke-width: 1.2;
+}
+.of-mug-handle {
+  fill: none;
+  stroke: var(--color-ink-muted);
+  stroke-width: 3;
+}
+.of-mug-handle.of-thin {
+  stroke-width: 1.2;
+}
+.of-coffee {
+  fill: var(--of-coffee);
+}
+.of-steam {
+  fill: none;
+  stroke: var(--of-steam);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.of-held-mug .of-steam {
+  stroke-width: 3;
+}
+
+/* the monitor */
+.of-bezel {
+  fill: var(--of-bezel);
+}
+.of-stand,
+.of-stand-base {
+  fill: var(--of-stand);
+}
+.of-screen {
+  fill: var(--of-screen);
+}
+.of-tabbar {
+  fill: var(--of-tabbar);
+}
+.of-code-a {
+  fill: var(--of-code-a);
+}
+.of-code-b {
+  fill: var(--of-code-b);
+}
+.of-code-c {
+  fill: var(--of-code-c);
+}
+.of-code-d {
+  fill: var(--of-code-d);
+}
+.of-caret {
+  fill: var(--color-ink);
+}
+.of-highlight {
+  fill: var(--of-highlight);
+}
+.of-scanbar {
+  fill: var(--of-scan);
+}
+.of-field {
+  fill: var(--color-surface);
+  stroke: var(--of-code-d);
+  stroke-width: 1;
+}
+.of-mini-card {
+  fill: var(--of-mini);
+  stroke: var(--of-code-d);
+  stroke-width: 0.8;
+}
+.of-block {
+  fill: var(--of-mini);
+}
+.of-block-1 {
+  fill: var(--of-code-a);
+}
+.of-block-4 {
+  fill: var(--of-code-c);
+}
+.of-run-check {
+  fill: none;
+  stroke: var(--of-code-c);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.of-monitor[data-dim] .of-screen-body {
+  opacity: 0.45;
+}
+
+/* the whiteboard and the agenda board */
+.of-board {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+}
+.of-tray {
+  fill: var(--color-border-strong);
+}
+.of-note {
+  fill: var(--of-note);
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.of-note-done {
+  fill: var(--of-note-done);
+  stroke: var(--color-success-border);
+}
+
+/* team pods and the meeting room window */
+.of-zone {
+  fill: var(--of-zone);
+}
+.of-window-frame {
+  fill: var(--of-door-frame);
+}
+.of-sky {
+  fill: var(--of-sky);
+}
+.of-cloud {
+  fill: var(--color-surface);
+}
+
+/* the hero's CEO corner and spare cells */
+.of-rug {
+  fill: var(--of-rug);
+}
+.of-easel-leg {
+  fill: none;
+  stroke: var(--of-stand);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.of-shelf-body {
+  fill: var(--of-desk-front);
+  stroke: var(--of-desk-line);
+  stroke-width: 1;
+}
+.of-shelf-board {
+  fill: var(--of-desk-line);
+}
+.of-book-0 {
+  fill: var(--of-code-a);
+}
+.of-book-1 {
+  fill: var(--of-leaf-2);
+}
+.of-book-2 {
+  fill: var(--of-code-b);
+}
+
+/* the pantry */
+.of-machine {
+  fill: var(--of-machine);
+}
+.of-machine-panel {
+  fill: var(--of-machine-panel);
+}
+.of-machine-spout {
+  fill: var(--of-machine-panel);
+}
+.of-shelf {
+  fill: var(--of-desk-line);
+}
+.of-fridge {
+  fill: var(--of-fridge);
+  stroke: var(--of-line);
+  stroke-width: 1;
+}
+.of-fridge-seam,
+.of-handle {
+  fill: var(--of-line);
+}
+.of-jug {
+  fill: var(--color-surface);
+  stroke: var(--of-line);
+  stroke-width: 1;
+}
+.of-jug-water {
+  fill: var(--of-water);
+}
+.of-sofa-back {
+  fill: var(--of-sofa-2);
+}
+.of-sofa-seat,
+.of-sofa-arm {
+  fill: var(--of-sofa);
+  stroke: var(--of-sofa-2);
+  stroke-width: 1;
+}
+.of-brew:not([data-on]) {
+  opacity: 0;
+}
+
+/* carried cards and stamps */
+.of-card-art {
+  fill: var(--of-paper);
+  stroke: var(--color-ink-muted);
+  stroke-width: 2.4;
+}
+.of-card-line {
+  fill: var(--of-code-d);
+}
+.of-card-line-strong {
+  fill: var(--color-ink-subtle);
+}
+.of-stamp-pass {
+  fill: var(--of-pass);
+}
+.of-stamp-return {
+  fill: var(--of-return);
+}
+.of-stamp-glyph {
+  fill: none;
+  stroke: var(--color-surface);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.of-glyph-sm {
+  stroke-width: 1.6;
+}
+
+/* speech bubbles and the talk mark */
+.of-bubble-box {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+.of-bubble {
+  opacity: 0;
+}
+.of-bubble[data-on] {
+  opacity: 1;
+}
+.of-talk-line {
+  fill: var(--color-ink-subtle);
+}
+
+/* the stopped cat's rig dims as one layer, like the Cat component */
+.of-cat[data-pose="stopped"] .of-rig {
+  opacity: 0.55;
+}
+
+/* the lead looks down toward whoever came to ask */
+.of-look {
+  --cat-look-x: -0.55;
+  --cat-look-y: 0.8;
+}
+
+/* ---------------------------------------------------------------------
+ * The floor actors: shown only while a cat is away from its desk and seat
+ * ------------------------------------------------------------------- */
+.of-actor[data-where="desk"],
+.of-actor[data-where="seat"] {
+  display: none;
+}
+.of-up,
+.of-down {
+  display: none;
+}
+.of-actor[data-face="up"] .of-side,
+.of-actor[data-face="down"] .of-side {
+  display: none;
+}
+.of-actor[data-face="up"] .of-up,
+.of-actor[data-face="down"] .of-down {
+  display: inline;
+}
+.of-flip {
+  transform-origin: 60px 45px;
+}
+.of-actor[data-face="left"] .of-flip {
+  transform: scaleX(-1);
+}
+.of-leg {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+.of-tail-sway {
+  transform-origin: 31px 48px;
+}
+.of-tail-sway-up {
+  transform-origin: 60px 76px;
+}
+.of-paw-up {
+  transform-box: fill-box;
+  transform-origin: 30% 100%;
+}
+.of-paw-up:not([data-on]) {
+  opacity: 0;
+  transform: scaleY(0.5);
+}
+.of-hop {
+  transform-origin: 60px 86px;
+}
+.of-desk-stamp,
+.of-talk {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+/* ---------------------------------------------------------------------
+ * Desk buttons: the whole desk is the hit target, no chrome at rest
+ * ------------------------------------------------------------------- */
+.office-hits {
+  position: absolute;
+  inset: 0;
+}
+.office .office-hit {
+  position: absolute;
+  box-sizing: border-box;
+  display: block;
+  block-size: auto;
+  min-block-size: var(--control-h);
+  max-inline-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-12);
+  background-color: transparent;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--dur-100) var(--ease-standard);
+}
+@media (hover: hover) {
+  .office .office-hit:enabled:hover {
+    background-color: color-mix(in oklab, var(--color-ink) 5%, transparent);
+    border-color: transparent;
+  }
+}
+.office .office-hit:enabled:active {
+  background-color: color-mix(in oklab, var(--color-ink) 9%, transparent);
+  transform: none;
+}
+.office .office-hit[data-selected] {
+  outline: 2px solid var(--color-ink);
+  outline-offset: -2px;
+}
+.office .office-hit:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------
+ * Beat notes: the newest beat as a polite live sentence (a 1px box in the
+ * stage's own layer, clip-path only, nothing outside its parent), and the
+ * written list under the scene when motion is off
+ * ------------------------------------------------------------------- */
+.office-live {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 0;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.office-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-inline-size: 0;
+}
+.office-note {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+  min-inline-size: 0;
+}
+.office-note:first-child {
+  color: var(--color-ink);
+}
+
+/* ---------------------------------------------------------------------
+ * Motion: only while live
+ * ------------------------------------------------------------------- */
+
+/* stand up, sit down, arrive at a seat */
+.office[data-motion="live"] .of-arrive,
+.office[data-motion="live"] .of-sit-in {
+  animation: of-arrive var(--dur-300) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-sit-out {
+  animation: of-leave var(--dur-200-exit) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-flip {
+  transition: transform var(--dur-150) var(--ease-standard);
+}
+
+/* the walk cycle: legs in pairs, a bob twice a stride, the tail sways */
+.office[data-motion="live"] .of-actor[data-pose="walk"] :is(.of-leg-bn, .of-leg-ff) {
+  animation: of-leg var(--of-step) linear infinite;
+}
+.office[data-motion="live"] .of-actor[data-pose="walk"] :is(.of-leg-bf, .of-leg-fn) {
+  animation: of-leg var(--of-step) linear calc(var(--of-step) / -2) infinite;
+}
+.office[data-motion="live"] .of-actor[data-pose="walk"] .of-bob {
+  animation: of-bob calc(var(--of-step) / 2) linear infinite;
+}
+.office[data-motion="live"] .of-actor[data-pose="walk"] :is(.of-tail-sway, .of-tail-sway-up) {
+  animation: of-tail var(--of-step) linear infinite;
+}
+.office[data-motion="live"] .of-actor[data-pose="walk"] .of-step-a {
+  animation: of-step var(--of-step) linear infinite;
+}
+.office[data-motion="live"] .of-actor[data-pose="walk"] .of-step-b {
+  animation: of-step var(--of-step) linear calc(var(--of-step) / -2) infinite;
+}
+.office[data-motion="live"] .of-actor[data-pose="stand"] :is(.of-tail-sway, .of-tail-sway-up) {
+  animation: of-tail calc(var(--loop-pulse) * 2) linear infinite;
+}
+.office[data-motion="live"] .of-paw-up {
+  transition:
+    transform var(--dur-300) var(--ease-standard),
+    opacity var(--dur-200) var(--ease-standard);
+}
+.office[data-motion="live"] .of-celebrate .of-hop {
+  animation: of-hop calc(var(--dur-600) * 2) var(--ease-standard) both;
+}
+
+/* monitors: typing (mu.R10), streaming output, a review sweep, a scan */
+.office[data-motion="live"] .of-monitor[data-anim] .of-scroll {
+  animation: of-scroll calc(var(--loop-pulse) * 5) steps(8, end) infinite;
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-scroll-fast {
+  animation-duration: calc(var(--loop-pulse) * 2);
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-typing {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: of-type calc(var(--loop-pulse) * 5 / 8) linear infinite;
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-caret {
+  animation: of-caret var(--loop-caret) linear infinite;
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-sweep {
+  animation: of-sweep calc(var(--loop-pulse) * 3) linear infinite;
+}
+.office[data-motion="live"] .of-monitor[data-anim] :is(.of-result, .of-block) {
+  animation: of-appear calc(var(--loop-pulse) * 3) linear infinite;
+}
+.office[data-motion="live"] .of-monitor[data-anim] :is(.of-result-2, .of-block-2) {
+  animation-delay: calc(var(--loop-pulse) * 0.4);
+}
+.office[data-motion="live"] .of-monitor[data-anim] :is(.of-result-3, .of-block-3) {
+  animation-delay: calc(var(--loop-pulse) * 0.8);
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-block-4 {
+  animation-delay: calc(var(--loop-pulse) * 1.2);
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-mini-move {
+  animation: of-move calc(var(--loop-pulse) * 3) linear infinite;
+}
+
+/* steam, the brew, bubbles, the talk mark, stamps, pinned cards */
+.office[data-motion="live"] .of-steam {
+  animation: of-steam calc(var(--loop-pulse) * 1.5) linear infinite;
+}
+.office[data-motion="live"] .of-steam-b {
+  animation-delay: calc(var(--loop-pulse) * -0.75);
+}
+.office[data-motion="live"] .of-brew[data-on] {
+  animation: of-brew calc(var(--hold-word) * 2) linear both;
+}
+.office[data-motion="live"] .of-bubble {
+  transition: opacity var(--dur-150-exit) var(--ease-standard);
+}
+.office[data-motion="live"] .of-bubble[data-on] {
+  animation: of-bubble-in var(--dur-150) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-talk {
+  animation: of-arrive var(--dur-200) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-talk-line {
+  animation: of-talk-line var(--loop-caret) linear infinite;
+}
+.office[data-motion="live"] .of-talk-2 {
+  animation-delay: calc(var(--loop-caret) / 3);
+}
+.office[data-motion="live"] .of-talk-3 {
+  animation-delay: calc(var(--loop-caret) / 1.5);
+}
+.office[data-motion="live"] .of-talking .cat-mouth-open {
+  animation: of-mouth calc(var(--loop-pulse) / 4) linear infinite alternate;
+}
+.office[data-motion="live"] .of-desk-stamp {
+  animation: of-stamp var(--dur-300) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-plan-card {
+  animation: of-fade-in var(--dur-200) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-pinned {
+  animation: of-pin var(--dur-600) var(--ease-standard) both;
+}
+
+/* the lead nods yes or shakes its head no */
+.office[data-motion="live"] .of-nod .cat-react-head {
+  animation: of-nod var(--dur-600) var(--ease-standard) 2 both;
+}
+.office[data-motion="live"] .of-shake .cat-react-head {
+  animation: of-no var(--dur-600) var(--ease-standard) 2 both;
+}
+
+/* off screen or a hidden tab: every loop holds still */
+.office[data-offscreen] *,
+.office[data-motion="still"] * {
+  animation-play-state: paused !important;
+}
+.office[data-motion="still"] * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* a safety net if a script could not read the preference: no motion at all */
+@media (prefers-reduced-motion: reduce) {
+  .office *,
+  .office {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Keyframes: transform and opacity only
+ * ------------------------------------------------------------------- */
+@keyframes of-arrive {
+  0% { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes of-leave {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes of-leg {
+  0% { transform: rotate(20deg); }
+  50% { transform: rotate(-20deg); }
+  100% { transform: rotate(20deg); }
+}
+@keyframes of-bob {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-1.8px); }
+  100% { transform: translateY(0); }
+}
+@keyframes of-tail {
+  0% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg); }
+  100% { transform: rotate(-6deg); }
+}
+@keyframes of-step {
+  0% { transform: translateY(0); }
+  25% { transform: translateY(-3px); }
+  50% { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+@keyframes of-hop {
+  0% { transform: translateY(0); }
+  18% { transform: translateY(-10px); }
+  36% { transform: translateY(0); }
+  54% { transform: translateY(-7px); }
+  72% { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+@keyframes of-scroll {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(var(--of-scroll)); }
+}
+@keyframes of-type {
+  0% { transform: scaleX(0.05); }
+  85% { transform: scaleX(1); }
+  100% { transform: scaleX(1); }
+}
+@keyframes of-caret {
+  0% { opacity: 1; }
+  49% { opacity: 1; }
+  50% { opacity: 0; }
+  100% { opacity: 0; }
+}
+@keyframes of-sweep {
+  0% { transform: translateY(0); }
+  45% { transform: translateY(var(--of-sweep)); }
+  55% { transform: translateY(var(--of-sweep)); }
+  100% { transform: translateY(0); }
+}
+@keyframes of-appear {
+  0% { opacity: 0.2; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0.2; }
+}
+@keyframes of-move {
+  0% { transform: translateX(0); }
+  15% { transform: translateX(0); }
+  45% { transform: translateX(var(--of-move)); }
+  85% { transform: translateX(var(--of-move)); }
+  100% { transform: translateX(0); }
+}
+@keyframes of-steam {
+  0% { opacity: 0; transform: translateY(2px); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-5px); }
+}
+@keyframes of-brew {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes of-bubble-in {
+  0% { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes of-talk-line {
+  0% { opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { opacity: 0.35; }
+}
+@keyframes of-mouth {
+  0% { transform: scale(0); }
+  100% { transform: scale(0.55); }
+}
+@keyframes of-stamp {
+  0% { opacity: 0; transform: scale(1.7); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes of-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes of-pin {
+  0% { opacity: 0; transform: translateY(-6px) scale(1.06); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes of-nod {
+  0% { transform: translateY(0) rotate(0deg); }
+  40% { transform: translateY(4px) rotate(3deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+@keyframes of-no {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(-9deg); }
+  75% { transform: rotate(9deg); }
+  100% { transform: rotate(0deg); }
+}
