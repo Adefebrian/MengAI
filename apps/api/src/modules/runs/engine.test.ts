@@ -83,9 +83,9 @@ describe("runs engine: full scenario", () => {
     expect(icon.parentId).toBe(build.id);
     expect(icon.role).toBe("designer");
 
-    // agents: one per role, the lead is Kopi
+    // agents: one per role, the lead is Oyen (the default ceoName)
     expect(snap.agents.map((a) => a.role).sort()).toEqual(["designer", "engineer", "lead", "qa", "reviewer"]);
-    expect(snap.agents.find((a) => a.role === "lead")!.name).toBe("Kopi");
+    expect(snap.agents.find((a) => a.role === "lead")!.name).toBe("Oyen");
     expect(new Set(snap.agents.map((a) => a.name)).size).toBe(snap.agents.length);
     expect(snap.agents.every((a) => a.status === "done")).toBe(true);
 

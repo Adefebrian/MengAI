@@ -4,6 +4,10 @@ import type { MountedModule, ModuleContext } from "../../core/module";
 import type { ContextService } from "../../core/services";
 import { createContextService } from "./service";
 
+export type { BrainContextInput } from "./service";
+export type { CharterOverride, StrategyLayer } from "./charters";
+export { ROLE_CHARTER_MAX_CHARS, STRATEGY_MAX_TOKENS, charterLayer, layerVersion, roleCharter, usableAddenda } from "./charters";
+
 export type ContextModuleDeps = Record<string, never>;
 
 export function createContextModule(

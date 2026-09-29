@@ -1,9 +1,9 @@
 // Context builder: the token-efficiency core. Lays every agent prompt out
 // stable first so vendor prefix caches hit on almost every call:
 //
-//   system   charter (static per role)                      [cached prefix: cacheSystem]
+//   system   charter (static per role, or a dynamic role's) + strategy addenda (role, then the cat's own) [cached prefix: cacheSystem]
 //   tools    only the role's tools
-//   user     brief (goal, project, workspace digest, run history) + memory  [breakpoint]
+//   user     brief (goal, project, workspace digest, run history) + memory (lessons)  [breakpoint]
 //   user     task packet (spec, acceptance, deps, handoff, notes)           [breakpoint]
 //   user     rolling summary of older steps, when compacted                 [breakpoint]
 //   ...      recent steps: assistant tool calls + tool results, verbatim
@@ -19,7 +19,7 @@ import type { Clock } from "../../core/ports/clock";
 import type { ChatMessage, ToolCall, ToolSpec } from "../../core/ports/llm";
 import type { ContextBuild, ContextInput, ContextService, StepRecord } from "../../core/services";
 import { redact } from "../../lib/redact";
-import { charterFor } from "./charters";
+import { charterFor, charterLayer, layerVersion, usableAddenda, type CharterOverride, type StrategyLayer } from "./charters";
 import { createEstimator } from "./estimator";
 import {
   DEDUPE_MIN_CHARS,
@@ -60,6 +60,20 @@ export const CONTINUE_NUDGE = "Continue: call a tool, or call finish with eviden
 
 export interface ContextServiceDeps {
   clock: Clock;
+}
+
+/**
+ * The brain layers a caller may add to a ContextInput (the runs engine and
+ * the evals replay do). All optional: without them the prompt is byte
+ * identical to a build without a brain.
+ *   roleKey  the cache key role: a dynamic role key, else the base role
+ *   charter  a dynamic role's charter in place of the static base charter
+ *   addenda  strategy addenda appended to the charter layer (role, then the cat's own)
+ */
+export interface BrainContextInput extends ContextInput {
+  roleKey?: string | null;
+  charter?: CharterOverride | null;
+  addenda?: StrategyLayer[] | null;
 }
 
 function bullet(items: string[]): string {
@@ -183,9 +197,12 @@ export function createContextService(deps: ContextServiceDeps): ContextService {
     (summary ? est(renderSummary(summary)) + MESSAGE_OVERHEAD : 0) +
     renderSteps(steps).reduce((sum, m) => sum + msgTokens(m), 0);
 
-  function build(input: ContextInput): ContextBuild {
+  function build(input: BrainContextInput): ContextBuild {
     const model = input.model;
-    const system = charterFor(input.role);
+    const charter = input.charter && input.charter.text.trim() ? input.charter : null;
+    const addenda = usableAddenda(input.addenda);
+    const version = layerVersion(charter, addenda);
+    const system = version ? redact(charterLayer(input.role, charter, addenda)) : charterFor(input.role);
     const tools = input.tools;
     const messages: ChatMessage[] = [];
     const layer: Record<ContextLayer, number> = {
@@ -260,7 +277,7 @@ export function createContextService(deps: ContextServiceDeps): ContextService {
         messages,
         tools,
         cacheSystem: true,
-        cacheKey: cacheKeyFor(input.role, input.runId),
+        cacheKey: cacheKeyFor(input.roleKey || input.role, input.runId, version),
       },
       xray,
       estimatedTokens: total,
@@ -329,8 +346,9 @@ export function createContextService(deps: ContextServiceDeps): ContextService {
   };
 }
 
-export function cacheKeyFor(role: AgentRole, runId: string): string {
-  return sha256Hex(`${role}:${runId}`);
+/** One cache key per role key, run and charter layer version: a new version starts a new cached prefix. */
+export function cacheKeyFor(roleKey: AgentRole | string, runId: string, version = ""): string {
+  return sha256Hex(version ? `${roleKey}:${runId}:${version}` : `${roleKey}:${runId}`);
 }
 
 /** Summarizer input: prior summary plus the folded steps, redacted and cut. */

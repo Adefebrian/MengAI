@@ -7,12 +7,25 @@ import type { RunsServiceImpl } from "./service";
 
 const id = z.string().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/);
 
+// budgets: 0 means unlimited; a real token limit starts at 1,000
+const budgetTokens = z
+  .number()
+  .int()
+  .min(0)
+  .max(100_000_000)
+  .refine((v) => v === 0 || v >= 1000, "0 (unlimited) or at least 1000");
+const budgetUsd = z
+  .number()
+  .min(0)
+  .max(10_000)
+  .refine((v) => v === 0 || v >= 0.01, "0 (unlimited) or at least 0.01");
+
 export const createRunSchema = z
   .object({
     projectId: id,
     goal: z.string().trim().min(3).max(4000),
-    budgetTokens: z.number().int().min(1000).max(100_000_000).optional(),
-    budgetUsd: z.number().min(0.01).max(10_000).optional(),
+    budgetTokens: budgetTokens.optional(),
+    budgetUsd: budgetUsd.optional(),
   })
   .strict();
 
@@ -22,8 +35,8 @@ export const messageSchema = z.object({ text: z.string().trim().min(1).max(4000)
 
 export const budgetSchema = z
   .object({
-    budgetTokens: z.number().int().min(1000).max(100_000_000).optional(),
-    budgetUsd: z.number().min(0.01).max(10_000).optional(),
+    budgetTokens: budgetTokens.optional(),
+    budgetUsd: budgetUsd.optional(),
   })
   .strict()
   .refine((b) => b.budgetTokens !== undefined || b.budgetUsd !== undefined, { message: "set budgetTokens or budgetUsd" });
@@ -70,5 +83,6 @@ export function createRunsRoutes(service: RunsServiceImpl): Hono {
   r.get("/:id/calls", async (c) => c.json(await service.calls(param(c, "id"))));
   r.get("/:id/tools/:callId", async (c) => c.json(await service.toolCall(param(c, "id"), param(c, "callId"))));
   r.get("/:id/xray/:agentId", async (c) => c.json(await service.xray(param(c, "id"), param(c, "agentId"))));
+  r.get("/:id/agents/:agentId/mind", async (c) => c.json(await service.mind(param(c, "id"), param(c, "agentId"))));
   return r;
 }

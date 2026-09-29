@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   ACTIVITIES,
   AGENT_ROLES,
+  CAT_NAMES,
   COATS,
+  EVENT_TYPES,
+  LEAD_NAME,
+  NAME_TAILS,
+  RUN_STAGES,
   PROVIDER_PRESETS,
   ROLE_TOOLS,
   TOOL_ACTIVITY,
@@ -11,6 +16,7 @@ import {
   catLook,
   costUsd,
   findPreset,
+  leadCatName,
   pickCatName,
   priceFor,
 } from "./index";
@@ -41,16 +47,58 @@ describe("cat identity", () => {
     expect(a).toEqual(b);
     expect(COATS).toContain(a.coat);
   });
-  test("lead gets Kopi, names stay unique", () => {
-    const taken = new Set<string>();
-    const lead = pickCatName("a", "lead", taken);
-    expect(lead).toBe("Kopi");
-    taken.add(lead);
-    for (let i = 0; i < 60; i++) {
-      const n = pickCatName(`agent-${i}`, "engineer", taken);
+  test("the CEO is Oyen by default, or the owner's ceoName; nobody else takes it", () => {
+    expect(LEAD_NAME).toBe("Oyen");
+    expect(pickCatName("a", "lead", new Set())).toBe("Oyen");
+    expect(pickCatName("a", "lead", new Set(), "Kopi")).toBe("Kopi");
+    expect(leadCatName("  Mas   Oyen  ")).toBe("Mas Oyen");
+    expect(leadCatName("")).toBe("Oyen");
+    expect(leadCatName(null)).toBe("Oyen");
+    expect(leadCatName("x".repeat(40))).toHaveLength(24);
+    for (let i = 0; i < 200; i++) {
+      expect(pickCatName(`agent-${i}`, "engineer", new Set())).not.toBe("Oyen");
+      expect(pickCatName(`agent-${i}`, "engineer", new Set(), "Kopi")).not.toBe("Kopi");
+    }
+  });
+
+  test("a large, cute pool of one-word Indonesian names, unique per run and deterministic", () => {
+    expect(CAT_NAMES.length).toBeGreaterThanOrEqual(80);
+    expect(new Set(CAT_NAMES).size).toBe(CAT_NAMES.length);
+    for (const n of ["Belang", "Cemong", "Tompel", "Garong", "Gembul", "Cimol", "Moci", "Bolu", "Kunyit", "Cireng", "Martabak", "Oreo"]) expect(CAT_NAMES as readonly string[]).toContain(n);
+    for (const n of CAT_NAMES) expect(n).toMatch(/^[A-Z][a-z]+$/);
+    expect(CAT_NAMES as readonly string[]).not.toContain(LEAD_NAME);
+    const taken = new Set<string>([pickCatName("lead", "lead", new Set())]);
+    for (let i = 0; i < CAT_NAMES.length; i++) {
+      const n = pickCatName(`agent-${i}`, AGENT_ROLES[1 + (i % 7)]!, taken);
+      expect(taken.has(n)).toBe(false);
+      expect(CAT_NAMES as readonly string[]).toContain(n);
+      taken.add(n);
+    }
+    expect(pickCatName("same", "qa", new Set(["Bolu"]))).toBe(pickCatName("same", "qa", new Set(["Bolu"])));
+  });
+
+  test("when the pool runs out the names get a playful second word, then a number", () => {
+    const taken = new Set<string>(["Oyen", ...CAT_NAMES]);
+    const combo = pickCatName("agent-x", "engineer", taken);
+    const [base, tail] = combo.split(" ");
+    expect(CAT_NAMES as readonly string[]).toContain(base);
+    expect(NAME_TAILS as readonly string[]).toContain(tail);
+    for (let i = 0; i < 500; i++) {
+      const n = pickCatName(`agent-${i}`, "designer", taken);
       expect(taken.has(n)).toBe(false);
       taken.add(n);
     }
+    const full = new Set<string>(["Oyen", ...CAT_NAMES]);
+    for (const b of CAT_NAMES) for (const t of NAME_TAILS) full.add(`${b} ${t}`);
+    expect(pickCatName("agent-y", "qa", full)).toMatch(/^[A-Z][a-z]+ \d+$/);
+  });
+});
+
+describe("brain contracts", () => {
+  test("tracker stages are ordered and the brain events are registered", () => {
+    expect(RUN_STAGES).toEqual(["goal", "planned", "hired", "working", "review", "testing", "shipped"]);
+    for (const t of ["agent.spawned", "agent.left", "agent.reflexion", "strategy.updated", "role.created", "run.stage"] as const) expect(EVENT_TYPES).toContain(t);
+    expect(new Set(EVENT_TYPES).size).toBe(EVENT_TYPES.length);
   });
 });
 

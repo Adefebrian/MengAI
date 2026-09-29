@@ -119,12 +119,14 @@ export interface PlanItem {
   role: AgentRole;
   review: boolean;
   after: string[];
+  /** a dynamic role's title, shown instead of the base role label */
+  roleTitle?: string;
 }
 
 export function kickoffText(items: readonly PlanItem[], starters: ReadonlyArray<{ name: string; title: string }>) {
   const agenda = lines(items.map((x) => x.title), COMPANY.agendaItems);
   const notes = lines(
-    items.map((x) => `${x.title}: ${ROLE_LABEL[x.role]}${x.after.length ? `, after ${x.after.join(", ")}` : ""}${x.review ? ", reviewed" : ""}`),
+    items.map((x) => `${x.title}: ${x.roleTitle ?? ROLE_LABEL[x.role]}${x.after.length ? `, after ${x.after.join(", ")}` : ""}${x.review ? ", reviewed" : ""}`),
     COMPANY.noteItems,
   );
   const reviewed = items.filter((x) => x.review).length;

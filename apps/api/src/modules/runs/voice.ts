@@ -187,4 +187,18 @@ export const VOICE = {
   answered: (askerName: string) => statusLine(`Answered ${askerName}`),
   escalating: (askerName: string) => statusLine(`Taking ${askerName}'s question to the owner`),
   signedOff: (title: string) => statusLine(`Signed off on ${text(title, 60) ?? "the task"}`),
+  /** the self-check before a finish */
+  selfCheck: "Double-checking the work before handing it in",
+  anotherRound: (critique: string) => statusLine(`One more round: ${critique}`),
+  /** a cat that was let go packs its desk */
+  leaving: "Packing up the desk",
+  hiring: (role: string) => statusLine(`Hiring a ${role}`),
+  playbook: (role: string, version: number) => statusLine(`New ${role} playbook v${version}`),
+  /** the CEO writes a charter for a new role */
+  definingRole: (title: string) => statusLine(`Writing a charter for a ${title}`),
+  /** the CEO reads the evaluation of a candidate strategy */
+  tuning: (who: string) => statusLine(`Rethinking how ${who} works`),
+  coaching: (name: string) => statusLine(`Coaching ${name}`),
+  /** a cat handed a sub-problem back: it does that part itself */
+  selfServe: (title: string) => statusLine(`Doing ${text(title, 50) ?? "it"} myself`),
 } as const;

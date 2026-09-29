@@ -258,6 +258,8 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       automation: automation ?? automationUnavailable,
       workspace: workspace.service,
       eventLog: events.service,
+      // the scripted demo crew answers its own brain decisions; real runs ask JEV
+      judge: demoOpts ? undefined : providers.service.judge,
     });
     killswitch.register("runner", () => runner.killAll());
     const evals = createEvalsModule(ctx, { context: context.service, tools: tools.service });

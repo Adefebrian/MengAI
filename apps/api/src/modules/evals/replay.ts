@@ -7,7 +7,7 @@
 //           summarize call is charged), simulated vendor prefix cache.
 // Both policies replay the identical scripted steps, so output tokens match
 // and only the prompt policy differs.
-import type { EvalRunDTO, LessonDTO } from "@mengai/shared";
+import { DEFAULT_CHAT_MODEL, priceFor, type EvalRunDTO, type LessonDTO } from "@mengai/shared";
 import type { ToolCall, ToolSpec } from "../../core/ports/llm";
 import type { ContextInput, ContextService, StepRecord } from "../../core/services";
 import { LEGACY, LEGACY_PLANNING_NUDGE, legacyConversation, legacyRawCap, legacyToolOutput, type LegacyMessage } from "./legacy";
@@ -55,11 +55,34 @@ export interface SuiteReplay {
   v2: PolicyReplay;
   /** 1 - v2 / legacy on billableInputTokens, in percent, one decimal */
   savingsPct: number;
+  /** v2 with the brain on, when ReplayOptions.brain is set */
+  brain?: PolicyReplay;
+  /** 1 - brain / legacy on cost units (billable input + weighted output), in percent, one decimal */
+  brainSavingsPct?: number;
 }
 
 export interface ReplayDeps {
   context: ContextService;
   specsFor: (role: ScenarioFixture["role"]) => ToolSpec[];
+}
+
+/**
+ * The brain layers a v2 replay can switch on. The fields ride on the
+ * ContextInput exactly as the runs engine sends them (the context module
+ * reads them), so the replay meters the real prompt:
+ *   addenda    strategy addenda in the charter layer (the role's, then the cat's own)
+ *   reflexion  the fast-tier critic call before the finish, plus one extra
+ *              round (one more step at full context, then a second critic
+ *              call) on every `reviseEvery`-th scenario
+ */
+export interface ReplayBrain {
+  addenda?: Array<{ scope: "role" | "agent"; version: number; text: string }> | null;
+  reflexion?: {
+    system: string;
+    packet: (s: ScenarioFixture, history: StepRecord[]) => string;
+    outputTokens: number;
+    reviseEvery: number;
+  } | null;
 }
 
 interface ScriptedStep {
@@ -157,7 +180,7 @@ function lessonsFor(s: ScenarioFixture): LessonDTO[] {
   }));
 }
 
-export async function replayV2(s: ScenarioFixture, suite: SuiteFixture, deps: ReplayDeps, cache: PrefixCache): Promise<ScenarioResult> {
+export async function replayV2(s: ScenarioFixture, suite: SuiteFixture, deps: ReplayDeps, cache: PrefixCache, brain: ReplayBrain | null = null, index = 0): Promise<ScenarioResult> {
   const est: Estimator = (t) => deps.context.estimateTokens(t, suite.model);
   const r = emptyResult(s);
   const steps = scriptSteps(s, est);
@@ -176,6 +199,7 @@ export async function replayV2(s: ScenarioFixture, suite: SuiteFixture, deps: Re
     budgetTokens: budget,
     contextWindow: suite.contextWindow,
     model: suite.model,
+    ...(brain?.addenda?.length ? { addenda: brain.addenda } : {}),
   };
 
   let history: StepRecord[] = [];
@@ -202,6 +226,23 @@ export async function replayV2(s: ScenarioFixture, suite: SuiteFixture, deps: Re
       assistant: { text: step.say, toolCalls: step.toolCalls },
       results: step.results.map((res) => ({ callId: res.callId, tool: res.tool, output: deps.context.truncateOutput(res.raw), ok: res.ok })),
     });
+  }
+  const rx = brain?.reflexion;
+  if (rx) {
+    // the critic before the finish: its own tiny prompt, never cached (under the 1,024-token floor)
+    const critic = () => {
+      const m = measurePrompt({ system: rx.system, messages: [{ role: "user", content: rx.packet(s, history) }] }, est);
+      recordCall(r, m.inputTokens, rx.outputTokens, 0);
+    };
+    critic();
+    if (rx.reviseEvery > 0 && index % rx.reviseEvery === 0) {
+      // one extra round: the cat takes one more step at full context, then the critic reads again
+      const build = deps.context.build({ ...base, steps: history, summary });
+      const m = measurePrompt(build.request, est);
+      recordCall(r, m.inputTokens, steps[steps.length - 1]?.outputTokens ?? 0, cache.read(build.request.cacheKey, m.prefixes));
+      if (m.inputTokens > suite.contextWindow) r.passed = false;
+      critic();
+    }
   }
   r.billableInputTokens = billableInput(r.inputTokens, r.cachedTokens);
   return r;
@@ -231,6 +272,51 @@ export interface ReplayOptions {
   v2Cache?: CacheModel;
   /** legacy cache model; null = no cache, the measured baseline (default null) */
   legacyCache?: CacheModel | null;
+  /** also replay v2 with the brain on (addenda, reflexion, amortized side calls): SuiteReplay.brain */
+  brain?: SuiteBrain | null;
+}
+
+/** The brain as a whole suite pays for it: the addenda per role, reflexion, and the fast-tier side calls. */
+export interface SuiteBrain {
+  addendaFor: (role: ScenarioFixture["role"]) => NonNullable<ReplayBrain["addenda"]>;
+  reflexion: NonNullable<ReplayBrain["reflexion"]> | null;
+  /**
+   * Side calls charged to the suite, each `count` times: strategy tuning,
+   * dynamic role charters. Given the scenario count, so a call can be
+   * amortized (one tuning call per three finished tasks).
+   */
+  sideCalls: (scenarios: number) => Array<{ system: string; user: string; outputTokens: number; count: number }>;
+}
+
+/** Output tokens weigh this much input at the default model's prices (gpt-4o-mini: 0.60 / 0.15 = 4). */
+export const OUTPUT_WEIGHT = (() => {
+  const p = priceFor(DEFAULT_CHAT_MODEL).price;
+  return p.input > 0 ? p.output / p.input : 1;
+})();
+
+/** Full-rate-equivalent tokens of a policy: billable input plus weighted output. */
+export function costUnits(m: Metrics): number {
+  return m.billableInputTokens + Math.round(m.outputTokens * OUTPUT_WEIGHT);
+}
+
+export async function replayBrain(suite: SuiteFixture, deps: ReplayDeps, brain: SuiteBrain, v2Cache: CacheModel = DEFAULT_V2_CACHE): Promise<PolicyReplay> {
+  const est: Estimator = (t) => deps.context.estimateTokens(t, suite.model);
+  const cache = new PrefixCache(v2Cache);
+  const results: ScenarioResult[] = [];
+  for (let i = 0; i < suite.scenarios.length; i++) {
+    const s = suite.scenarios[i]!;
+    results.push(await replayV2(s, suite, deps, cache, { addenda: brain.addendaFor(s.role), reflexion: brain.reflexion }, i));
+  }
+  const into = results[0];
+  if (into) {
+    // side calls: their own tiny prompts, never cached (under the 1,024-token floor)
+    for (const c of brain.sideCalls(results.length)) {
+      const m = measurePrompt({ system: c.system, messages: [{ role: "user", content: c.user }] }, est);
+      for (let k = 0; k < c.count; k++) recordCall(into, m.inputTokens, c.outputTokens, 0);
+    }
+    into.billableInputTokens = billableInput(into.inputTokens, into.cachedTokens);
+  }
+  return { policy: "v2", metrics: aggregate(results), scenarios: results };
 }
 
 export async function replaySuite(suite: SuiteFixture, deps: ReplayDeps, opts: ReplayOptions = {}): Promise<SuiteReplay> {
@@ -242,5 +328,12 @@ export async function replaySuite(suite: SuiteFixture, deps: ReplayDeps, opts: R
   for (const s of suite.scenarios) v2.push(await replayV2(s, suite, deps, cache));
   const lm = aggregate(legacy);
   const vm = aggregate(v2);
-  return { suite: suite.id, legacy: { policy: "legacy", metrics: lm, scenarios: legacy }, v2: { policy: "v2", metrics: vm, scenarios: v2 }, savingsPct: savingsPct(lm, vm) };
+  const out: SuiteReplay = { suite: suite.id, legacy: { policy: "legacy", metrics: lm, scenarios: legacy }, v2: { policy: "v2", metrics: vm, scenarios: v2 }, savingsPct: savingsPct(lm, vm) };
+  if (opts.brain) {
+    const b = await replayBrain(suite, deps, opts.brain, opts.v2Cache ?? DEFAULT_V2_CACHE);
+    out.brain = b;
+    const lc = costUnits(lm);
+    out.brainSavingsPct = lc > 0 ? Math.round((1 - costUnits(b.metrics) / lc) * 1000) / 10 : 0;
+  }
+  return out;
 }

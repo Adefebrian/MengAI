@@ -5,7 +5,7 @@ import type { BlobStore } from "../../core/ports/blob";
 import type { ToolSpec } from "../../core/ports/llm";
 import type { ContextInput, ContextService, StepRecord } from "../../core/services";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
-import { createContextModule } from "./index";
+import { createContextModule, layerVersion, type BrainContextInput } from "./index";
 
 const memoryBlob: BlobStore = {
   async put(key, _data, _type) {
@@ -121,6 +121,55 @@ describe("context charters", () => {
       expect(service.charter(role)).toBe(charter);
       expect(/[^\x00-\x7f]/.test(charter)).toBe(false);
     }
+  });
+});
+
+describe("context brain layers", () => {
+  const sha = (t: string) => new Bun.CryptoHasher("sha256").update(t).digest("hex");
+  const brain = (over: Partial<BrainContextInput>): BrainContextInput => ({ ...input(), ...over });
+
+  test("strategy addenda follow the charter, role first, and version the cache key", async () => {
+    const { service } = await setup();
+    const plain = service.build(input());
+    const role = { scope: "role" as const, version: 2, text: "- Run the checks after the last edit." };
+    const own = { scope: "agent" as const, version: 1, text: "- Read the review notes twice." };
+    const out = service.build(brain({ addenda: [own, role] }));
+    const sys = out.request.system;
+    expect(sys.startsWith(service.charter("engineer"))).toBe(true);
+    expect(sys.indexOf("Role strategy v2")).toBeGreaterThan(0);
+    expect(sys.indexOf("Your own strategy v1")).toBeGreaterThan(sys.indexOf("Role strategy v2"));
+    expect(out.request.cacheKey).toBe(sha("engineer:run-1:c1.r2.a1"));
+    expect(out.request.cacheKey).not.toBe(plain.request.cacheKey);
+    // the charter layer grows by the addenda only; the messages are unchanged
+    expect(JSON.stringify(out.request.messages)).toBe(JSON.stringify(plain.request.messages));
+    expect(out.xray.layers[0]!.tokens).toBeGreaterThan(plain.xray.layers[0]!.tokens);
+    // two cats of the role at the same version share the prefix up to their own addendum
+    const other = service.build(brain({ agentId: "agent-2", addenda: [role] }));
+    expect(other.request.system.startsWith(service.build(brain({ addenda: [role] })).request.system)).toBe(true);
+    expect(other.request.cacheKey).toBe(sha("engineer:run-1:c1.r2"));
+  });
+
+  test("a dynamic role brings its own charter and cache key; empty or version 0 layers change nothing", async () => {
+    const { service } = await setup();
+    const charter = { version: 1, title: "Launch tester", text: "You are the Launch tester cat on a MengAI crew, a qa specialist.\n- Test the page like a first visitor." };
+    const out = service.build(brain({ role: "qa", roleKey: "launch-tester", charter }));
+    expect(out.request.system.startsWith("You are the Launch tester cat")).toBe(true);
+    expect(out.request.system).toContain("Working rules:");
+    expect(out.request.cacheKey).toBe(sha("launch-tester:run-1:c1"));
+    const plain = service.build(input());
+    expect(service.build(brain({ addenda: [{ scope: "role", version: 0, text: "x" }, { scope: "agent", version: 3, text: "  " }] })).request).toEqual(plain.request);
+    expect(service.build(brain({ charter: { version: 1, title: "x", text: " " } })).request.system).toBe(plain.request.system);
+    expect(layerVersion(null, [])).toBe("");
+    expect(layerVersion(charter, [{ scope: "agent", version: 4, text: "a" }])).toBe("c1.a4");
+  });
+
+  test("addenda are capped at 120 tokens and redacted", async () => {
+    const { service } = await setup();
+    const secret = "sk-" + "a".repeat(40);
+    const out = service.build(brain({ addenda: [{ scope: "role", version: 1, text: `- Never print ${secret}. ${"word ".repeat(400)}` }] }));
+    expect(out.request.system).not.toContain(secret);
+    const added = out.request.system.slice(service.charter("engineer").length);
+    expect(added.length).toBeLessThanOrEqual(120 * 4 + 80);
   });
 });
 

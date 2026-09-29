@@ -2,6 +2,13 @@
 // review loop, guards, budgets, mood and every state change the UI renders.
 // The engine is the single writer of its run's agents and tasks while it is
 // live; every change is persisted first, then published as an event.
+//
+// The brain rides on the same loop: work, verify, self-critique, fix per task
+// (an evidence-first reflexion check before a finish is accepted, at most two
+// extra rounds, an adaptive step budget); strategy addenda per role and per
+// cat, tuned when they underperform and adopted by runtime JEV; dynamic roles
+// defined from context; an unlimited org where any cat can hire helpers and
+// the CEO lets a struggling cat go; the run tracker (run.stage).
 import {
   ACTIVITY_LABEL,
   ROLE_LABEL,
@@ -9,6 +16,7 @@ import {
   activityForStatus,
   activityForTool,
   catLook,
+  leadCatName,
   pickCatName,
   type AgentDTO,
   type AgentRole,
@@ -22,8 +30,11 @@ import {
   type LessonDTO,
   type MeetingDTO,
   type MeetingKind,
+  type RoleDTO,
   type RunDTO,
+  type RunStage,
   type Severity,
+  type StrategyVersionDTO,
   type TaskDTO,
   type TaskPatchBody,
   type TaskStatus,
@@ -65,9 +76,28 @@ import {
   type CeoVerdict,
   type SyncNext,
 } from "./company";
+import { EvidenceLog, REFLEXION, REFLEXION_SYSTEM, StepBudget, initialSteps, parseReflexion, precheck, reflexionPacket, type Evidence, type Verdict } from "./brain";
+import { createBrainJudge, planAdopt, planHire, planLetGo, planRole, type BrainJudge } from "./judge";
+import { ORG, budgetLeftShare, canAffordHire, depthOf, hireReason, letGoReason, type BudgetView, type HireKind } from "./org";
 import { LIMITS, OUTPUT_CAP, RepeatGuard, TITLES, bounded, moodFor, roleCap } from "./policy";
-import type { RunsDeps } from "./ports";
-import { emptyUsage, progressOf, type RunsRepo } from "./repo";
+import { BRAIN_DEFAULTS, brainOf, type BrainMemory, type BrainOptions, type OutcomeKind, type RunsDeps, type StrategySubject } from "./ports";
+import { emptyUsage, progressOf, type MindSnapshot, type RunsRepo } from "./repo";
+import {
+  ARCHETYPES,
+  ROLE_GEN,
+  ROLE_SYSTEM,
+  archetypeTools,
+  baseRoleOf,
+  closestRole,
+  fallbackCharter,
+  parseRoleReply,
+  roleCharterText,
+  rolePacket,
+  roleSlug,
+  roleTitle,
+  toolSubset,
+} from "./roles";
+import { stageFromBoard, stageMoves } from "./stage";
 import { VOICE, batchLine, statusLine, thinkingLine, toolLine } from "./voice";
 
 // ------------------------------------------------------------------ types
@@ -91,6 +121,8 @@ interface Issue {
 interface LiveTask {
   dto: TaskDTO;
   kind: TaskKind;
+  /** a handoff child whose hire runtime JEV already approved (orch.hire) */
+  hireOk: boolean;
   /** review and fix tasks: the task under review */
   targetId: string | null;
   /** handoff children: the compact summary from the parent */
@@ -110,6 +142,18 @@ interface LiveTask {
 
 interface LiveAgent {
   dto: AgentDTO;
+  /** the most recent failure, for the let-go reason */
+  lastFailure: string | null;
+  /** recent failure causes, newest first (coaching and the let-go decision read them) */
+  failures: string[];
+  /** tasks it finished well in this run */
+  done: number;
+  /** runtime JEV answered coach once already */
+  coached: boolean;
+  /** the failure count the let-go question was last asked at */
+  askedAt: number;
+  /** what the latest prompt carried, for the mind panel */
+  mind: MindSnapshot | null;
   busy: boolean;
   /** waiting on a handoff child or a human: does not count as active */
   waiting: boolean;
@@ -132,6 +176,33 @@ interface ControlOut {
   output: string;
   ok: boolean;
   end?: Outcome;
+}
+
+interface Hire {
+  kind: HireKind;
+  reason: string;
+  /** the hiring cat: the CEO, or the cat that asked for help */
+  by: LiveAgent | null;
+  /** the new cat's place in the org: its parent (the CEO for plan hires, the asking cat for helpers) */
+  parent: LiveAgent | null;
+}
+
+/** The owner's org settings for this run. */
+export interface OrgSettings {
+  ceoName: string;
+  /** cats in the run at most, the CEO included; 0 = unlimited */
+  maxAgents: number;
+  /** levels below the CEO; 0 = unlimited */
+  maxDepth: number;
+}
+
+export const DEFAULT_ORG: OrgSettings = { ceoName: "Oyen", maxAgents: 0, maxDepth: 0 };
+
+/** The dynamic-role part of a context build, on top of ContextInput (the context module reads these fields). */
+interface BrainLayers {
+  roleKey: string;
+  charter: { version: number; title: string; text: string } | null;
+  addenda: Array<{ scope: "role" | "agent"; version: number; text: string }>;
 }
 
 interface Brief {
@@ -158,6 +229,8 @@ export interface EngineInit {
   hooks: EngineHooks;
   /** hydrate: meetings rebuilt from the event log, when the service has one */
   meetings?: MeetingDTO[];
+  /** the owner's org settings (CEO name, maxAgents, maxDepth); defaults when absent */
+  org?: Partial<OrgSettings>;
 }
 
 const TERMINAL_TASK: ReadonlySet<TaskStatus> = new Set(["done", "failed", "blocked", "cancelled"]);
@@ -225,6 +298,16 @@ function addUsage(into: UsageTotals, d: UsageTotals): void {
   into.calls += d.calls;
 }
 
+/** The strategy addendum cap the JEV plan checks (context STRATEGY_MAX_TOKENS). */
+const REFLEXION_STRATEGY_CAP = 120;
+
+/** Why a lesson is in a cat's head: its scope and its track record. */
+function lessonReason(l: LessonDTO): string {
+  const scope = l.scope === "global" ? "A crew-wide lesson" : l.scope === "role" ? `A lesson for every ${l.role ?? "crew"} cat` : "A lesson from this project";
+  const record = l.uses > 0 ? `, ${l.wins} of ${l.uses} uses went well` : ", not used yet";
+  return `${scope} that matches this task${record}.`;
+}
+
 // ----------------------------------------------------------------- engine
 export class RunEngine {
   run: RunDTO;
@@ -264,6 +347,25 @@ export class RunEngine {
   private history: string | null | undefined = undefined;
   private digestStale = true;
 
+  // ------------------------------------------------------------ brain
+  private readonly brain: BrainMemory | null;
+  private readonly opts: BrainOptions;
+  private readonly org: OrgSettings;
+  private readonly judge: BrainJudge;
+  /** dynamic roles of the project, by id */
+  private readonly roles = new Map<string, RoleDTO>();
+  private rolesCreated = 0;
+  /** active strategy per subject ("role:<key>", "agent:<id>"), as last read or adopted */
+  private readonly strategies = new Map<string, StrategyVersionDTO | null>();
+  /** subjects with a tuning pass in flight: a role's dispatch (or a coached cat) waits for the result */
+  private readonly tuning = new Map<string, Promise<void>>();
+  /** runtime JEV orch.hire answers for queue hires, per role key, pool size and queue length */
+  private readonly hireMemo = new Map<string, "hire" | "self" | "wait">();
+  private departures = 0;
+  /** role key -> the name of the last cat of that role that was let go (for the replacement's reason) */
+  private readonly leftByRole = new Map<string, string>();
+  private stage: RunStage | null = null;
+
   private constructor(init: EngineInit) {
     this.ctx = init.ctx;
     this.deps = init.deps;
@@ -274,6 +376,21 @@ export class RunEngine {
     this.maxConcurrent = Math.max(1, Math.floor(init.maxConcurrent || 1));
     this.hooks = init.hooks;
     this.log = init.ctx.logger.child({ module: "runs", runId: init.run.id });
+    this.brain = brainOf(init.deps.memory);
+    this.opts = { ...BRAIN_DEFAULTS, ...(init.deps.brain ?? {}) };
+    this.org = {
+      ceoName: leadCatName(init.org?.ceoName ?? DEFAULT_ORG.ceoName),
+      maxAgents: Math.max(0, Math.floor(init.org?.maxAgents ?? 0)),
+      maxDepth: Math.max(0, Math.floor(init.org?.maxDepth ?? 0)),
+    };
+    this.judge = createBrainJudge({
+      judge: init.deps.judge ?? init.deps.llm.judge ?? null,
+      kv: init.ctx.kv,
+      clock: init.ctx.clock,
+      log: this.log,
+      save: (row) => (this.closed ? Promise.resolve() : this.repo.insertBrainDecision(row)),
+      publish: (decision, agentId) => this.emit("decision", { decision }, agentId, null),
+    });
   }
 
   // ------------------------------------------------------- construction
@@ -283,11 +400,18 @@ export class RunEngine {
     await e.emit("run.created", { run: e.view });
     const automation = await e.automationAvailable();
     const roles = (Object.keys(ROLE_LABEL) as AgentRole[]).filter((r) => r !== "lead" && (automation || r !== "operator"));
+    await e.loadRoles();
+    const known = [...e.roles.values()].slice(0, 8).map((r) => `${r.title} (${r.archetype})`);
     const planSpec = [
       `Goal: ${e.run.goal}`,
       `Plan the work for the crew. Call create_tasks once with at most ${LIMITS.maxTasksPerCall} small, verifiable tasks:`,
       "title, spec, acceptance (a short list), role, deps (keys or positions of earlier tasks) and review (true for code changes).",
       `Roles: ${roles.join(", ")}.`,
+      ...(e.opts.org
+        ? [
+            `For a specialist the roles do not name, add role_title (for example "Accessibility auditor") next to the closest role.${known.length ? ` Specialists this project already has: ${known.join(", ")}.` : ""}`,
+          ]
+        : []),
       "If the goal is trivial, do it without tasks. Then call finish with a short plan summary.",
     ].join("\n");
     const plan = e.makeTask({
@@ -303,9 +427,10 @@ export class RunEngine {
       assigneeId: null,
       kind: "plan",
     });
-    const lead = await e.spawnAgent("lead", plan);
+    const lead = await e.spawnAgent("lead", plan, { kind: "lead", reason: hireReason("lead", ROLE_LABEL.lead), by: null, parent: null });
     plan.dto.assigneeId = lead.dto.id;
     await e.insertTask(plan);
+    await e.advanceStage("goal", `${lead.dto.name} has the goal`);
     e.kick();
     return e;
   }
@@ -320,9 +445,8 @@ export class RunEngine {
     ]);
     for (const h of handoffs) e.handoffs.set(h.id, h);
     const byChild = new Map(handoffs.map((h) => [h.taskId, h] as const));
-    for (const a of agents) {
-      e.agents.set(a.id, { dto: a, busy: false, waiting: false, ctl: null, consecutiveFailures: 0, cleanSteps: 0, justPassed: false, humanWait: null });
-    }
+    for (const a of agents) e.agents.set(a.id, e.liveAgent(a));
+    await e.loadRoles([...agents.map((a) => a.roleId), ...tasks.map((t) => t.roleId)]);
     for (const dto of tasks) {
       const h = byChild.get(dto.id);
       const kind: TaskKind =
@@ -340,6 +464,7 @@ export class RunEngine {
       e.tasks.set(dto.id, {
         dto,
         kind,
+        hireOk: kind === "handoff",
         targetId: kind === "review" || kind === "fix" ? dto.parentId : null,
         handoff: h?.summary ?? null,
         handoffId: h?.id ?? null,
@@ -388,6 +513,9 @@ export class RunEngine {
       const open = [...e.tasks.values()].some((c) => c.targetId === t.dto.id && !isTerminal(c));
       if (!open) await e.startReview(t, t.dto.resultSummary ?? "", t.dto.assigneeId);
     }
+    e.departures = agents.filter((a) => a.leftReason).length;
+    for (const a of agents) if (a.leftReason) e.leftByRole.set(e.keyOf(a), a.name);
+    e.stage = e.boardStage();
     return e;
   }
 
@@ -414,6 +542,18 @@ export class RunEngine {
 
   meetingList(): MeetingDTO[] {
     return this.meetings.map((m) => ({ ...m, agentIds: [...m.agentIds], agenda: [...m.agenda], notes: [...m.notes] }));
+  }
+
+  /** dynamic roles this run uses (by its agents or tasks) */
+  roleList(): RoleDTO[] {
+    const used = new Set<string>();
+    for (const a of this.agents.values()) if (a.dto.roleId) used.add(a.dto.roleId);
+    for (const t of this.tasks.values()) if (t.dto.roleId) used.add(t.dto.roleId);
+    return [...used].map((id) => this.roles.get(id)).filter((r): r is RoleDTO => !!r);
+  }
+
+  get stageNow(): RunStage {
+    return this.stage ?? this.boardStage();
   }
 
   overBudget(): boolean {
@@ -599,6 +739,61 @@ export class RunEngine {
     await this.emit("run.usage", { usage: v.usage, budgetTokens: v.budgetTokens, budgetUsd: v.budgetUsd, progress: v.progress });
   }
 
+  // ------------------------------------------------------ brain helpers
+  private liveAgent(dto: AgentDTO): LiveAgent {
+    return {
+      dto,
+      lastFailure: null,
+      failures: [],
+      done: 0,
+      coached: false,
+      askedAt: 0,
+      mind: null,
+      busy: false,
+      waiting: false,
+      ctl: null,
+      consecutiveFailures: 0,
+      cleanSteps: 0,
+      justPassed: false,
+      humanWait: null,
+    };
+  }
+
+  /** Pool key of an agent or a task: its dynamic role's key, else its base role. */
+  private keyOf(x: { role: AgentRole; roleId?: string | null }): string {
+    const r = x.roleId ? this.roles.get(x.roleId) : undefined;
+    return r ? r.key : x.role;
+  }
+
+  private titleOf(x: { role: AgentRole; roleId?: string | null }): string {
+    const r = x.roleId ? this.roles.get(x.roleId) : undefined;
+    return r ? r.title : ROLE_LABEL[x.role];
+  }
+
+  /** The project's dynamic roles, plus any by id (a role another project run created). */
+  private async loadRoles(ids: Array<string | null | undefined> = []): Promise<void> {
+    try {
+      for (const r of await this.repo.projectRoles(this.project.id)) this.roles.set(r.id, r);
+      const missing = ids.filter((id): id is string => !!id && !this.roles.has(id));
+      if (missing.length) for (const r of await this.repo.rolesByIds(missing)) this.roles.set(r.id, r);
+    } catch (e) {
+      this.log.log("warn", "roles load failed", { error: redact(errMsg(e)) });
+    }
+  }
+
+  private boardStage(): RunStage {
+    const board = [...this.tasks.values()].map((t) => ({ role: t.dto.role, status: t.dto.status, kind: t.kind }));
+    return stageFromBoard(board, this.run.status, [...this.agents.values()].filter(alive).length);
+  }
+
+  /** Moves the tracker (forward only, or back to working after a failed review) and publishes run.stage. */
+  private async advanceStage(next: RunStage, reason: string, loopBack = false): Promise<void> {
+    if (!stageMoves(this.stage, next, loopBack)) return;
+    const previous = this.stage;
+    this.stage = next;
+    await this.emit("run.stage", { stage: next, previous, reason: bounded(reason, 160) });
+  }
+
   // ----------------------------------------------------------- agents
   private lead(): LiveAgent | undefined {
     return [...this.agents.values()].find((a) => a.dto.role === "lead" && alive(a));
@@ -651,31 +846,40 @@ export class RunEngine {
     }
   }
 
-  private async spawnAgent(role: AgentRole, forTask: LiveTask): Promise<LiveAgent> {
+  /**
+   * Hires one cat for `forTask`'s role (its dynamic role when it has one).
+   * The CEO is named from the owner's ceoName (Oyen by default); every other
+   * cat gets a cute name no one in this run has. Its parent is the cat that
+   * hired it, so the org can grow to any depth.
+   */
+  private async spawnAgent(role: AgentRole, forTask: LiveTask, hire: Hire): Promise<LiveAgent> {
     const id = this.ctx.clock.id();
     const taken = new Set([...this.agents.values()].map((a) => a.dto.name));
-    const name = pickCatName(id, role, taken);
+    const name = pickCatName(id, role, taken, this.org.ceoName);
     const look = catLook(id);
+    const dyn = role !== "lead" && forTask.dto.roleId ? (this.roles.get(forTask.dto.roleId) ?? null) : null;
     let tier: Tier = "balanced";
     try {
       const target = forTask.targetId ? this.tasks.get(forTask.targetId) : undefined;
+      const failures = target ? target.rounds : 0;
       const r = await this.deps.decisions.modelTier({
         runId: this.run.id,
         role,
         task: { title: forTask.dto.title, spec: forTask.dto.spec, acceptance: forTask.dto.acceptance },
-        signals: { priorFailures: target?.rounds ?? 0, risk: role === "security" || role === "operator", files: 0 },
+        signals: { priorFailures: failures, risk: role === "security" || role === "operator", files: 0 },
         available: [...TIERS],
       });
       tier = r.tier;
     } catch (e) {
       this.log.log("warn", "modelTier failed, using balanced", { error: redact(errMsg(e)) });
     }
-    const creator = forTask.dto.createdBy ? this.agents.get(forTask.dto.createdBy) : undefined;
     const now = this.ctx.clock.now();
+    const lead = this.lead() ?? null;
+    const parent = role === "lead" ? null : (hire.parent ?? lead);
     const dto: AgentDTO = {
       id,
       runId: this.run.id,
-      parentId: role === "lead" ? null : (creator?.dto.id ?? this.lead()?.dto.id ?? null),
+      parentId: parent?.dto.id ?? null,
       role,
       name,
       look: { coat: look.coat, seed: look.seed },
@@ -689,17 +893,28 @@ export class RunEngine {
       usage: emptyUsage(),
       createdAt: now,
       updatedAt: now,
+      roleTitle: dyn ? dyn.title : ROLE_LABEL[role],
+      archetype: role,
+      roleId: dyn?.id ?? null,
+      hireReason: role === "lead" ? null : hire.reason,
+      hiredBy: hire.by?.dto.id ?? null,
+      leftReason: null,
     };
-    const a: LiveAgent = { dto, busy: false, waiting: false, ctl: null, consecutiveFailures: 0, cleanSteps: 0, justPassed: false, humanWait: null };
+    const a = this.liveAgent(dto);
     this.agents.set(id, a);
     await this.repo.insertAgent(dto);
-    await this.emit("agent.spawned", { agent: dto }, id, null);
+    await this.emit("agent.spawned", { agent: dto, reason: hire.reason, hiredBy: hire.by?.dto.id ?? null }, id, null);
+    if (hire.by && hire.by !== a && role !== "lead") {
+      await this.emit("agent.say", { text: clip(`Welcome aboard, ${name}. ${hire.reason}.`, LIMITS.sayChars), to: id }, hire.by.dto.id, forTask.dto.id);
+    }
     return a;
   }
 
   private async markPass(a: LiveAgent): Promise<void> {
     a.justPassed = true;
     a.consecutiveFailures = 0;
+    a.askedAt = 0;
+    a.done++;
     if (!this.closed) await this.repo.addAgentOutcome(a.dto.id, true, this.ctx.clock.now());
     await this.setAgent(a, {});
   }
@@ -733,6 +948,9 @@ export class RunEngine {
     kind: TaskKind;
     targetId?: string | null;
     handoff?: string | null;
+    /** a dynamic role; `role` is then its archetype */
+    roleId?: string | null;
+    hireOk?: boolean;
   }): LiveTask {
     const now = this.ctx.clock.now();
     const dto: TaskDTO = {
@@ -755,10 +973,12 @@ export class RunEngine {
       updatedAt: now,
       startedAt: null,
       endedAt: null,
+      roleId: input.roleId ?? null,
     };
     return {
       dto,
       kind: input.kind,
+      hireOk: input.hireOk ?? false,
       targetId: input.targetId ?? null,
       handoff: input.handoff ?? null,
       handoffId: null,
@@ -900,6 +1120,8 @@ export class RunEngine {
     for (const t of ready) {
       if (this.run.status !== "running" || this.closed) return;
       if (this.activeCount() >= this.maxConcurrent) break;
+      // a role being tuned waits: its next task starts with the new strategy
+      if (this.tuning.has(`role:${this.keyOf(t.dto)}`)) continue;
       if (t.dto.role === "operator") {
         if (automation === null) automation = await this.automationAvailable();
         if (!automation) {
@@ -915,18 +1137,395 @@ export class RunEngine {
     if (dispatched === 0) await this.checkCompletion();
   }
 
+  /** A cat of the task's role (its dynamic role when it has one) that is free, or a new hire, or null (the task waits). */
   private async pickAgent(t: LiveTask): Promise<LiveAgent | null> {
+    const key = this.keyOf(t.dto);
+    const usable = (a: LiveAgent) => !a.busy && !this.seated.has(a.dto.id) && !this.tuning.has(`agent:${a.dto.id}`);
     if (t.dto.assigneeId) {
       const owner = this.agents.get(t.dto.assigneeId);
-      if (owner && alive(owner) && owner.dto.role === t.dto.role) return owner.busy || this.seated.has(owner.dto.id) ? null : owner;
+      if (owner && alive(owner) && this.keyOf(owner.dto) === key) return usable(owner) ? owner : null;
     }
-    const pool = [...this.agents.values()].filter((a) => a.dto.role === t.dto.role && alive(a));
-    const idle = pool.find((a) => !a.busy && !this.seated.has(a.dto.id));
-    if (idle) return idle;
-    // a cat of this role is in a meeting: wait for it to come back instead of hiring another
-    if (pool.some((a) => !a.busy && this.seated.has(a.dto.id))) return null;
-    if (pool.length < roleCap(t.dto.role)) return this.spawnAgent(t.dto.role, t);
-    return null;
+    const pool = [...this.agents.values()].filter((a) => alive(a) && this.keyOf(a.dto) === key);
+    const free = pool.find(usable);
+    if (free) return free;
+    // a cat of this role is in a meeting or being coached: wait for it instead of hiring another
+    if (pool.some((a) => !a.busy)) return null;
+    const hire = await this.hireFor(t, pool);
+    if (!hire || t.dto.status !== "ready" || this.closed) return null;
+    return this.spawnAgent(t.dto.role, t, hire);
+  }
+
+  // ---------------------------------------------------------- the org
+  private budgetView(): BudgetView {
+    const u = this.run.usage;
+    return { budgetTokens: this.run.budgetTokens, usedTokens: u.inputTokens + u.outputTokens, budgetUsd: this.run.budgetUsd, usedUsd: u.costUsd };
+  }
+
+  private crewSize(): number {
+    return [...this.agents.values()].filter(alive).length;
+  }
+
+  private depthOfAgent(a: LiveAgent | null): number {
+    return a ? depthOf(a.dto.id, (id) => this.agents.get(id)?.dto.parentId) : 0;
+  }
+
+  /**
+   * Whether a task with no free cat gets a new one, who hires it and why.
+   *   the role has no cat: the plan (or an approved handoff) needs one, the CEO hires it
+   *   an approved handoff to a busy role: the asking cat hires a helper below itself
+   *   every cat of the role is busy and a slot is free: runtime JEV orch.hire, hire or wait
+   * The owner's maxAgents is a hard cap; 0 is unlimited.
+   */
+  private async hireFor(t: LiveTask, pool: LiveAgent[]): Promise<Hire | null> {
+    const role = t.dto.role;
+    const title = this.titleOf(t.dto);
+    const key = this.keyOf(t.dto);
+    const lead = this.lead() ?? null;
+    const creator = t.dto.createdBy ? (this.agents.get(t.dto.createdBy) ?? null) : null;
+    if (!this.opts.org) {
+      if (pool.length >= roleCap(role)) return null;
+      if (pool.length > 0) return { kind: "queue", reason: hireReason("queue", title, { waiting: 1 }), by: lead, parent: lead };
+      return t.kind === "handoff" && creator
+        ? { kind: "handoff", reason: hireReason("handoff", title, { by: creator.dto.name, task: t.dto.title }), by: creator, parent: creator }
+        : { kind: "needed", reason: hireReason("needed", title, { task: t.dto.title }), by: lead, parent: lead };
+    }
+    // the company has exactly one CEO
+    if (role === "lead") return pool.length === 0 ? { kind: "lead", reason: hireReason("lead", ROLE_LABEL.lead), by: null, parent: null } : null;
+    const crew = this.crewSize();
+    if (this.org.maxAgents > 0 && crew >= this.org.maxAgents) return null;
+    const asker = t.kind === "handoff" && t.hireOk && creator && creator !== lead ? creator : null;
+    if (pool.length === 0) {
+      const replaces = this.leftByRole.get(key);
+      if (asker) return { kind: "handoff", reason: hireReason("handoff", title, { by: asker.dto.name, task: t.dto.title }), by: asker, parent: asker };
+      if (replaces) return { kind: "replacement", reason: hireReason("replacement", title, { replaces, task: t.dto.title }), by: lead, parent: lead };
+      return { kind: "needed", reason: hireReason("needed", title, { task: t.dto.title }), by: lead, parent: lead };
+    }
+    // optional hires only when a cat could start right now
+    if (this.activeCount() >= this.maxConcurrent) return null;
+    if (asker) return { kind: "helper", reason: hireReason("helper", title, { by: asker.dto.name, task: t.dto.title }), by: asker, parent: asker };
+    const waiting = [...this.tasks.values()].filter((x) => x.dto.status === "ready" && this.keyOf(x.dto) === key).length;
+    const memo = `${key}:${pool.length}:${Math.min(3, waiting)}`;
+    let answer = this.hireMemo.get(memo);
+    if (!answer) {
+      const d = await this.judge.run(
+        planHire({
+          runId: this.run.id,
+          kind: "queue",
+          asker: lead ? { id: lead.dto.id, name: lead.dto.name, title: ROLE_LABEL.lead } : null,
+          roleKey: key,
+          role,
+          title,
+          task: { title: t.dto.title, spec: t.dto.spec },
+          pool: pool.length,
+          waiting,
+          crew,
+          maxAgents: this.org.maxAgents,
+          depth: 1,
+          maxDepth: this.org.maxDepth,
+          affordable: canAffordHire(this.budgetView(), crew),
+          budgetLeftShare: budgetLeftShare(this.budgetView()),
+        }),
+      );
+      answer = d.result;
+      this.hireMemo.set(memo, answer);
+    }
+    if (answer !== "hire") return null;
+    return { kind: "queue", reason: hireReason("queue", title, { waiting }), by: lead, parent: lead };
+  }
+
+  /**
+   * A cat asks to hand work off and no cat of the target role is free:
+   * runtime JEV orch.hire decides whether to hire one or let the asker do it
+   * itself. True means the handoff goes ahead.
+   */
+  private async approveHandoffHire(a: LiveAgent, toRole: AgentRole, roleId: string | null, title: string, spec: string): Promise<{ ok: boolean; why: string }> {
+    if (!this.opts.org) return { ok: true, why: "" };
+    const key = this.keyOf({ role: toRole, roleId });
+    const pool = [...this.agents.values()].filter((x) => alive(x) && x !== a && this.keyOf(x.dto) === key);
+    if (pool.some((x) => !x.busy && !this.seated.has(x.dto.id))) return { ok: true, why: "" };
+    const crew = this.crewSize();
+    const d = await this.judge.run(
+      planHire({
+        runId: this.run.id,
+        kind: "handoff",
+        asker: { id: a.dto.id, name: a.dto.name, title: this.titleOf(a.dto) },
+        roleKey: key,
+        role: toRole,
+        title: this.titleOf({ role: toRole, roleId }),
+        task: { title, spec },
+        pool: pool.length,
+        waiting: [...this.tasks.values()].filter((x) => x.dto.status === "ready" && this.keyOf(x.dto) === key).length,
+        crew,
+        maxAgents: this.org.maxAgents,
+        depth: this.depthOfAgent(a) + 1,
+        maxDepth: this.org.maxDepth,
+        affordable: pool.length > 0 || canAffordHire(this.budgetView(), crew),
+        budgetLeftShare: budgetLeftShare(this.budgetView()),
+      }),
+    );
+    return { ok: d.result === "hire", why: d.decision.action };
+  }
+
+  /**
+   * A crew cat with three failures in a row (JEV orch.playbooks) is idle:
+   * runtime JEV orch.let_go decides to let it go, coach it (a strategy of its
+   * own, tuned and adopted like a role's), or keep it. A cat let go leaves
+   * the company; its open tasks and the work it failed go back on the board
+   * for a replacement.
+   */
+  private async maybeLetGo(a: LiveAgent): Promise<void> {
+    if (!this.opts.org || this.closed || this.finishing || this.run.status !== "running") return;
+    if (!alive(a) || a.busy || a.dto.role === "lead" || this.seated.has(a.dto.id)) return;
+    if (a.consecutiveFailures < ORG.askAfter || a.askedAt === a.consecutiveFailures) return;
+    a.askedAt = a.consecutiveFailures;
+    const crew = this.crewSize();
+    const d = await this.judge.run(
+      planLetGo({
+        runId: this.run.id,
+        agent: { id: a.dto.id, name: a.dto.name, title: this.titleOf(a.dto), role: a.dto.role },
+        consecutive: a.consecutiveFailures,
+        failures: a.failures,
+        done: a.done,
+        coached: a.coached,
+        departures: this.departures,
+        maxDepartures: ORG.maxDepartures,
+        canReplace: canAffordHire(this.budgetView(), crew - 1),
+      }),
+    );
+    if (d.result === "coach") {
+      a.coached = true;
+      const lead = this.lead();
+      if (lead && lead !== a) await this.emit("agent.say", { text: clip(`${a.dto.name}, let us look at how you work before the next task.`, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, null);
+      if (this.opts.tuning) this.startTuning({ kind: "agent", key: a.dto.id, role: a.dto.role, title: this.titleOf(a.dto) }, a);
+      return;
+    }
+    if (d.result !== "let_go" || !alive(a) || a.busy || this.closed) return;
+    await this.letGo(a);
+  }
+
+  private async letGo(a: LiveAgent): Promise<void> {
+    this.departures++;
+    const reason = letGoReason(a.consecutiveFailures, a.lastFailure);
+    const lead = this.lead() ?? null;
+    a.dto = { ...a.dto, leftReason: reason };
+    await this.setAgent(a, { status: "stopped", currentTaskId: null, statusText: VOICE.leaving });
+    const requeued: string[] = [];
+    for (const t of [...this.tasks.values()]) {
+      if (t.dto.assigneeId !== a.dto.id) continue;
+      const open = t.dto.status === "queued" || t.dto.status === "ready";
+      // the work it failed goes back too, for the replacement to redo
+      const failed = t.kind === "work" && (t.dto.status === "failed" || (t.dto.status === "blocked" && !this.isDepBlocked(t)));
+      if (!open && !failed) continue;
+      t.failReason = null;
+      await this.saveTask(t, { status: "queued", assigneeId: null, ...(failed ? { resultSummary: null, endedAt: null } : {}) });
+      requeued.push(t.dto.id);
+    }
+    this.leftByRole.set(this.keyOf(a.dto), a.dto.name);
+    await this.emit("agent.left", { agentId: a.dto.id, reason, byAgentId: lead?.dto.id ?? null, requeued }, a.dto.id, null);
+    if (lead) await this.emit("agent.say", { text: clip(`${a.dto.name}, thank you for your work here. ${reason}.`, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, null);
+    this.kick();
+  }
+
+  // -------------------------------------------------------- learning
+  /** One outcome of a cat's role (its dynamic role key when it has one); any role that underperforms gets tuned, the CEO's too. */
+  private async roleOutcome(a: LiveAgent, t: LiveTask, outcome: "win" | "loss", kind: OutcomeKind, cause: string): Promise<void> {
+    if (this.closed) return;
+    if (outcome === "loss") a.failures = [bounded(`${kind.replace("_", " ")}: ${t.dto.title}${cause ? `: ${cause}` : ""}`, 240), ...a.failures].slice(0, 5);
+    if (!this.brain) return;
+    try {
+      const r = await this.brain.recordRoleOutcome({
+        role: this.keyOf(a.dto),
+        runId: this.run.id,
+        taskId: t.dto.id,
+        agentId: a.dto.id,
+        outcome,
+        kind,
+        cause: bounded(cause ? `${t.dto.title}: ${cause}` : t.dto.title, 300),
+      });
+      if (r.tuneDue && this.opts.tuning) this.startTuning({ kind: "role", key: this.keyOf(a.dto), role: a.dto.role, title: a.dto.roleId ? this.titleOf(a.dto) : null }, null);
+    } catch (e) {
+      this.log.log("warn", "role outcome record failed", { error: redact(errMsg(e)) });
+    }
+  }
+
+  /** One tuning pass per subject at a time, tracked like a task loop (the run waits for it before it ends). */
+  private startTuning(subject: StrategySubject, about: LiveAgent | null): void {
+    const k = `${subject.kind}:${subject.key}`;
+    if (!this.brain || this.tuning.has(k) || this.closed || this.finishing) return;
+    const p = this.tune(subject, about).finally(() => {
+      this.tuning.delete(k);
+      this.kick();
+    });
+    this.tuning.set(k, p);
+    this.track(p);
+  }
+
+  /**
+   * Autonomous prompt engineering: one fast-tier candidate addendum from the
+   * subject's failures, scored offline by the evals replay against the
+   * current one, then runtime JEV prompt.adopt answers adopt, keep or merge.
+   * An adopted version reaches the subject's very next step.
+   */
+  private async tune(subject: StrategySubject, about: LiveAgent | null): Promise<void> {
+    const brain = this.brain;
+    if (!brain) return;
+    const lead = this.lead();
+    const title = subject.title ?? ROLE_LABEL[subject.role];
+    const who = subject.kind === "agent" && about ? about.dto.name : `the ${title.toLowerCase()} role`;
+    if (lead && !lead.busy && !this.seated.has(lead.dto.id)) await this.setAgent(lead, { statusText: subject.kind === "agent" && about ? VOICE.coaching(about.dto.name) : VOICE.tuning(who) });
+    const proposal = await brain.proposeStrategy({
+      subject,
+      runId: this.run.id,
+      context: this.deps.context,
+      specsFor: (r) => this.deps.tools.specsFor(r),
+      ...(subject.kind === "agent" && about ? { cases: about.failures.map((f) => ({ outcome: "loss" as const, kind: "agent", cause: f })) } : {}),
+      signal: this.runAbort.signal,
+    });
+    if (!proposal || this.closed) return;
+    // the candidate call was billed by the memory module: the run's totals and budget count it too
+    if (proposal.call) await this.addRunTotals({ ...proposal.call, calls: 1 });
+    const d = await this.judge.run(
+      planAdopt({
+        runId: this.run.id,
+        agentId: about?.dto.id ?? null,
+        subject: subject.kind,
+        subjectKey: subject.key,
+        role: subject.role,
+        title,
+        current: proposal.current ? { version: proposal.current.version, text: proposal.current.text } : null,
+        candidate: proposal.candidate,
+        merged: proposal.merged,
+        evidence: proposal.evidence,
+        causes: proposal.causes,
+        ruleAdopt: proposal.eval.adopt,
+        capTokens: REFLEXION_STRATEGY_CAP,
+      }),
+    );
+    const saved = await brain.applyStrategy({
+      proposal,
+      choice: d.result,
+      decision: { id: d.decision.id, confidence: d.decision.confidence, verified: d.decision.verified, stamp: d.decision.stamp },
+      reason: d.decision.action,
+    });
+    if (saved.status !== "active" || this.closed) return;
+    this.strategies.set(`${subject.kind}:${subject.key}`, saved);
+    const choice = d.result === "merge" ? "merge" : "adopt";
+    await this.emit(
+      "strategy.updated",
+      {
+        subject: subject.kind,
+        subjectKey: subject.key,
+        role: subject.role,
+        roleTitle: title,
+        version: saved.version,
+        previousVersion: proposal.current?.version ?? null,
+        text: saved.text,
+        choice,
+        reason: bounded(saved.reason || proposal.eval.reason, 300),
+        scores: { current: proposal.evidence.scores.current, candidate: proposal.evidence.scores.candidate },
+      },
+      about?.dto.id ?? lead?.dto.id ?? null,
+      null,
+    );
+    if (lead) {
+      const first = saved.text.split("\n")[0]?.replace(/^[-*\s]+/, "") ?? "";
+      const to = subject.kind === "agent" && about ? about.dto.id : null;
+      await this.emit("agent.say", { text: clip(`New ${who} playbook v${saved.version}: ${first}`, LIMITS.sayChars), to }, lead.dto.id, null);
+      if (!lead.busy && !this.seated.has(lead.dto.id)) await this.setAgent(lead, { statusText: VOICE.playbook(subject.kind === "agent" && about ? about.dto.name : title.toLowerCase(), saved.version) });
+    }
+  }
+
+  /**
+   * A cat asked for a specialist title. Runtime JEV orch.role decides new or
+   * existing and the archetype; a new role gets one fast-tier charter call
+   * (capped) and a tool subset of its archetype. Null keeps the task on its
+   * base role.
+   */
+  private async resolveRole(by: LiveAgent, requested: AgentRole, raw: string, task: { title: string; spec: string }, signal: AbortSignal): Promise<{ role: AgentRole; roleId: string | null } | null> {
+    if (!this.opts.org) return null;
+    const title = roleTitle(raw);
+    if (!title || baseRoleOf(title)) return null;
+    const key = roleSlug(title);
+    if (!key) return null;
+    const known = [...this.roles.values()].find((r) => r.key === key);
+    if (known) return { role: known.archetype, roleId: known.id };
+    const automation = await this.automationAvailable();
+    const archetypes = ARCHETYPES.filter((r) => automation || r !== "operator");
+    const d = await this.judge.run(
+      planRole({
+        runId: this.run.id,
+        agentId: by.dto.id,
+        goal: this.run.goal,
+        title,
+        key,
+        requested: requested === "lead" ? "engineer" : requested,
+        task,
+        existing: [...this.roles.values()].map((r) => ({ key: r.key, title: r.title, archetype: r.archetype })),
+        archetypes,
+        created: this.rolesCreated,
+        cap: ROLE_GEN.maxPerRun,
+      }),
+    );
+    const archetype = d.result.archetype;
+    if (d.result.need === "existing") {
+      const close = d.result.reuse ? [...this.roles.values()].find((r) => r.key === d.result.reuse) : closestRole(title, archetype, [...this.roles.values()]);
+      return close ? { role: close.archetype, roleId: close.id } : { role: archetype, roleId: null };
+    }
+    await this.setAgent(by, { statusText: VOICE.definingRole(title) });
+    const tools = archetypeTools(archetype);
+    let charter = fallbackCharter(title, archetype, task);
+    let subset = tools;
+    try {
+      const fast = await this.deps.llm.resolve({ tier: "fast", role: archetype });
+      const res = await fast.provider.chat({
+        model: fast.model,
+        system: ROLE_SYSTEM,
+        messages: [{ role: "user", content: rolePacket({ goal: this.run.goal, title, archetype, task, tools }) }],
+        maxOutputTokens: ROLE_GEN.outputTokens,
+        temperature: 0,
+        responseFormat: "json",
+        signal,
+      });
+      const planTask = by.dto.currentTaskId ? this.tasks.get(by.dto.currentTaskId) : undefined;
+      if (planTask) await this.recordUsage(by, planTask, fast.provider.id, res.model || fast.model, "plan", res.usage, res.latencyMs, res.retries, true, null);
+      const parsed = parseRoleReply(res.text);
+      if (parsed) {
+        charter = roleCharterText(title, archetype, parsed.lines);
+        subset = toolSubset(archetype, parsed.tools);
+      }
+    } catch (e) {
+      if (signal.aborted) throw signal.reason;
+      this.log.log("warn", "role charter call failed, using the default charter", { error: redact(errMsg(e)) });
+    }
+    const now = this.ctx.clock.now();
+    const role: RoleDTO = {
+      id: this.ctx.clock.id(),
+      projectId: this.project.id,
+      runId: this.run.id,
+      key,
+      title,
+      archetype,
+      charter,
+      charterVersion: 1,
+      tools: subset,
+      reason: bounded(`${by.dto.name} asked for a ${title} for ${task.title}`, ROLE_GEN.reasonChars),
+      createdBy: by.dto.id,
+      createdAt: now,
+    };
+    try {
+      await this.repo.insertRole(role, now, d.decision.id);
+    } catch (e) {
+      // another run of the project defined the same key meanwhile: use that one
+      await this.loadRoles();
+      const other = [...this.roles.values()].find((r) => r.key === key);
+      if (other) return { role: other.archetype, roleId: other.id };
+      this.log.log("warn", "role insert failed", { error: redact(errMsg(e)) });
+      return { role: archetype, roleId: null };
+    }
+    this.roles.set(role.id, role);
+    this.rolesCreated++;
+    await this.emit("role.created", { role, reason: role.reason, byAgentId: by.dto.id }, by.dto.id, null);
+    return { role: archetype, roleId: role.id };
   }
 
   private dispatch(a: LiveAgent, t: LiveTask): void {
@@ -1025,6 +1624,8 @@ export class RunEngine {
     for (const a of this.agents.values()) {
       if (alive(a)) await this.setAgent(a, { status: status === "done" ? "done" : "idle", currentTaskId: null, statusText: status === "done" ? VOICE.done : null });
     }
+    // the tracker lands on shipped before the run reports done
+    if (status === "done") await this.advanceStage("shipped", reason ? `Shipped: ${reason}` : "Shipped to the owner");
     await this.emitUsage();
     await this.emit("run.status", { status, reason });
     if (status === "done") await this.learn();
@@ -1107,6 +1708,7 @@ export class RunEngine {
     if (alive(a) && !TERMINAL_RUN.has(this.run.status) && this.run.status !== "stopping" && !this.seated.has(a.dto.id)) {
       await this.setAgent(a, { status: "idle", currentTaskId: null, statusText: this.idleLine(a) });
     }
+    await this.maybeLetGo(a);
   }
 
   /** The line of a cat between tasks: the CEO keeps watch, a cat with nothing queued takes a coffee break. */
@@ -1124,6 +1726,10 @@ export class RunEngine {
     }
     await this.saveTask(t, { status: "running", assigneeId: a.dto.id, attempts: t.dto.attempts + 1, startedAt: t.dto.startedAt ?? now });
     a.cleanSteps = 0;
+    if (a.dto.role !== "lead" && t.kind !== "review") {
+      await this.advanceStage("working", `${a.dto.name} started ${t.dto.title}`);
+      if (a.dto.role === "qa" && (t.kind === "work" || t.kind === "handoff")) await this.advanceStage("testing", `${a.dto.name} is testing: ${t.dto.title}`);
+    }
     await this.setAgent(a, { status: "thinking", currentTaskId: t.dto.id, statusText: thinkingLine(a.dto.role, t.dto.title, 0, false) });
     // the CEO deals each planned task to the cat that picks it up
     const lead = this.lead();
@@ -1165,11 +1771,15 @@ export class RunEngine {
     if (t.kind === "fix") {
       await this.saveTask(t, { status: "done", resultSummary: result, endedAt: now });
       const target = t.targetId ? this.tasks.get(t.targetId) : undefined;
-      if (target && target.dto.status === "review") await this.startReview(target, result, a.dto.id);
+      if (target && target.dto.status === "review") {
+        await this.advanceStage("review", `The fix for ${target.dto.title} is up for review`);
+        await this.startReview(target, result, a.dto.id);
+      }
       return;
     }
     if (t.dto.review && (t.kind === "work" || t.kind === "handoff")) {
       await this.saveTask(t, { status: "review", resultSummary: result });
+      await this.advanceStage("review", `${t.dto.title} is up for review`);
       await this.startReview(t, result, a.dto.id);
       return;
     }
@@ -1177,6 +1787,7 @@ export class RunEngine {
     await this.markPass(a);
     if (t.kind === "final") this.lastEvent = "final_done";
     else if (t.kind === "work") await this.signOff(t, a, "delivery");
+    await this.roleOutcome(a, t, "win", "done", "");
   }
 
   /** The CEO approves a delivery or a passed review with one short line to the cat that did it. */
@@ -1224,11 +1835,13 @@ export class RunEngine {
     const now = this.ctx.clock.now();
     await this.saveTask(rt, { status: "done", endedAt: now, resultSummary: bounded(`${verdict}: ${notes.join("; ") || "no notes"}`, LIMITS.resultChars) });
     await this.markPass(reviewer);
+    await this.roleOutcome(reviewer, rt, "win", "done", "");
     const target = rt.targetId ? this.tasks.get(rt.targetId) : undefined;
     if (!target || target.dto.status !== "review") return;
     target.rounds++;
     target.reviewNotes.push(notes);
     const owner = target.dto.assigneeId ? this.agents.get(target.dto.assigneeId) : undefined;
+    if (owner) await this.roleOutcome(owner, target, verdict === "pass" ? "win" : "loss", verdict === "pass" ? "review_pass" : "review_fail", notes.join("; "));
     if (verdict === "pass") {
       await this.saveTask(target, {
         status: "done",
@@ -1240,7 +1853,19 @@ export class RunEngine {
       return;
     }
     target.reworked = true;
-    if (owner) await this.markFail(owner);
+    await this.advanceStage("working", `Review of ${target.dto.title} failed: back to work`, true);
+    if (owner) {
+      owner.lastFailure = bounded(`review of ${target.dto.title}: ${notes[0] ?? "failed"}`, 100);
+      await this.markFail(owner);
+    }
+    try {
+      await this.reviewFailed(reviewer, rt, target, owner, notes, now);
+    } finally {
+      if (owner) await this.maybeLetGo(owner);
+    }
+  }
+
+  private async reviewFailed(reviewer: LiveAgent, rt: LiveTask, target: LiveTask, owner: LiveAgent | undefined, notes: string[], now: number): Promise<void> {
     if (target.rounds < LIMITS.maxReviewRounds) {
       if (!(await this.syncMeeting(reviewer, target, owner, notes, "fix"))) return;
       return this.createFix(target, notes, rt, false);
@@ -1316,7 +1941,9 @@ export class RunEngine {
     t.failReason = `blocked: ${summary}`;
     const now = this.ctx.clock.now();
     await this.saveTask(t, { status: "blocked", endedAt: now, resultSummary: bounded(`Blocked: ${summary}`, LIMITS.resultChars) });
+    a.lastFailure = bounded(`blocked on ${t.dto.title}`, 100);
     await this.markFail(a);
+    await this.roleOutcome(a, t, "loss", "blocked", summary);
     const target = t.kind === "fix" && t.targetId ? this.tasks.get(t.targetId) : undefined;
     if (target && target.dto.status === "review") {
       await this.saveTask(target, { status: "blocked", endedAt: now, resultSummary: bounded(`Blocked: fix was blocked: ${summary}`, LIMITS.resultChars) });
@@ -1328,7 +1955,9 @@ export class RunEngine {
     t.failReason = reason;
     const now = this.ctx.clock.now();
     await this.saveTask(t, { status: "failed", endedAt: now, resultSummary: bounded(`Failed: ${reason}`, LIMITS.resultChars) });
+    a.lastFailure = bounded(`${t.dto.title} failed (${reason})`, 100);
     await this.markFail(a);
+    await this.roleOutcome(a, t, "loss", "failed", reason);
     if (t.kind === "fix" || t.kind === "review") {
       const target = t.targetId ? this.tasks.get(t.targetId) : undefined;
       if (target && target.dto.status === "review") {
@@ -1343,31 +1972,43 @@ export class RunEngine {
   }
 
   // ------------------------------------------------------- agent loop
+  /**
+   * Work, verify, self-critique, fix: the model steps until it finishes; a
+   * finish of real work goes through the self-check (evidence first) and may
+   * send the cat into at most two extra rounds. The step budget adapts to the
+   * task's size and the cat's progress, never past the hard cap.
+   */
   private async agentLoop(a: LiveAgent, t: LiveTask, signal: AbortSignal): Promise<Outcome> {
     const role = a.dto.role;
     const timer = new TaskTimer(() => this.ctx.clock.now());
-    const specs = this.deps.tools.specsFor(role);
+    const specs = this.specsFor(a);
     const brief = await this.briefFor();
     const lessons = await this.lessonsFor(a, t);
+    await this.loadStrategies(a);
     let resolved = await this.resolveModel(a, t, signal, timer);
     const guard = new RepeatGuard();
+    const budget = new StepBudget(initialSteps(t.kind, t.dto.acceptance.length, t.dto.spec.length));
+    const evidence = new EvidenceLog();
     let steps: StepRecord[] = [];
     let summary: string | null = null;
     let compactions = 0;
-    let stepCount = 0;
     let textOnly = 0;
     let overflowRetried = false;
     let lastFailed = false;
+    let checks = 0;
+    let rounds = 0;
 
     while (true) {
       await this.checkpoint(a, t, signal, timer);
-      if (stepCount >= LIMITS.maxStepsPerTask) return { kind: "failed", reason: `step limit reached (${LIMITS.maxStepsPerTask} steps)` };
+      if (!budget.allows()) return { kind: "failed", reason: budget.reason() };
       if (timer.elapsed() > LIMITS.taskWallClockMs) return { kind: "failed", reason: "time limit reached (15 minutes of work on one task)" };
       a.justPassed = false;
       // step boundary: the UI always hears that this cat is thinking before the model call
-      await this.setAgent(a, { status: "thinking", statusText: thinkingLine(role, t.dto.title, stepCount, lastFailed) }, true);
+      await this.setAgent(a, { status: "thinking", statusText: thinkingLine(role, t.dto.title, budget.used, lastFailed) }, true);
 
-      const input = this.contextInput(a, t, specs, brief, lessons, steps, summary, resolved, textOnly > 0);
+      // the charter layer is read every step: an adopted strategy reaches the very next step
+      const layers = this.layersFor(a);
+      const input = { ...this.contextInput(a, t, specs, brief, lessons, steps, summary, resolved, textOnly > 0), ...layers };
       let build = this.deps.context.build(input);
       if (build.needsCompaction && steps.length > 1) {
         await this.setAgent(a, { statusText: VOICE.compacting });
@@ -1404,7 +2045,7 @@ export class RunEngine {
         throw e;
       }
       overflowRetried = false;
-      stepCount++;
+      a.mind = this.mindOf(a, t, layers, lessons);
       await this.saveXray(a, t, build, compactions, result.usage.cachedTokens);
       await this.setAgent(a, { steps: a.dto.steps + 1 });
       if (result.text.trim()) await this.emit("agent.say", { text: clip(result.text, LIMITS.sayChars), to: null }, a.dto.id, t.dto.id);
@@ -1412,7 +2053,9 @@ export class RunEngine {
       if (result.toolCalls.length === 0) {
         textOnly++;
         lastFailed = false;
-        steps.push({ assistant: { text: redact(result.text), toolCalls: [] }, results: [] });
+        const step: StepRecord = { assistant: { text: redact(result.text), toolCalls: [] }, results: [] };
+        steps.push(step);
+        budget.record(step);
         if (textOnly >= LIMITS.noProgressLimit) return { kind: "failed", reason: `no progress: ${LIMITS.noProgressLimit} replies without a tool call` };
         continue;
       }
@@ -1421,13 +2064,153 @@ export class RunEngine {
       // only what is kept, published or shown is redacted
       const exec = await this.executeCalls(a, t, result.toolCalls, signal, guard, timer);
       const shown = result.toolCalls.map((c) => ({ ...c, arguments: redact(c.arguments) }));
-      steps.push({ assistant: { text: redact(result.text), toolCalls: shown }, results: exec.results });
+      const step: StepRecord = { assistant: { text: redact(result.text), toolCalls: shown }, results: exec.results };
+      steps.push(step);
+      evidence.record(step);
+      budget.record(step);
       lastFailed = exec.anyError;
       a.cleanSteps = exec.anyError ? 0 : a.cleanSteps + 1;
       await this.setAgent(a, {});
       if (exec.tripped) return { kind: "failed", reason: exec.tripped };
-      if (exec.end) return exec.end;
+      if (!exec.end) continue;
+      const end = exec.end;
+      if (end.kind !== "finished" || end.blocked || !this.selfCheckApplies(a, t)) return end;
+      // the self-check: evidence first, then the claim
+      const finish = result.toolCalls.find((c) => c.name === "finish");
+      const files = finish ? parseArgs("finish", finishArgs, finish.arguments) : null;
+      if (files?.ok) evidence.declare(files.value.files);
+      checks++;
+      const v = await this.selfCheck(a, t, evidence.snapshot(), end.summary, checks, signal);
+      if (v.verdict === "pass") return end;
+      await this.roleOutcome(a, t, "loss", "reflexion", v.critique);
+      if (rounds >= REFLEXION.maxExtraRounds) {
+        // the last check still found a gap: the finish is accepted with the open point noted
+        return { ...end, summary: bounded(`${end.summary}\nOpen after the self-check: ${v.critique}`, LIMITS.resultChars) };
+      }
+      rounds++;
+      budget.extend(REFLEXION.roundSteps);
+      const note = `Not finished yet. Self-check ${checks}: ${v.critique} Address it, then call finish again.`;
+      step.results = step.results.map((r) => (finish && r.callId === finish.id ? { ...r, output: note, ok: false } : r));
+      await this.setAgent(a, { status: "working", activity: "review", statusText: VOICE.anotherRound(v.critique) });
     }
+  }
+
+  /** The self-check runs on real work only: not the CEO's plan and report, not reviews. */
+  private selfCheckApplies(a: LiveAgent, t: LiveTask): boolean {
+    return this.opts.reflexion && a.dto.role !== "lead" && (t.kind === "work" || t.kind === "fix" || t.kind === "handoff");
+  }
+
+  /** Rule verdict on conclusive evidence; otherwise one fast-tier critic call (150 output tokens). Publishes agent.reflexion. */
+  private async selfCheck(a: LiveAgent, t: LiveTask, ev: Evidence, summary: string, check: number, signal: AbortSignal): Promise<Verdict & { by: "rule" | "critic" }> {
+    await this.setAgent(a, { status: "thinking", activity: "review", statusText: VOICE.selfCheck });
+    let by: "rule" | "critic" = "rule";
+    let v = precheck(ev);
+    if (!v) {
+      by = "critic";
+      // JEV be.reflexion_gating failure_policy: a critic that fails or answers nothing usable passes the finish
+      v = (await this.critic(a, t, ev, summary, check, signal)) ?? { verdict: "pass", critique: "The self-check gave no usable verdict; the finish stands." };
+    }
+    await this.emit(
+      "agent.reflexion",
+      {
+        taskId: t.dto.id,
+        check,
+        verdict: v.verdict,
+        critique: clip(redact(v.critique), REFLEXION.critiqueChars),
+        by,
+        evidence: { files: ev.files.length, checks: ev.checks.length, failedChecks: ev.checks.filter((c) => !c.ok).length },
+      },
+      a.dto.id,
+      t.dto.id,
+    );
+    return { ...v, by };
+  }
+
+  private async critic(a: LiveAgent, t: LiveTask, ev: Evidence, summary: string, check: number, signal: AbortSignal): Promise<Verdict | null> {
+    try {
+      const fast = await this.deps.llm.resolve({ tier: "fast", role: a.dto.role });
+      const started = this.ctx.clock.now();
+      let res: ChatResult;
+      try {
+        res = await fast.provider.chat({
+          model: fast.model,
+          system: REFLEXION_SYSTEM,
+          messages: [{ role: "user", content: reflexionPacket({ title: t.dto.title, acceptance: t.dto.acceptance, summary, evidence: ev, check }) }],
+          maxOutputTokens: REFLEXION.outputTokens,
+          temperature: 0,
+          responseFormat: "json",
+          signal,
+        });
+      } catch (e) {
+        if (!signal.aborted) {
+          const zero: Usage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
+          await this.recordUsage(a, t, fast.provider.id, fast.model, "reflect", zero, this.ctx.clock.now() - started, 0, false, bounded(errMsg(e), 300));
+        }
+        throw e;
+      }
+      await this.recordUsage(a, t, fast.provider.id, res.model || fast.model, "reflect", res.usage, res.latencyMs, res.retries, true, null);
+      return parseReflexion(res.text);
+    } catch (e) {
+      if (signal.aborted) throw signal.reason;
+      this.log.log("warn", "self-check critic failed, the finish stands", { error: redact(errMsg(e)) });
+      return null;
+    }
+  }
+
+  /** The cat's tools: its archetype's, cut to the dynamic role's subset when it has one. */
+  private specsFor(a: LiveAgent): ToolSpec[] {
+    const all = this.deps.tools.specsFor(a.dto.role);
+    const dyn = a.dto.roleId ? this.roles.get(a.dto.roleId) : undefined;
+    if (!dyn || dyn.tools.length === 0) return all;
+    const keep = new Set(dyn.tools);
+    const cut = all.filter((s) => keep.has(s.name));
+    return cut.some((s) => s.name === "finish") ? cut : all;
+  }
+
+  /** The charter layer of a cat: its dynamic role's charter and the addenda of its role and its own. */
+  private layersFor(a: LiveAgent): BrainLayers {
+    const dyn = a.dto.roleId ? this.roles.get(a.dto.roleId) : undefined;
+    const addenda: BrainLayers["addenda"] = [];
+    const roleS = this.strategies.get(`role:${this.keyOf(a.dto)}`);
+    const ownS = this.strategies.get(`agent:${a.dto.id}`);
+    if (roleS && roleS.status === "active" && roleS.text) addenda.push({ scope: "role", version: roleS.version, text: roleS.text });
+    if (ownS && ownS.status === "active" && ownS.text) addenda.push({ scope: "agent", version: ownS.version, text: ownS.text });
+    return { roleKey: this.keyOf(a.dto), charter: dyn ? { version: dyn.charterVersion, title: dyn.title, text: dyn.charter } : null, addenda };
+  }
+
+  /** The active strategies of a cat's role and of the cat itself, read once per subject and kept fresh on adoption. */
+  private async loadStrategies(a: LiveAgent): Promise<void> {
+    if (!this.brain) return;
+    for (const subject of [{ kind: "role" as const, key: this.keyOf(a.dto) }, { kind: "agent" as const, key: a.dto.id }]) {
+      const k = `${subject.kind}:${subject.key}`;
+      if (this.strategies.has(k)) continue;
+      try {
+        this.strategies.set(k, await this.brain.activeStrategy(subject));
+      } catch (e) {
+        this.log.log("warn", "strategy load failed", { error: redact(errMsg(e)) });
+      }
+    }
+  }
+
+  /** What the latest prompt carried, for GET .../mind (persisted with the X-ray). */
+  private mindOf(a: LiveAgent, t: LiveTask, layers: BrainLayers, lessons: LessonDTO[]): MindSnapshot {
+    const ids = [this.strategies.get(`role:${layers.roleKey}`), this.strategies.get(`agent:${a.dto.id}`)]
+      .filter((x): x is StrategyVersionDTO => !!x && x.status === "active" && !!x.text)
+      .map((x) => x.id);
+    const version = [
+      layers.charter || layers.addenda.length ? `c${layers.charter?.version ?? 1}` : "",
+      ...layers.addenda.map((x) => `${x.scope === "role" ? "r" : "a"}${x.version}`),
+    ]
+      .filter(Boolean)
+      .join(".");
+    return {
+      taskId: t.dto.id,
+      taskTitle: t.dto.title,
+      layerVersion: version,
+      charterVersion: layers.charter?.version ?? 1,
+      addendumIds: ids,
+      lessons: lessons.slice(0, 5).map((l) => ({ id: l.id, text: clip(redact(l.text), 400), reason: lessonReason(l) })),
+    };
   }
 
   /** Step boundary: honors budget and pause (in-flight work already finished), throws on abort. */
@@ -1637,6 +2420,15 @@ export class RunEngine {
     if (this.run.status === "running" && this.overBudget()) await this.pause("budget");
   }
 
+  /** Usage billed elsewhere (the memory module's tuning call) joins the run's totals and budget. */
+  private async addRunTotals(d: UsageTotals): Promise<void> {
+    if (this.closed) return;
+    addUsage(this.run.usage, d);
+    await this.repo.addRunUsage(this.run.id, d, this.ctx.clock.now());
+    await this.emitUsage();
+    if (this.run.status === "running" && this.overBudget()) await this.pause("budget");
+  }
+
   private async compact(a: LiveAgent, t: LiveTask, steps: StepRecord[], summary: string | null, keepRecent: number, signal: AbortSignal) {
     const summarize = async (text: string): Promise<string> => {
       const fast = await this.deps.llm.resolve({ tier: "fast", role: a.dto.role });
@@ -1660,7 +2452,7 @@ export class RunEngine {
     if (this.closed) return;
     const x: ContextXrayDTO = { ...build.xray, agentId: a.dto.id, taskId: t.dto.id, compactions, lastCachedTokens: cached, createdAt: this.ctx.clock.now() };
     try {
-      await this.repo.upsertSnapshot(this.run.id, x);
+      await this.repo.upsertSnapshot(this.run.id, x, a.mind);
     } catch (e) {
       this.log.log("warn", "xray snapshot failed", { error: redact(errMsg(e)) });
     }
@@ -1740,22 +2532,26 @@ export class RunEngine {
   private async kickoff(lead: LiveAgent, plan: LiveTask, created: LiveTask[], signal: AbortSignal): Promise<void> {
     for (const x of created) {
       if (x.dto.role === "lead") continue;
-      if ([...this.agents.values()].some((a) => a.dto.role === x.dto.role && alive(a))) continue;
-      await this.spawnAgent(x.dto.role, x);
+      const key = this.keyOf(x.dto);
+      if ([...this.agents.values()].some((a) => alive(a) && this.keyOf(a.dto) === key)) continue;
+      if (this.opts.org && this.org.maxAgents > 0 && this.crewSize() >= this.org.maxAgents) break;
+      await this.spawnAgent(x.dto.role, x, { kind: "needed", reason: hireReason("needed", this.titleOf(x.dto), { task: x.dto.title }), by: lead, parent: lead });
     }
     const crew = [...this.agents.values()].filter((a) => alive(a) && a !== lead && !a.busy && !this.seated.has(a.dto.id));
     if (crew.length === 0) return;
+    await this.advanceStage("hired", `${crew.length} cat${crew.length === 1 ? "" : "s"} hired for the plan`);
     const titleOf = (id: string) => this.tasks.get(id)?.dto.title ?? id;
-    const items = created.map((x) => ({ title: x.dto.title, role: x.dto.role, review: x.dto.review, after: x.dto.deps.map(titleOf) }));
+    const items = created.map((x) => ({ title: x.dto.title, role: x.dto.role, review: x.dto.review, after: x.dto.deps.map(titleOf), ...(x.dto.roleId ? { roleTitle: this.titleOf(x.dto) } : {}) }));
     // who starts on what: tasks with nothing open before them, dealt in order per role
-    const turn = new Map<AgentRole, number>();
+    const turn = new Map<string, number>();
     const starters = created
       .filter((x) => x.dto.role !== "lead" && this.depState(x) === "ready")
       .map((x) => {
-        const i = turn.get(x.dto.role) ?? 0;
-        turn.set(x.dto.role, i + 1);
-        const who = crew.filter((a) => a.dto.role === x.dto.role)[i];
-        return { name: who?.dto.name ?? ROLE_LABEL[x.dto.role], title: x.dto.title };
+        const key = this.keyOf(x.dto);
+        const i = turn.get(key) ?? 0;
+        turn.set(key, i + 1);
+        const who = crew.filter((a) => this.keyOf(a.dto) === key)[i];
+        return { name: who?.dto.name ?? this.titleOf(x.dto), title: x.dto.title };
       });
     const text = kickoffText(items, starters);
     const held = await this.holdMeeting({ kind: "kickoff", title: MEETING_TITLE.kickoff, host: lead, attendees: crew, presenters: [lead], ...text, to: null, taskId: plan.dto.id, signal });
@@ -2177,19 +2973,32 @@ export class RunEngine {
   private async controlHandoff(a: LiveAgent, t: LiveTask, call: ToolCall, signal: AbortSignal, timer: TaskTimer): Promise<ControlOut> {
     const p = parseArgs("handoff", handoffArgs, call.arguments);
     if (!p.ok) return { output: p.error, ok: false };
-    const toRole = p.value.toRole as AgentRole;
-    if (toRole === a.dto.role) return { output: "Hand off to a different role, or do this part yourself.", ok: false };
-    if (this.handoffDepth(t) + 1 > LIMITS.maxHandoffDepth) {
-      return { output: `Handoff depth limit reached (${LIMITS.maxHandoffDepth}). Finish this part yourself or report the blocker in finish.`, ok: false };
+    let toRole = p.value.toRole as AgentRole;
+    // the unlimited org: a cat may hire a helper of its own role (runtime JEV decides below)
+    if (toRole === a.dto.role && !this.opts.org) return { output: "Hand off to a different role, or do this part yourself.", ok: false };
+    if (toRole === "lead") return { output: "The CEO does not take handoffs. Ask with ask_human, or do this part yourself.", ok: false };
+    const chain = this.opts.org ? this.org.maxDepth : LIMITS.maxHandoffDepth;
+    if (chain > 0 && this.handoffDepth(t) + 1 > chain) {
+      return { output: `Handoff depth limit reached (${chain}). Finish this part yourself or report the blocker in finish.`, ok: false };
     }
     if (this.tasks.size >= LIMITS.maxTasksPerRun) return { output: "The run has reached its task limit.", ok: false };
     if (toRole === "operator" && !(await this.automationAvailable())) return { output: "The operator is not available: local automation is off on this machine.", ok: false };
+    // any cat can define a role from context
+    const dyn = p.value.roleTitle ? await this.resolveRole(a, toRole, p.value.roleTitle, { title: p.value.title, spec: p.value.spec }, signal) : null;
+    toRole = dyn?.role ?? toRole;
+    const roleId = dyn?.roleId ?? null;
+    const approved = await this.approveHandoffHire(a, toRole, roleId, p.value.title, p.value.spec);
+    if (!approved.ok) {
+      await this.setAgent(a, { statusText: VOICE.selfServe(p.value.title) });
+      return { output: `Do this part yourself: the company is not hiring for it (${approved.why}).`, ok: true };
+    }
     const summary = bounded(p.value.summary || p.value.spec, 1200);
     const child = this.makeTask({
       title: p.value.title,
       spec: p.value.spec || p.value.title,
       acceptance: p.value.acceptance,
       role: toRole,
+      roleId,
       deps: [],
       review: false,
       priority: t.dto.priority + 1,
@@ -2198,6 +3007,7 @@ export class RunEngine {
       assigneeId: null,
       kind: "handoff",
       handoff: summary,
+      hireOk: true,
     });
     const h: HandoffDTO = {
       id: this.ctx.clock.id(),
@@ -2217,7 +3027,7 @@ export class RunEngine {
     await this.saveTask(t, { status: "waiting" });
     timer.stop();
     a.waiting = true;
-    await this.setAgent(a, { status: "waiting", statusText: VOICE.waitingOn(ROLE_LABEL[toRole], child.dto.title) });
+    await this.setAgent(a, { status: "waiting", statusText: VOICE.waitingOn(this.titleOf(child.dto), child.dto.title) });
     this.kick();
     await abortable<void>(signal, (resolve) => {
       if (isTerminal(child)) resolve();
@@ -2229,7 +3039,7 @@ export class RunEngine {
     await this.setAgent(a, { status: "working", statusText: VOICE.resumed(t.dto.title) });
     const who = child.dto.assigneeId ? this.agents.get(child.dto.assigneeId)?.dto.name : null;
     return {
-      output: `Handoff to ${who ?? ROLE_LABEL[toRole]} (${toRole}) ended ${child.dto.status}: ${child.dto.resultSummary ?? "no summary"}`,
+      output: `Handoff to ${who ?? this.titleOf(child.dto)} (${toRole}) ended ${child.dto.status}: ${child.dto.resultSummary ?? "no summary"}`,
       ok: child.dto.status === "done",
     };
   }
@@ -2255,7 +3065,7 @@ export class RunEngine {
       this.holds++;
     }
     try {
-      await this.insertPlanned(a, t, planned, ids, resolved.deps, lines, created);
+      await this.insertPlanned(a, t, planned, ids, resolved.deps, lines, created, signal);
       if (kickoff) await this.kickoff(a, t, created, signal);
     } finally {
       if (kickoff) this.holds--;
@@ -2272,15 +3082,19 @@ export class RunEngine {
     deps: string[][],
     lines: string[],
     created: LiveTask[],
+    signal: AbortSignal,
   ): Promise<void> {
     for (let i = 0; i < planned.length; i++) {
       const x = planned[i]!;
+      // a specialist title: runtime JEV orch.role picks a new role or an existing one
+      const dyn = x.roleTitle && x.role !== "lead" ? await this.resolveRole(a, x.role, x.roleTitle, { title: x.title, spec: x.spec }, signal) : null;
       const task = this.makeTask({
         id: ids[i],
         title: x.title,
         spec: x.spec || x.title,
         acceptance: x.acceptance,
-        role: x.role,
+        role: dyn?.role ?? x.role,
+        roleId: dyn?.roleId ?? null,
         deps: deps[i]!,
         review: x.review,
         priority: x.priority,
@@ -2292,7 +3106,11 @@ export class RunEngine {
       await this.insertTask(task);
       created.push(task);
       const after = task.dto.deps.map((d) => this.tasks.get(d)?.dto.title ?? d);
-      lines.push(`- ${task.dto.id} ${task.dto.title} (${task.dto.role})${after.length ? ` after: ${after.join(", ")}` : ""}${task.dto.review ? " [review]" : ""}`);
+      const who = task.dto.roleId ? `${this.titleOf(task.dto)}, ${task.dto.role}` : task.dto.role;
+      lines.push(`- ${task.dto.id} ${task.dto.title} (${who})${after.length ? ` after: ${after.join(", ")}` : ""}${task.dto.review ? " [review]" : ""}`);
+    }
+    if (t.kind === "plan" && a.dto.role === "lead" && created.some((x) => x.dto.role !== "lead")) {
+      await this.advanceStage("planned", `${created.length} task${created.length === 1 ? "" : "s"} on the board`);
     }
   }
 

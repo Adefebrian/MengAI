@@ -85,3 +85,69 @@ export function charterFor(role: AgentRole): string {
   if (!charter) throw new Error(`unknown agent role: ${String(role)}`);
   return charter;
 }
+
+// ----------------------------------------------------------- brain layers
+/** A learned strategy addendum: at most this many tokens (fixed 4 chars per token). */
+export const STRATEGY_MAX_TOKENS = 120;
+/** A dynamic role's charter (header plus the generated body), before the shared working rules. */
+export const ROLE_CHARTER_MAX_CHARS = 1_200;
+
+/** A dynamic role's charter, rendered by the runs module from the generated text. */
+export interface CharterOverride {
+  version: number;
+  title: string;
+  text: string;
+}
+
+/** One strategy addendum in the charter layer: the role's (shared by its cats) or one cat's own. */
+export interface StrategyLayer {
+  scope: "role" | "agent";
+  version: number;
+  text: string;
+}
+
+const HEADER: Record<StrategyLayer["scope"], (v: number) => string> = {
+  role: (v) => `Role strategy v${v} (learned from this crew's recent outcomes, apply it):`,
+  agent: (v) => `Your own strategy v${v} (from your recent outcomes, apply it):`,
+};
+
+const cap = (text: string, max: number) => (text.length > max ? text.slice(0, max).trimEnd() : text);
+
+/** The addenda that render: a positive version and some text, role first, at most one per scope. */
+export function usableAddenda(addenda: readonly StrategyLayer[] | null | undefined): StrategyLayer[] {
+  const out: StrategyLayer[] = [];
+  for (const scope of ["role", "agent"] as const) {
+    const a = (addenda ?? []).find((x) => x.scope === scope && x.version > 0 && x.text.trim().length > 0);
+    if (a) out.push(a);
+  }
+  return out;
+}
+
+/** The role part of the charter: a dynamic role's own charter, else the static base charter. */
+export function roleCharter(role: AgentRole, charter?: CharterOverride | null): string {
+  const text = charter?.text.trim();
+  if (!charter || !text) return charterFor(role);
+  return `${cap(text, ROLE_CHARTER_MAX_CHARS)}\n\n${RULES}`;
+}
+
+/**
+ * The charter layer: the role charter, then the role's strategy, then the
+ * cat's own strategy. Every cat of a role key at the same role version gets
+ * a byte-identical prefix up to its own addendum, so the prefix cache holds
+ * per version (the cache key carries layerVersion()).
+ */
+export function charterLayer(role: AgentRole, charter: CharterOverride | null | undefined, addenda: readonly StrategyLayer[] | null | undefined): string {
+  const parts = [roleCharter(role, charter)];
+  for (const a of usableAddenda(addenda)) parts.push(`${HEADER[a.scope](a.version)}\n${cap(a.text.trim(), STRATEGY_MAX_TOKENS * 4)}`);
+  return parts.join("\n\n");
+}
+
+/** The version string of a charter layer ("" for a base charter with no addenda): c1.r2.a1 */
+export function layerVersion(charter: CharterOverride | null | undefined, addenda: readonly StrategyLayer[] | null | undefined): string {
+  const use = usableAddenda(addenda);
+  const dynamic = !!charter && charter.text.trim().length > 0;
+  if (!dynamic && use.length === 0) return "";
+  const parts = [`c${dynamic ? Math.max(1, charter!.version) : 1}`];
+  for (const a of use) parts.push(`${a.scope === "role" ? "r" : "a"}${a.version}`);
+  return parts.join(".");
+}

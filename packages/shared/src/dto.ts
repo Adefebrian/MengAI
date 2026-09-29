@@ -111,6 +111,18 @@ export interface AgentDTO {
   usage: UsageTotals;
   createdAt: number;
   updatedAt: number;
+  /** display title of its role: the base role label ("Engineer") or a dynamic role title ("Launch tester") */
+  roleTitle?: string;
+  /** the base role behind the cat's pose and default tools; equals `role` */
+  archetype?: AgentRole;
+  /** the dynamic role (RoleDTO.id) this cat was hired for, null for a base role */
+  roleId?: string | null;
+  /** why the cat was hired, null for the CEO */
+  hireReason?: string | null;
+  /** the cat that hired it (the CEO, or the cat that asked for a helper) */
+  hiredBy?: string | null;
+  /** set when the cat was let go: the short reason */
+  leftReason?: string | null;
 }
 
 export interface TaskDTO {
@@ -133,6 +145,8 @@ export interface TaskDTO {
   updatedAt: number;
   startedAt: number | null;
   endedAt: number | null;
+  /** the dynamic role (RoleDTO.id) that owns this task; `role` is then its archetype */
+  roleId?: string | null;
 }
 
 export interface HandoffDTO {
@@ -392,6 +406,101 @@ export interface MeetingDTO {
   endedAt: number | null;
 }
 
+/** Stages of the run tracker, in order. A failed review loops back to working. */
+export const RUN_STAGES = ["goal", "planned", "hired", "working", "review", "testing", "shipped"] as const;
+export type RunStage = (typeof RUN_STAGES)[number];
+
+/**
+ * A role the crew defined from context on top of one of the base roles (its
+ * archetype, which drives the cat pose and the default tools). Project
+ * scoped: a later run of the project reuses it by key.
+ */
+export interface RoleDTO {
+  id: string;
+  projectId: string;
+  /** the run that created it */
+  runId: string | null;
+  /** slug of the title, unique per project ("launch-tester") */
+  key: string;
+  title: string;
+  archetype: AgentRole;
+  /** the generated charter (fast tier, capped); the shared working rules follow it in the prompt */
+  charter: string;
+  charterVersion: number;
+  /** tool names, a subset of the archetype's tools in the registry */
+  tools: string[];
+  reason: string;
+  /** the agent that asked for it (the CEO or any crew cat) */
+  createdBy: string | null;
+  createdAt: number;
+}
+
+export const STRATEGY_STATUSES = ["active", "retired", "rejected"] as const;
+export type StrategyStatus = (typeof STRATEGY_STATUSES)[number];
+
+/** The runtime JEV prompt.adopt answer for a candidate strategy addendum. */
+export const STRATEGY_CHOICES = ["adopt", "keep", "merge"] as const;
+export type StrategyChoice = (typeof STRATEGY_CHOICES)[number];
+
+/** The offline evaluation of a candidate addendum against the current one (evals replay). */
+export interface StrategyEvidenceDTO {
+  scores: { current: number; candidate: number };
+  /** recent failure causes each text addresses, of `losses` */
+  addressed: { current: number; candidate: number; losses: number };
+  /** billable input of the role's replayed scenarios with each text, and the legacy baseline */
+  billableInputTokens: { current: number; candidate: number; legacy: number };
+  tokens: { current: number; candidate: number };
+}
+
+/**
+ * One version of a learned strategy addendum (at most 120 tokens), for a role
+ * (base or dynamic, by role key) or for one agent. active is injected into the
+ * charter layer, retired is an older adopted version, rejected a candidate
+ * JEV kept out.
+ */
+export interface StrategyVersionDTO {
+  id: string;
+  subject: "role" | "agent";
+  /** role key (a base role or a dynamic role key) or the agent id */
+  subjectKey: string;
+  /** archetype of the subject */
+  role: AgentRole;
+  version: number;
+  text: string;
+  tokens: number;
+  status: StrategyStatus;
+  /** the JEV answer that produced this row; null when no usable candidate was written */
+  choice: StrategyChoice | null;
+  reason: string;
+  decision: { id: string | null; confidence: number | null; verified: boolean; stamp: string | null } | null;
+  evidence: StrategyEvidenceDTO | null;
+  createdAt: number;
+}
+
+/** What is in one cat's head right now: GET /api/runs/:id/agents/:agentId/mind. Every text is redacted. */
+export interface AgentMindDTO {
+  runId: string;
+  agentId: string;
+  name: string;
+  role: AgentRole;
+  roleTitle: string;
+  roleId: string | null;
+  charter: { version: number; title: string; dynamic: boolean; text: string; tokens: number };
+  /** the version string that keys its prompt cache: charter plus every injected addendum */
+  layerVersion: string;
+  /** strategy addenda in its charter layer: its role's, then its own */
+  addenda: StrategyVersionDTO[];
+  /** lessons injected into its latest prompt, with why each one was picked */
+  lessons: Array<{ id: string; text: string; reason: string }>;
+  /** saved procedures that match its current or last task */
+  skills: Array<{ id: string; name: string; description: string; reason: string }>;
+  /** runtime JEV decisions about this cat: its role, its hire, its strategies, letting it go */
+  decisions: DecisionDTO[];
+  /** strategy versions of its role and of the cat itself, newest first */
+  history: StrategyVersionDTO[];
+  updatedAt: number;
+}
+
 /** Full picture of one run, used for the first paint before the SSE stream. */
 export interface RunSnapshotDTO {
   run: RunDTO;
@@ -402,6 +511,12 @@ export interface RunSnapshotDTO {
   approvals: ApprovalDTO[];
   /** crew meetings, oldest first, so a reload restores the meeting room */
   meetings?: MeetingDTO[];
+  /** agents that were let go, with leftReason; `agents` holds the crew still at work */
+  departed?: AgentDTO[];
+  /** dynamic roles used in this run */
+  roles?: RoleDTO[];
+  /** where the run is on the tracker */
+  stage?: RunStage;
   /** events are replayed from this seq onward over SSE */
   lastSeq: number;
 }

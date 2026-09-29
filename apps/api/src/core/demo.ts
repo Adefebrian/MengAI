@@ -1,32 +1,46 @@
 // Demo crew (MENGAI_DEMO=1). A scripted LlmRouter that plays one believable
 // company day through the real orchestrator, tools and workspace, so one run
-// shows every scenario the office scene choreographs:
-// - the lead (the CEO cat) reads the workspace, publishes five tasks and
-//   holds the kickoff meeting, then deals each task to the cat that takes it
+// shows every scenario the office scene choreographs and every beat of the
+// brain:
+// - Oyen, the CEO cat, starts alone with the goal, reads the workspace and
+//   publishes the plan; one task asks for a specialist (a Launch tester), so
+//   runtime JEV defines a dynamic role and the CEO writes its charter
+// - the CEO hires the crew for the plan and holds the kickoff meeting, then
+//   deals each task to the cat that takes it
 // - the engineer grows index.html and styles.css over five steps (the code
-//   editor shows the files being written), then wires the copy in
-// - the designer hands tagline research to the researcher, who reads the
-//   crew's notes and writes them up, then asks the CEO about the tagline;
-//   the CEO approves and the designer drafts the copy in two steps
+//   editor shows the files being written), then wires the copy in; its
+//   self-check finds an unchecked change, so it takes one more round
+// - the designer hands tagline research to the researcher (runtime JEV
+//   approves the hire), who reads the crew's notes and writes them up, then
+//   asks the CEO about the tagline; the CEO approves and the designer drafts
+//   the copy in two steps
 // - the reviewer rejects the scaffold once, the crew meets in a sync, the
-//   engineer fixes it, the review passes and the CEO signs it off
-// - QA runs two tests (a placeholder search and a smoke check)
+//   engineer fixes it, the review passes and the CEO signs it off; the
+//   engineer role underperformed, so the brain writes a candidate playbook,
+//   scores it offline and JEV adopts it for the engineer's next step
+// - the Launch tester runs two tests (a placeholder search and a smoke check)
+// - opt in (securityScan): the first security cat insists on a lockfile the
+//   static page does not have and blocks three checks in a row; JEV lets it
+//   go, the security role gets a new playbook, and a replacement cat runs
+//   the three checks
 // - a cat with nothing queued takes a coffee break; the crew holds a wrap-up
-//   meeting and the lead writes the final report
-// - opt in (securityScan): a security cat scans for secrets and config
+//   meeting and the CEO writes the final report
 // No model is called and no key is needed. Each reply waits 2.2 to 4.2 s and
-// each meeting holds 6 to 10 s, so the crew is visibly alive.
+// each meeting holds 6 to 10 s, so the crew is visibly alive. The runtime JEV
+// is scripted too (the demo judge rides on the router).
 //
 // The router is stateless per request: the role comes from the system prompt
-// (it is exactly ContextService.charter(role)), the task from the task packet,
-// and the step from the number of assistant turns already in the prompt.
-// The CEO decision is its own small call (runs CEO_SYSTEM), answered here.
-// Token metering and the prompt cache are simulated by the evals module's
-// ScriptedProvider, so the usage panels move like a real run.
+// (it starts with ContextService.charter(role), or with a dynamic role's
+// header), the task from the task packet, and the step from the number of
+// assistant turns already in the prompt. The CEO decision, the self-check,
+// the strategy candidate and the role charter are their own small calls,
+// answered here by their exact system prompts. Token metering and the prompt
+// cache are simulated by the evals module's ScriptedProvider, so the usage
+// panels move like a real run.
 import { AGENT_ROLES, type AgentRole, type ProviderModel } from "@mengai/shared";
-import { ScriptedProvider, type ScriptedTurn } from "../modules/evals";
-import { CEO_SYSTEM, packetQuestion, type CompanyPace } from "../modules/runs";
-import { LlmError, type ChatRequest, type ChatResult, type LlmProvider, type LlmRouter, type Logger } from "./ports";
+import { STRATEGY_SYSTEM, ScriptedProvider, type ScriptedTurn } from "../modules/evals";
+import { CEO_SYSTEM, REFLEXION_SYSTEM, ROLE_HEADER_RE, ROLE_SYSTEM, packetQuestion, type CompanyPace, type JudgeHint } from "../modules/runs";
+import { LlmError, type ChatRequest, type ChatResult, type JevAnswer, type Judge, type LlmProvider, type LlmRouter, type Logger } from "./ports";
 import type { ProjectsService, RunsService } from "./services";
 
 export const DEMO_PROVIDER_ID = "demo";
@@ -66,7 +80,12 @@ const TITLE = {
   readme: "Write the project README",
   research: "Collect tagline references",
   security: "Scan the page for secrets",
+  config: "Check the page config",
+  deps: "Check the page dependencies",
 } as const;
+
+/** The dynamic role the CEO asks for: runtime JEV defines it on the qa archetype. */
+export const DEMO_ROLE_TITLE = "Launch tester";
 
 // index.html grows in three steps: skeleton, hero, then menu and visit
 const SECTIONS_MARK = "    <!-- sections -->";
@@ -199,6 +218,7 @@ const PLAN_TASKS = [
     key: "smoke",
     title: TITLE.smoke,
     role: "qa",
+    role_title: DEMO_ROLE_TITLE,
     deps: ["wire"],
     spec: "Test the page: no placeholder text is left, and the page files are in place. Report anything missing.",
     acceptance: ["The tests ran and their real output is in the summary"],
@@ -213,22 +233,43 @@ const PLAN_TASKS = [
   },
 ];
 
-const SECURITY_TASK = {
-  key: "security",
-  title: TITLE.security,
-  role: "security",
-  deps: ["wire"],
-  spec: "Scan the workspace for committed secrets and risky config before launch.",
-  acceptance: ["A secret scan and a config scan ran", "Anything found is listed with where it is"],
-};
+const SECURITY_TASKS = [
+  {
+    key: "security",
+    title: TITLE.security,
+    role: "security",
+    deps: ["wire"],
+    spec: "Scan the workspace for committed secrets before launch.",
+    acceptance: ["A secret scan ran", "Anything found is listed with where it is"],
+  },
+  {
+    key: "config",
+    title: TITLE.config,
+    role: "security",
+    deps: ["wire"],
+    spec: "Check the page files for risky config: debug flags, open CORS, exposed keys.",
+    acceptance: ["A config scan ran", "Anything found is listed with where it is"],
+  },
+  {
+    key: "deps",
+    title: TITLE.deps,
+    role: "security",
+    deps: ["wire"],
+    spec: "Check the page's dependencies for known vulnerabilities.",
+    acceptance: ["The dependency picture is stated with its evidence"],
+  },
+];
 
 function finalReport(security: boolean): string {
   return [
     "Whisker Cafe landing page is ready.",
     "Delivered: index.html and styles.css (semantic, mobile first), copy.md with the tagline and menu highlights, notes/taglines.md, README.md.",
     "Review: rejected once for a missing alt text and meta description, talked through in a sync, fixed, then approved.",
-    "QA: no placeholder text left and the smoke check passed.",
-    ...(security ? ["Security: no committed secrets and no risky config."] : []),
+    "Launch tester (a new role for this run): no placeholder text left and the smoke check passed.",
+    ...(security
+      ? ["Security: no committed secrets, no risky config and no dependencies to audit. The first security cat was let go after three blocked checks; its replacement ran them with the new security playbook."]
+      : []),
+    "Brain: a self-check caught an unchecked change before the handoff, and the crew adopted a new engineer playbook.",
     "Open: swap the placeholder hero art for a real photo. Add your own model key in Settings to give the crew your own goals.",
   ].join(" ");
 }
@@ -246,6 +287,10 @@ const ROLE_BY_TOOL: Array<[string, AgentRole]> = [
 
 interface TurnInfo {
   role: AgentRole | null;
+  /** a dynamic role's title from the charter header */
+  roleTitle: string | null;
+  /** the charter layer carries a learned role strategy */
+  coached: boolean;
   title: string;
   /** assistant turns already in this task's prompt */
   step: number;
@@ -259,8 +304,14 @@ function textOf(content: ChatRequest["messages"][number]["content"]): string {
   return typeof content === "string" ? content : content.map((p) => (p.type === "text" ? p.text : "")).join("");
 }
 
-function readTurn(req: ChatRequest, roleBySystem: Map<string, AgentRole>): TurnInfo {
-  let role = roleBySystem.get(req.system) ?? null;
+const DYNAMIC_ROLES: Record<string, AgentRole> = { [DEMO_ROLE_TITLE]: "qa" };
+
+function readTurn(req: ChatRequest, charters: ReadonlyArray<readonly [string, AgentRole]>): TurnInfo {
+  // the system prompt starts with the role's charter; learned strategies follow it
+  let role = charters.find(([c]) => req.system === c || req.system.startsWith(`${c}\n`))?.[1] ?? null;
+  const header = ROLE_HEADER_RE.exec(req.system);
+  const roleTitle = header ? header[1]! : null;
+  if (!role && roleTitle) role = DYNAMIC_ROLES[roleTitle] ?? null;
   if (!role) {
     const names = new Set((req.tools ?? []).map((t) => t.name));
     role = ROLE_BY_TOOL.find(([tool]) => names.has(tool))?.[1] ?? (names.has("fs_write") && names.size <= 6 ? "researcher" : null);
@@ -278,7 +329,7 @@ function readTurn(req: ChatRequest, roleBySystem: Map<string, AgentRole>): TurnI
     planning = text.includes("create_tasks");
   }
   const step = req.messages.filter((m) => m.role === "assistant").length;
-  return { role, title, step, round, planning };
+  return { role, roleTitle, coached: /\nRole strategy v\d+ /.test(req.system), title, step, round, planning };
 }
 
 function leadSteps(planning: boolean, security: boolean): Step[] {
@@ -288,17 +339,17 @@ function leadSteps(planning: boolean, security: boolean): Step[] {
       { calls: [finish(finalReport(security))] },
     ];
   }
-  const tasks = security ? [...PLAN_TASKS, SECURITY_TASK] : PLAN_TASKS;
+  const tasks = security ? [...PLAN_TASKS, ...SECURITY_TASKS] : PLAN_TASKS;
   return [
     { say: "Morning, crew. This is the demo run: every step is scripted and no model is called. Reading the workspace first.", calls: [call("fs_list", { path: "." })] },
     {
-      say: `Empty workspace. ${tasks.length} tasks on the board: scaffold and copy start together, then the copy goes in, then QA${security ? ", security" : ""} and the README. Kickoff in the meeting room.`,
+      say: `Empty workspace. ${tasks.length} tasks on the board: scaffold and copy start together, then the copy goes in, then a Launch tester${security ? ", security" : ""} and the README. Kickoff in the meeting room.`,
       calls: [call("create_tasks", { tasks })],
     },
     {
       calls: [
         finish(
-          `Plan: ${tasks.length} tasks. Scaffold and copy run in parallel, the engineer wires the copy in, then QA tests the page${security ? ", security scans it" : ""} and the README lands. The scaffold goes through review.`,
+          `Plan: ${tasks.length} tasks. Scaffold and copy run in parallel, the engineer wires the copy in, then a new Launch tester role tests the page${security ? ", security scans it" : ""} and the README lands. The scaffold goes through review.`,
         ),
       ],
     },
@@ -351,6 +402,9 @@ function engineerSteps(title: string): Step[] {
         ],
       },
       { calls: [finish("Tagline, hero line and three menu highlights are in index.html. No placeholder text left.", ["index.html"])] },
+      // after the self-check asks for proof: search for leftovers, then finish again
+      { say: "Fair point from my own check. Searching the page for leftover placeholders.", calls: [call("fs_search", { pattern: "goes here" })] },
+      { calls: [finish("Tagline, hero line and three menu highlights are in index.html. A search for 'goes here' finds nothing: no placeholder text left.", ["index.html"])] },
     ];
   }
   if (title === TITLE.readme) {
@@ -416,18 +470,38 @@ export const DEMO_SMOKE = "echo 'smoke check: index.html, styles.css and copy.md
 
 function qaSteps(): Step[] {
   return [
-    { say: "Sniffing around the workspace.", calls: [call("fs_list", { path: "." })] },
+    { say: "Launch tester on duty. Sniffing around the workspace like a first visitor.", calls: [call("fs_list", { path: "." })] },
     { say: "Test one: no placeholder text left anywhere.", calls: [call("fs_search", { pattern: "goes here" })] },
     { say: "Test two: the smoke check.", calls: [call("shell_run", { command: DEMO_SMOKE })] },
     { calls: [finish("Tests passed: no placeholder text left in the workspace, and the smoke check found index.html, styles.css and copy.md (exit 0).")] },
   ];
 }
 
-function securitySteps(): Step[] {
+/** The first security cat insists on a lockfile the static page does not have. */
+const STUCK = "No lockfile to audit in this workspace, so I cannot sign off on this check.";
+
+function securitySteps(title: string, coached: boolean): Step[] {
+  if (!coached) {
+    return [
+      { say: "Dependencies first, always.", calls: [call("scan_deps")] },
+      { calls: [call("finish", { summary: STUCK, outcome: "blocked" })] },
+    ];
+  }
+  if (title === TITLE.config) {
+    return [
+      { say: "New playbook: scan what the page has. The config next.", calls: [call("scan_config")] },
+      { calls: [finish("Config scan ran: no debug flags, no open CORS, no exposed keys in the page files.")] },
+    ];
+  }
+  if (title === TITLE.deps) {
+    return [
+      { say: "A static page has no lockfile. Confirming there is no package manifest either.", calls: [call("fs_list", { path: "." })] },
+      { calls: [finish("No package manifest or lockfile in the workspace: the page ships no dependencies, so there is nothing to audit.")] },
+    ];
+  }
   return [
     { say: "Checking under the rug before launch.", calls: [call("scan_secrets")] },
-    { say: "Secrets are clean. The config next.", calls: [call("scan_config")] },
-    { calls: [finish("No committed secrets and no risky config in the page files.")] },
+    { calls: [finish("Secret scan ran: no committed secrets in the page files.")] },
   ];
 }
 
@@ -446,7 +520,7 @@ function stepsFor(t: TurnInfo, opts: DemoScriptOptions): Step[] {
     case "qa":
       return qaSteps();
     case "security":
-      return securitySteps();
+      return securitySteps(t.title, t.coached);
     default:
       return [{ calls: [finish("Done.")] }];
   }
@@ -467,10 +541,56 @@ function ceoTurn(req: ChatRequest): ScriptedTurn {
   return { text: JSON.stringify({ decision: "approve", answer }) };
 }
 
+/** The self-check critic: one revise for the wire task's first check (no check proved the placeholders gone), a pass otherwise. */
+export const DEMO_CRITIQUE = "No check shows the placeholders are gone from index.html. Search it for 'goes here' before finishing.";
+
+function reflexionTurn(req: ChatRequest): ScriptedTurn {
+  const packet = req.messages[0] ? textOf(req.messages[0].content) : "";
+  const task = /^Task: (.*)$/m.exec(packet)?.[1]?.trim() ?? "";
+  const check = Number(/Self-check (\d+) of/.exec(packet)?.[1] ?? 1);
+  if (task === TITLE.wire && check === 1) return { text: JSON.stringify({ verdict: "revise", critique: DEMO_CRITIQUE }) };
+  return { text: JSON.stringify({ verdict: "pass", critique: "The evidence covers the acceptance criteria." }) };
+}
+
+/** Strategy candidates the brain writes when a role underperforms. */
+export const DEMO_STRATEGIES: Partial<Record<AgentRole, string[]>> = {
+  engineer: [
+    "Before finish, prove each acceptance item with a search or check you ran after the last edit, and name it.",
+    "Add alt text and a meta description before asking for review.",
+  ],
+  security: [
+    "A static page has no lockfile: never block on scan_deps, confirm there is no manifest and say so.",
+    "Scan secrets and config directly and list each finding with where it is.",
+  ],
+};
+
+function strategyTurn(req: ChatRequest): ScriptedTurn {
+  const packet = req.messages[0] ? textOf(req.messages[0].content) : "";
+  const role = (/^(?:Role|One crew member, role): ([a-z]+)/m.exec(packet)?.[1] ?? "") as AgentRole;
+  const rules = DEMO_STRATEGIES[role] ?? ["Check your work against the acceptance list before finish."];
+  return { text: JSON.stringify({ rules }) };
+}
+
+function roleTurn(): ScriptedTurn {
+  return {
+    text: JSON.stringify({
+      charter: [
+        "Test the page the way a first visitor meets it: placeholders, broken links, missing files.",
+        "Search before you run: prove each acceptance item with a search or a command and its exit code.",
+        "Report anything missing with where it is; never fix the page yourself.",
+      ],
+      tools: ["fs_list", "fs_read", "fs_search", "shell_run", "report_issue"],
+    }),
+  };
+}
+
 /** The scripted reply for one request (exported for tests). */
-export function demoTurn(req: ChatRequest, roleBySystem: Map<string, AgentRole>, opts: DemoScriptOptions = {}): ScriptedTurn {
+export function demoTurn(req: ChatRequest, charters: ReadonlyArray<readonly [string, AgentRole]>, opts: DemoScriptOptions = {}): ScriptedTurn {
   if (req.system === CEO_SYSTEM) return ceoTurn(req);
-  const t = readTurn(req, roleBySystem);
+  if (req.system === REFLEXION_SYSTEM) return reflexionTurn(req);
+  if (req.system === STRATEGY_SYSTEM) return strategyTurn(req);
+  if (req.system === ROLE_SYSTEM) return roleTurn();
+  const t = readTurn(req, charters);
   if (!t.role) {
     // memory reflection (JSON) or step compaction: short, well formed answers
     if (req.responseFormat === "json") return { text: REFLECTION };
@@ -481,6 +601,44 @@ export function demoTurn(req: ChatRequest, roleBySystem: Map<string, AgentRole>,
   // past the end of a script: finish again instead of looping on a tool
   const calls = t.step >= steps.length ? [finish("Done.")] : s.calls;
   return { text: t.step >= steps.length ? "" : (s.say ?? ""), toolCalls: calls };
+}
+
+/** Base charters for the demo turn, longest first so a prefix never shadows a longer charter. */
+export function demoCharters(charter: (role: AgentRole) => string): Array<readonly [string, AgentRole]> {
+  return AGENT_ROLES.map((r) => [charter(r), r] as const).sort((a, b) => b[0].length - a[0].length);
+}
+
+// --------------------------------------------------------------- the judge
+const pick = (c: string, confidence = 0.86): JevAnswer => ({ type: "choice", choice: c, confidence, probabilities: { [c]: confidence } });
+
+/** The runtime JEV answers of the demo day: the Launch tester is a new qa role, handoffs hire, queues wait, the stuck cat goes, playbooks are adopted. */
+export function demoJudgeAnswers(decisionId: string, questions: Record<string, { criteria?: unknown }>): Record<string, JevAnswer> | null {
+  switch (decisionId) {
+    case "orch.role":
+      return { need: pick("new_role"), archetype: pick("qa") };
+    case "orch.hire": {
+      const criteria = (questions.hire?.criteria ?? {}) as Record<string, string>;
+      return { hire: pick("self" in criteria ? "hire" : "wait") };
+    }
+    case "orch.let_go":
+      return { decision: pick("let_go", 0.81) };
+    case "prompt.adopt":
+      return { adopt: pick("adopt", 0.84) };
+    default:
+      return null;
+  }
+}
+
+/** The scripted runtime JEV (verified answers from the demo script, model mengai-demo-judge). */
+export function createDemoJudge(): Judge {
+  return {
+    configured: async () => true,
+    async decide(req) {
+      const answers = demoJudgeAnswers(req.decisionId, req.questions as Record<string, { criteria?: unknown }>);
+      if (!answers) return { verified: false, stamp: "UNVERIFIED BY JEV", error: "the demo judge has no answer for this decision", latencyMs: 1 };
+      return { verified: true, model: "mengai-demo-judge", answers, latencyMs: 2 };
+    },
+  };
 }
 
 // ------------------------------------------------------------------ router
@@ -517,8 +675,8 @@ export function demoMeetingMs(paceMs?: readonly [number, number]): readonly [num
   return [Math.round((lo * DEMO_MEETING_MS[0]) / DEMO_PACE_MS[0]), Math.round((hi * DEMO_MEETING_MS[1]) / DEMO_PACE_MS[1])];
 }
 
-export function createDemoRouter(opts: DemoRouterOptions): LlmRouter & CompanyPace {
-  const roleBySystem = new Map<string, AgentRole>(AGENT_ROLES.map((r) => [opts.charter(r), r] as const));
+export function createDemoRouter(opts: DemoRouterOptions): LlmRouter & CompanyPace & JudgeHint {
+  const charters = demoCharters(opts.charter);
   const [lo, hi] = opts.paceMs ?? DEMO_PACE_MS;
   const min = Math.max(0, Math.min(lo, hi));
   const max = Math.max(min, lo, hi);
@@ -526,7 +684,7 @@ export function createDemoRouter(opts: DemoRouterOptions): LlmRouter & CompanyPa
   const scripted = new ScriptedProvider({
     id: DEMO_PROVIDER_ID,
     protocol: "openai_chat",
-    script: (req) => demoTurn(req, roleBySystem, script),
+    script: (req) => demoTurn(req, charters, script),
     models: DEMO_MODELS,
   });
   const provider: LlmProvider = {
@@ -534,7 +692,10 @@ export function createDemoRouter(opts: DemoRouterOptions): LlmRouter & CompanyPa
     protocol: "openai_chat",
     async chat(req: ChatRequest): Promise<ChatResult> {
       const started = Date.now();
-      await sleep(min + Math.random() * (max - min), req.signal);
+      // the brain's side calls (self-check, playbook, charter) are quicker than a work step
+      const side = req.system === REFLEXION_SYSTEM || req.system === STRATEGY_SYSTEM || req.system === ROLE_SYSTEM;
+      const pause = min + Math.random() * (max - min);
+      await sleep(side ? pause * 0.4 : pause, req.signal);
       const result = await scripted.chat(req);
       // the scripted double keeps every call for test assertions; a long lived server must not
       scripted.calls.length = 0;
@@ -545,8 +706,9 @@ export function createDemoRouter(opts: DemoRouterOptions): LlmRouter & CompanyPa
   return {
     resolve: async () => ({ provider, model: DEMO_MODEL, contextWindow: 128_000 }),
     configured: async () => true,
-    // the runs engine reads this hint: demo meetings hold long enough to watch
+    // the runs engine reads these hints: demo meetings hold long enough to watch, and the judge is scripted too
     company: { meetingMs: opts.meetingMs ?? demoMeetingMs(opts.paceMs) },
+    judge: createDemoJudge(),
   };
 }
 

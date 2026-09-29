@@ -13,6 +13,10 @@ import type { Db, Dialect } from "./ports/db";
 import postgres0001 from "../../../../migrations/postgres/0001_init.sql" with { type: "text" };
 // @ts-ignore Bun text import: there are no type declarations for .sql files
 import sqlite0001 from "../../../../migrations/sqlite/0001_init.sql" with { type: "text" };
+// @ts-ignore Bun text import: there are no type declarations for .sql files
+import postgres0002 from "../../../../migrations/postgres/0002_brain.sql" with { type: "text" };
+// @ts-ignore Bun text import: there are no type declarations for .sql files
+import sqlite0002 from "../../../../migrations/sqlite/0002_brain.sql" with { type: "text" };
 
 /** Repo migrations folder (dev and server image); inside a compiled binary this path does not exist. */
 export const MIGRATIONS_ROOT = new URL("../../../../migrations/", import.meta.url).pathname;
@@ -24,8 +28,14 @@ export interface Migration {
 }
 
 export const EMBEDDED_MIGRATIONS: Readonly<Record<Dialect, readonly Migration[]>> = {
-  sqlite: [{ version: "0001_init.sql", sql: sqlite0001 as string }],
-  postgres: [{ version: "0001_init.sql", sql: postgres0001 as string }],
+  sqlite: [
+    { version: "0001_init.sql", sql: sqlite0001 as string },
+    { version: "0002_brain.sql", sql: sqlite0002 as string },
+  ],
+  postgres: [
+    { version: "0001_init.sql", sql: postgres0001 as string },
+    { version: "0002_brain.sql", sql: postgres0002 as string },
+  ],
 };
 
 /** Migrations for a dialect: from `root/<dialect>/*.sql` when root is given, else the embedded set. */

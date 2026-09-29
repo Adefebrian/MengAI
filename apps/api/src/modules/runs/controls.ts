@@ -82,6 +82,8 @@ export const handoffArgs = z
     acceptance: list.optional(),
     summary: text.optional(),
     context: text.optional(),
+    role_title: z.string().optional().catch(undefined),
+    roleTitle: z.string().optional().catch(undefined),
   })
   .passthrough()
   .transform((a) => {
@@ -92,6 +94,8 @@ export const handoffArgs = z
       spec,
       acceptance: a.acceptance ?? [],
       summary: a.summary ?? a.context ?? "",
+      /** a specialist title on top of toRole ("Launch tester"): a dynamic role */
+      roleTitle: (a.role_title ?? a.roleTitle ?? "").trim() || null,
     };
   })
   .refine((a) => !!a.toRole, { message: "to_role is required" })
@@ -115,6 +119,8 @@ const taskItem = z
     dependencies: z.array(depRef).optional(),
     review: z.boolean().optional().catch(undefined),
     priority: z.number().optional().catch(undefined),
+    role_title: z.string().optional().catch(undefined),
+    roleTitle: z.string().optional().catch(undefined),
   })
   .passthrough()
   .transform((t) => ({
@@ -126,6 +132,8 @@ const taskItem = z
     deps: (t.deps ?? t.depends_on ?? t.dependencies ?? []) as Array<string | number>,
     review: t.review ?? false,
     priority: Math.max(-1000, Math.min(1000, Math.round(t.priority ?? 0))),
+    /** a specialist title on top of role ("Launch tester"): a dynamic role */
+    roleTitle: (t.role_title ?? t.roleTitle ?? "").trim() || null,
   }));
 
 export type PlannedTask = z.output<typeof taskItem>;

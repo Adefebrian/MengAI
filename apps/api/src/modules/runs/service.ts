@@ -3,7 +3,9 @@
 // rebuilt from the tables on the first call that needs them.
 import {
   DEFAULT_CHAT_MODEL,
+  ROLE_LABEL,
   type AgentDTO,
+  type AgentMindDTO,
   type BudgetBody,
   type ContextXrayDTO,
   type CreateRunBody,
@@ -16,6 +18,7 @@ import {
   type RunEstimate,
   type RunSnapshotDTO,
   type RunStatus,
+  type StrategyVersionDTO,
   type TaskDTO,
   type TaskPatchBody,
   type ToolCallDetail,
@@ -23,22 +26,31 @@ import {
 import type { ModuleContext } from "../../core/module";
 import type { RunsService } from "../../core/services";
 import { HttpError, conflict, notFound } from "../../lib/http";
-import { redact } from "../../lib/redact";
+import { clip, redact } from "../../lib/redact";
 import { COMPANY, meetingsFromEvents } from "./company";
-import { RunEngine, TERMINAL_RUN, type EngineHooks, type EngineInit } from "./engine";
-import { HEURISTIC, LIMITS, bounded, estimatePlan, roundUsd } from "./policy";
-import type { RunsDeps } from "./ports";
+import { RunEngine, TERMINAL_RUN, type EngineHooks, type EngineInit, type OrgSettings } from "./engine";
+import { HEURISTIC, LIMITS, TITLES, bounded, estimatePlan, roundUsd } from "./policy";
+import { brainOf, type RunsDeps } from "./ports";
 import { createRunsRepo, emptyUsage } from "./repo";
+import { stageFromBoard } from "./stage";
 
 export interface RunsServiceImpl extends RunsService {
   /** resolves once boot recovery (running -> paused "restart") is done */
   readonly ready: Promise<void>;
   calls(runId: string): Promise<LlmCallDTO[]>;
+  /** what is in one cat's head: charter, strategy addenda, lessons, skills, runtime JEV decisions, history */
+  mind(runId: string, agentId: string): Promise<AgentMindDTO>;
   /** aborts live work without changing statuses; the next boot pauses those runs */
   close(): Promise<void>;
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+function orgOf(s: { ceoName?: string; maxAgents?: number; maxDepth?: number }): Partial<OrgSettings> {
+  return { ceoName: s.ceoName, maxAgents: s.maxAgents, maxDepth: s.maxDepth };
+}
+
+const cleanText = (t: string, max = 4000) => clip(redact(t), max);
 
 export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServiceImpl {
   const repo = createRunsRepo(ctx.db);
@@ -161,6 +173,7 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
       root,
       maxConcurrent: settings.maxConcurrentAgents,
       hooks,
+      org: orgOf(settings),
     };
   }
 
@@ -211,6 +224,7 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
         root,
         maxConcurrent: settings.maxConcurrentAgents,
         hooks,
+        org: orgOf(settings),
       });
       if (!TERMINAL_RUN.has(e.status)) engines.set(run.id, e);
       return e.view;
@@ -255,15 +269,29 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
       const seq = lastSeq.get(runId) ?? 0;
       const live = engines.get(runId);
       const run = await loadRun(runId);
-      const [agents, tasks, handoffs, decisions, approvals, meetings] = await Promise.all([
+      const [all, tasks, handoffs, decisions, brainDecisions, approvals, meetings] = await Promise.all([
         live ? live.agentList() : repo.listAgents(runId),
         live ? live.taskList() : repo.listTasks(runId),
         live ? live.handoffList() : repo.listHandoffs(runId),
         deps.decisions.list(runId).catch(() => []),
+        repo.brainDecisions(runId).catch(() => []),
         deps.approvals ? deps.approvals.list(runId).catch(() => []) : Promise.resolve([]),
         live ? live.meetingList() : meetingsOf(runId, run),
       ]);
-      return { run, agents, tasks, handoffs, decisions, approvals, meetings, lastSeq: seq };
+      const roleIds = [...new Set([...all.map((a) => a.roleId), ...tasks.map((t) => t.roleId)].filter((x): x is string => !!x))];
+      const roles = live ? live.roleList() : await repo.rolesByIds(roleIds).catch(() => []);
+      // agents holds the crew still at work; cats that were let go are listed apart
+      const agents = all.filter((a) => !a.leftReason);
+      const departed = all.filter((a) => !!a.leftReason);
+      const stage = live
+        ? live.stageNow
+        : stageFromBoard(
+            tasks.map((t) => ({ role: t.role, status: t.status, kind: t.role === "reviewer" && t.parentId && t.title.startsWith(TITLES.reviewPrefix) ? "review" : "work" })),
+            run.status,
+            agents.length,
+          );
+      const merged = [...decisions, ...brainDecisions].sort((x, y) => x.createdAt - y.createdAt || (x.id < y.id ? -1 : 1));
+      return { run, agents, tasks, handoffs, decisions: merged, approvals, meetings, departed, roles, stage, lastSeq: seq };
     },
 
     async pause(runId: string): Promise<RunDTO> {
@@ -316,6 +344,67 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
       const x = await repo.getSnapshot(runId, agentId);
       if (!x) throw notFound("context snapshot");
       return x;
+    },
+
+    async mind(runId: string, agentId: string): Promise<AgentMindDTO> {
+      await ready;
+      await loadRun(runId);
+      const live = engines.get(runId);
+      const agent = (live ? live.agentList() : await repo.listAgents(runId)).find((a) => a.id === agentId);
+      if (!agent) throw notFound("agent");
+      const snap = await repo.getMind(runId, agentId);
+      const role = agent.roleId ? ((await repo.rolesByIds([agent.roleId]))[0] ?? null) : null;
+      const roleKey = role?.key ?? agent.role;
+      const brain = brainOf(deps.memory);
+      let addenda: StrategyVersionDTO[] = [];
+      let history: StrategyVersionDTO[] = [];
+      if (brain) {
+        try {
+          addenda = snap?.addendumIds.length
+            ? await brain.strategiesByIds(snap.addendumIds)
+            : [await brain.activeStrategy({ kind: "role", key: roleKey }), await brain.activeStrategy({ kind: "agent", key: agentId })].filter((x): x is StrategyVersionDTO => !!x);
+          const [r, own] = await Promise.all([brain.strategyHistory({ kind: "role", key: roleKey }, 20), brain.strategyHistory({ kind: "agent", key: agentId }, 20)]);
+          history = [...r, ...own].sort((x, y) => y.createdAt - x.createdAt || (x.id < y.id ? 1 : -1)).slice(0, 30);
+        } catch (e) {
+          log.log("warn", "mind strategies read failed", { error: redact(errMsg(e)) });
+        }
+      }
+      const decisions = await repo.brainDecisions(runId, { agentId, subjects: [roleKey, agentId, ...(agent.roleId ? [agent.roleId] : [])] }).catch(() => []);
+      let skills: AgentMindDTO["skills"] = [];
+      if (snap?.taskTitle) {
+        try {
+          const found = await deps.memory.findSkills({ text: snap.taskTitle, role: agent.role, limit: 3 });
+          skills = found.map((k) => ({
+            id: k.id,
+            name: cleanText(k.name, 80),
+            description: cleanText(k.description, 400),
+            reason: cleanText(`A saved procedure that matches ${snap.taskTitle}; ${k.wins} of ${k.uses} uses went well.`, 240),
+          }));
+        } catch (e) {
+          log.log("warn", "mind skills read failed", { error: redact(errMsg(e)) });
+        }
+      }
+      const charterText = role ? role.charter : deps.context.charter(agent.role);
+      const redactStrategy = (x: StrategyVersionDTO): StrategyVersionDTO => ({ ...x, text: cleanText(x.text, 800), reason: cleanText(x.reason, 400) });
+      const layerVersion =
+        snap?.layerVersion ??
+        [role || addenda.length ? `c${role?.charterVersion ?? 1}` : "", ...addenda.map((x) => `${x.subject === "role" ? "r" : "a"}${x.version}`)].filter(Boolean).join(".");
+      return {
+        runId,
+        agentId,
+        name: agent.name,
+        role: agent.role,
+        roleTitle: role?.title ?? agent.roleTitle ?? ROLE_LABEL[agent.role],
+        roleId: agent.roleId ?? null,
+        charter: { version: role?.charterVersion ?? 1, title: role?.title ?? ROLE_LABEL[agent.role], dynamic: !!role, text: cleanText(charterText, 8000), tokens: deps.context.estimateTokens(charterText) },
+        layerVersion,
+        addenda: addenda.map(redactStrategy),
+        lessons: (snap?.lessons ?? []).map((l) => ({ id: l.id, text: cleanText(l.text, 400), reason: cleanText(l.reason, 240) })),
+        skills,
+        decisions,
+        history: history.map(redactStrategy),
+        updatedAt: snap?.at ?? agent.updatedAt,
+      };
     },
 
     async toolCall(runId: string, callId: string): Promise<ToolCallDetail> {

@@ -5,6 +5,7 @@ import type { EvalRunDTO } from "@mengai/shared";
 import type { ModuleContext } from "../../core/module";
 import type { ContextService, ToolsService } from "../../core/services";
 import { notFound } from "../../lib/http";
+import { worstCaseBrain } from "./brain";
 import { replaySuite, type ReplayOptions, type SuiteReplay } from "./replay";
 import { createEvalsRepo } from "./repo";
 import { fixtureSpecsFor, loadSuites } from "./suites";
@@ -27,8 +28,11 @@ export interface EvalRunResult {
 
 export interface EvalsService {
   suites(): string[];
-  /** replay only, nothing persisted (per-scenario numbers for reports and tests) */
-  replay(suite?: string, opts?: ReplayOptions): Promise<SuiteReplay>;
+  /**
+   * replay only, nothing persisted (per-scenario numbers for reports and tests).
+   * opts.brain true replays the worst-case brain too (SuiteReplay.brain).
+   */
+  replay(suite?: string, opts?: Omit<ReplayOptions, "brain"> & { brain?: boolean }): Promise<SuiteReplay>;
   run(input?: { suite?: string }): Promise<EvalRunResult>;
   list(opts?: { suite?: string; limit?: number }): Promise<EvalRunDTO[]>;
 }
@@ -38,10 +42,11 @@ export function createEvalsService(ctx: ModuleContext, deps: EvalsDeps): EvalsSe
   const log = ctx.logger.child({ module: "evals" });
   const specsFor = deps.tools ? (role: Parameters<ToolsService["specsFor"]>[0]) => deps.tools!.specsFor(role) : fixtureSpecsFor;
 
-  async function replay(suiteId = DEFAULT_SUITE, opts: ReplayOptions = {}): Promise<SuiteReplay> {
+  async function replay(suiteId = DEFAULT_SUITE, opts: Omit<ReplayOptions, "brain"> & { brain?: boolean } = {}): Promise<SuiteReplay> {
     const suite = loadSuites().get(suiteId);
     if (!suite) throw notFound(`suite ${suiteId}`);
-    return replaySuite(suite, { context: deps.context, specsFor }, opts);
+    const { brain, ...rest } = opts;
+    return replaySuite(suite, { context: deps.context, specsFor }, { ...rest, brain: brain ? worstCaseBrain() : null });
   }
 
   return {

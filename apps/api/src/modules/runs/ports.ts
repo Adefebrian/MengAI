@@ -1,7 +1,7 @@
 // What the runs module needs from the rest of the monolith. Every entry is a
 // service interface from core/services.ts (or a port), injected by
 // core/container.ts. The orchestrator never imports another module.
-import type { ApprovalDTO, MengaiEvent } from "@mengai/shared";
+import type { AgentRole, ApprovalDTO, MengaiEvent, StrategyChoice, StrategyEvidenceDTO, StrategyVersionDTO } from "@mengai/shared";
 import type {
   AutomationService,
   ContextService,
@@ -14,14 +14,14 @@ import type {
   UsageService,
   WorkspaceService,
 } from "../../core/services";
-import type { LlmRouter } from "../../core/ports";
+import type { Judge, LlmRouter, ToolSpec } from "../../core/ports";
 
 export interface RunsDeps {
   projects: ProjectsService;
-  llm: LlmRouter & CompanyPace;
+  llm: LlmRouter & CompanyPace & JudgeHint;
   usage: UsageService;
   context: ContextService;
-  memory: MemoryService & MemoryPromotion;
+  memory: MemoryService & MemoryPromotion & Partial<BrainMemory>;
   tools: ToolsService;
   decisions: DecisionService;
   settings: SettingsService;
@@ -37,6 +37,107 @@ export interface RunsDeps {
    * rebuilds its meetings from meeting.started / meeting.ended.
    */
   eventLog?: { after(seq: number, runId: string | null, limit: number): Promise<MengaiEvent[]> };
+  /** brain switches; everything is on when absent (production). The test harness turns the model-calling parts off by default. */
+  brain?: Partial<BrainOptions>;
+  /**
+   * The product's runtime JEV (the owner's jev provider key): prompt.adopt,
+   * orch.role, orch.hire and orch.let_go. Without it every brain decision
+   * takes its deterministic fallback, stamped UNVERIFIED BY JEV.
+   */
+  judge?: Judge;
+}
+
+export interface BrainOptions {
+  /** the self-check before a finish (rule verdicts, fast-tier critic on ambiguous evidence) */
+  reflexion: boolean;
+  /** strategy tuning for roles and cats that underperform (fast tier, offline eval, JEV prompt.adopt) */
+  tuning: boolean;
+  /** the unlimited org: JEV hire decisions, helpers at any depth, dynamic roles, letting go */
+  org: boolean;
+}
+
+export const BRAIN_DEFAULTS: BrainOptions = { reflexion: true, tuning: true, org: true };
+
+export type OutcomeKind = "done" | "review_pass" | "review_fail" | "failed" | "blocked" | "reflexion";
+
+export interface StrategySubject {
+  kind: "role" | "agent";
+  /** role key (base role or dynamic role key) or agent id */
+  key: string;
+  role: AgentRole;
+  title?: string | null;
+}
+
+/** A scored candidate addendum (the memory module's StrategyProposal, structurally). */
+export interface StrategyProposalView {
+  subject: StrategySubject;
+  current: StrategyVersionDTO | null;
+  candidate: string;
+  merged: string | null;
+  version: number;
+  eval: { adopt: boolean; reason: string; legacyBillableInputTokens: number; candidate: { tokens: number; billableInputTokens: number } };
+  evidence: StrategyEvidenceDTO;
+  causes: string[];
+  /** the candidate call as billed: the engine adds it to the run's totals */
+  call?: { inputTokens: number; outputTokens: number; cachedTokens: number; cacheWriteTokens: number; costUsd: number } | null;
+}
+
+/**
+ * The crew's brain on the memory side (the memory module implements it;
+ * the container passes its service). Structural, so the orchestrator never
+ * imports the memory module. When a memory service lacks it, outcomes and
+ * strategy tuning are skipped.
+ */
+export interface BrainMemory {
+  recordRoleOutcome(input: {
+    role: string;
+    runId: string | null;
+    taskId: string | null;
+    agentId: string | null;
+    outcome: "win" | "loss";
+    kind: OutcomeKind;
+    cause: string;
+  }): Promise<{ tuneDue: boolean; rate: number; samples: number }>;
+  proposeStrategy(input: {
+    subject: StrategySubject;
+    runId: string | null;
+    context: ContextService;
+    specsFor?: (role: AgentRole) => ToolSpec[];
+    cases?: Array<{ outcome: "win" | "loss"; kind: string; cause: string }>;
+    signal?: AbortSignal;
+  }): Promise<StrategyProposalView | null>;
+  applyStrategy(input: {
+    /** the exact object proposeStrategy returned (it carries the tuning lock) */
+    proposal: StrategyProposalView;
+    choice: StrategyChoice;
+    decision: { id: string | null; confidence: number | null; verified: boolean; stamp: string | null } | null;
+    reason?: string;
+  }): Promise<StrategyVersionDTO>;
+  activeStrategy(subject: { kind: "role" | "agent"; key: string }): Promise<StrategyVersionDTO | null>;
+  strategiesByIds(ids: string[]): Promise<StrategyVersionDTO[]>;
+  strategyHistory(subject: { kind: "role" | "agent"; key: string }, limit?: number): Promise<StrategyVersionDTO[]>;
+}
+
+const BRAIN_METHODS = [
+  "recordRoleOutcome",
+  "proposeStrategy",
+  "applyStrategy",
+  "activeStrategy",
+  "strategiesByIds",
+  "strategyHistory",
+] as const satisfies ReadonlyArray<keyof BrainMemory>;
+
+/** The memory service's brain, when it has every method. */
+export function brainOf(memory: Partial<BrainMemory>): BrainMemory | null {
+  return BRAIN_METHODS.every((m) => typeof memory[m] === "function") ? (memory as BrainMemory) : null;
+}
+
+/**
+ * Optional judge a router may carry: the scripted demo crew plays the
+ * runtime JEV too (deps.judge wins when both are set).
+ */
+export interface JudgeHint {
+  judge?: Judge;
 }
 
 /**

@@ -10,6 +10,7 @@ import type { DecisionService, RecordCallInput, UsageService } from "../../core/
 import { HttpError, errorBody } from "../../lib/http";
 import { num } from "../../lib/sql";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
+import { createContextModule } from "../context";
 import { bm25, similarity, tokenize } from "./bm25";
 import { createMemoryModule, type MemoryModuleService } from "./index";
 import { nextStatus, parseReflection } from "./service";
@@ -975,5 +976,111 @@ describe("memory routes", () => {
     expect(page2.map((x) => x.id)).toEqual([s.id]);
     expect((await app.request(`/api/memory/skills/${s.id}`, { method: "DELETE" })).status).toBe(200);
     expect((await app.request(`/api/memory/skills/${s.id}`, { method: "DELETE" })).status).toBe(404);
+  });
+});
+
+describe("brain: role outcomes and versioned strategies", () => {
+  const rules = (list: string[]) => JSON.stringify({ rules: list });
+  async function brainSetup(reply = rules(["Run the tests after the last edit and name the exit code.", "Add alt text before asking for review."])) {
+    const llm = fakeLlm({ configured: true, reply });
+    const s = await setup({ llm });
+    const context = createContextModule(s.ctx).service;
+    return { ...s, context };
+  }
+  const outcome = (kind: "done" | "review_fail" | "blocked", cause = "") => ({
+    role: "engineer",
+    runId: "r1",
+    taskId: "t1",
+    agentId: "a1",
+    outcome: kind === "done" ? ("win" as const) : ("loss" as const),
+    kind,
+    cause,
+  });
+  const role = { kind: "role" as const, key: "engineer", role: "engineer" as const };
+
+  test("tuning is due after three outcomes under a 0.5 success rate, then waits for three fresh ones", async () => {
+    const { memory, context } = await brainSetup();
+    expect((await memory.recordRoleOutcome(outcome("review_fail", "no tests"))).tuneDue).toBe(false);
+    expect((await memory.recordRoleOutcome(outcome("done"))).tuneDue).toBe(false);
+    const third = await memory.recordRoleOutcome(outcome("blocked", "no lockfile"));
+    expect(third).toMatchObject({ tuneDue: true, samples: 3 });
+    expect(third.rate).toBeCloseTo(1 / 3, 5);
+    const p = await memory.proposeStrategy({ subject: role, runId: "r1", context });
+    await memory.applyStrategy({ proposal: p!, choice: "keep", decision: null });
+    expect((await memory.recordRoleOutcome(outcome("review_fail"))).tuneDue).toBe(false);
+    expect((await memory.recordRoleOutcome(outcome("review_fail"))).tuneDue).toBe(false);
+    expect((await memory.recordRoleOutcome(outcome("review_fail"))).tuneDue).toBe(true);
+    // wins keep the rate up: a dynamic role key has its own window
+    for (let i = 0; i < 5; i++) await memory.recordRoleOutcome({ ...outcome("done"), role: "launch-tester" });
+    expect((await memory.recordRoleOutcome({ ...outcome("blocked"), role: "launch-tester" })).tuneDue).toBe(false);
+  });
+
+  test("propose: one fast-tier call capped at 120 tokens, scored offline against legacy; the lock holds one pass per subject", async () => {
+    const { memory, context, llm, usage } = await brainSetup();
+    const secret = "sk-" + "d".repeat(40);
+    await memory.recordRoleOutcome(outcome("review_fail", `The hero image has no alt text. key ${secret}`));
+    await memory.recordRoleOutcome(outcome("blocked", "Never ran the tests after the last edit"));
+    const p = await memory.proposeStrategy({ subject: role, runId: "r1", context });
+    expect(p).not.toBeNull();
+    expect(llm.requests).toHaveLength(1);
+    expect(llm.requests[0]!.maxOutputTokens).toBe(120);
+    expect(llm.resolves[0]).toEqual({ tier: "fast", role: "engineer" });
+    const prompt = llm.requests[0]!.messages[0]!.content as string;
+    expect(prompt).toContain("Role: engineer (Engineer)");
+    expect(prompt).not.toContain(secret);
+    expect(p!.candidate).toBe("- Run the tests after the last edit and name the exit code.\n- Add alt text before asking for review.");
+    expect(p!).toMatchObject({ version: 1, current: null, merged: null });
+    expect(p!.evidence.tokens.candidate).toBeLessThanOrEqual(120);
+    expect(p!.evidence.billableInputTokens.candidate).toBeLessThan(p!.evidence.billableInputTokens.legacy);
+    expect(p!.evidence.addressed.candidate).toBeGreaterThan(0);
+    expect(p!.causes.some((c) => c.includes(secret))).toBe(false);
+    expect(usage.calls.map((c) => c.purpose)).toEqual(["reflect"]);
+    // the call as billed rides on the proposal, so the run's totals count it
+    expect(p!.call).toEqual({ inputTokens: 120, outputTokens: 30, cachedTokens: 0, cacheWriteTokens: 0, costUsd: 0 });
+    // a second pass for the same subject waits for the first
+    expect(await memory.proposeStrategy({ subject: role, runId: "r1", context })).toBeNull();
+    await memory.applyStrategy({ proposal: p!, choice: "adopt", decision: { id: "d1", confidence: 0.8, verified: true, stamp: null } });
+    expect(await memory.proposeStrategy({ subject: role, runId: "r1", context })).not.toBeNull();
+  });
+
+  test("apply: adopt makes v1 active, merge makes v2 from both texts, keep records the candidate as rejected", async () => {
+    const { memory, context } = await brainSetup();
+    await memory.recordRoleOutcome(outcome("review_fail", "no alt text"));
+    const p1 = await memory.proposeStrategy({ subject: role, runId: "r1", context });
+    const v1 = await memory.applyStrategy({ proposal: p1!, choice: "adopt", decision: { id: "d1", confidence: 0.84, verified: true, stamp: null }, reason: "adopt strategy v1" });
+    expect(v1).toMatchObject({ subject: "role", subjectKey: "engineer", role: "engineer", version: 1, status: "active", choice: "adopt", reason: "adopt strategy v1" });
+    expect(v1.decision).toEqual({ id: "d1", confidence: 0.84, verified: true, stamp: null });
+    expect(v1.evidence!.scores.candidate).toBe(p1!.evidence.scores.candidate);
+    expect((await memory.activeStrategy(role))!.id).toBe(v1.id);
+    const p2 = await memory.proposeStrategy({ subject: role, runId: "r1", context });
+    expect(p2!.current!.id).toBe(v1.id);
+    expect(p2!.version).toBe(2);
+    const v2 = await memory.applyStrategy({ proposal: p2!, choice: "merge", decision: null });
+    expect(v2).toMatchObject({ version: 2, status: "active", choice: "merge" });
+    const p3 = await memory.proposeStrategy({ subject: role, runId: "r1", context });
+    const kept = await memory.applyStrategy({ proposal: p3!, choice: "keep", decision: { id: null, confidence: null, verified: false, stamp: "UNVERIFIED BY JEV" } });
+    expect(kept).toMatchObject({ version: 3, status: "rejected", choice: "keep" });
+    expect((await memory.activeStrategy(role))!.id).toBe(v2.id);
+    const history = await memory.strategyHistory(role);
+    expect(history.map((h) => [h.version, h.status])).toEqual([
+      [3, "rejected"],
+      [2, "active"],
+      [1, "retired"],
+    ]);
+    expect((await memory.strategiesByIds([v1.id, "missing"])).map((x) => x.id)).toEqual([v1.id]);
+  });
+
+  test("an agent subject learns from its own failures; no usable candidate still counts as an attempt", async () => {
+    const { memory, context, llm } = await brainSetup("not json at all");
+    const cat = { kind: "agent" as const, key: "agent-7", role: "security" as const, title: "Security" };
+    expect(await memory.proposeStrategy({ subject: cat, runId: "r1", context, cases: [{ outcome: "loss", kind: "agent", cause: "blocked: no lockfile to audit" }] })).toBeNull();
+    expect((llm.requests[0]!.messages[0]!.content as string).startsWith("One crew member, role: Security (a Security specialist)")).toBe(true);
+    const history = await memory.strategyHistory(cat);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ status: "rejected", choice: null, reason: "no usable candidate", text: "" });
+    expect(await memory.activeStrategy(cat)).toBeNull();
+    // the attempt released its lock
+    expect(await memory.proposeStrategy({ subject: cat, runId: "r1", context, cases: [] })).toBeNull();
+    expect(llm.requests).toHaveLength(2);
   });
 });

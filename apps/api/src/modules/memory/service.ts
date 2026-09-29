@@ -12,6 +12,7 @@ import type { DecisionService, MemoryService, RetrieveQuery, UsageService } from
 import { HttpError, notFound } from "../../lib/http";
 import { redact, redactDeep } from "../../lib/redact";
 import { NEAR_DUPLICATE, bm25, jaccard, shingles } from "./bm25";
+import { createMemoryBrain, type MemoryBrain } from "./brain";
 import * as repo from "./repo";
 
 export interface MemoryDeps {
@@ -29,7 +30,7 @@ export interface PromotionResult {
 
 export type Cursor = repo.Cursor;
 
-export interface MemoryModuleService extends MemoryService {
+export interface MemoryModuleService extends MemoryService, MemoryBrain {
   /** newest first; `before` pages past the last row of the previous page */
   listLessons(f: Omit<repo.LessonFilter, "limit"> & { limit?: number }): Promise<LessonDTO[]>;
   patchLesson(id: string, patch: { status?: LessonStatus; text?: string }): Promise<LessonDTO>;
@@ -570,7 +571,10 @@ export function createMemoryService(ctx: ModuleContext, deps: MemoryDeps): Memor
     return results;
   }
 
+  const brain = createMemoryBrain(ctx, { llm: deps.llm, usage: deps.usage });
+
   return {
+    ...brain,
     retrieve,
     markUsed,
     recordOutcome,

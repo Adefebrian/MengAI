@@ -157,7 +157,7 @@ describe("company: meetings", () => {
     const engineer = snap.agents.find((a) => a.role === "engineer")!;
     const qa = snap.agents.find((a) => a.role === "qa")!;
     expect(end.data.notes).toEqual([`Build feature: done by ${engineer.name}`, `Test feature: done by ${qa.name}`]);
-    expect(end.data.decisions).toEqual(["Kopi writes the report to the owner"]);
+    expect(end.data.decisions).toEqual(["Oyen writes the report to the owner"]);
     const report = at(ev, (e) => e.type === "task.created" && (e as Ev<"task.created">).data.task.title === "Report to the owner");
     expect(report).toBeGreaterThan(at(ev, (e) => e === end));
     // a cat with nothing queued took a coffee break before the wrap-up
@@ -259,7 +259,7 @@ describe("company: the lead is the CEO", () => {
     await h.untilStatus(run.id, "done");
     expect(h.events.ofType("request.decided")[0]!.data).toMatchObject({ approved: false, answer: "No. One page is the goal.", byOwner: false });
     const out = h.context.builds.filter((b) => b.role === "designer")[1]!.steps[0]!.results[0]!.output;
-    expect(out).toBe("Kopi (the lead) declined: No. One page is the goal.");
+    expect(out).toBe("Oyen (the lead) declined: No. One page is the goal.");
   });
 
   test("the CEO escalates to the owner; the answer closes both requests and reaches the asking cat", async () => {

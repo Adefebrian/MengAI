@@ -1,25 +1,30 @@
 // SQL for the runs module: runs, agents, tasks, handoffs, plus the per-call
-// tool_calls log and the per-agent context_snapshots (X-ray) the engine
-// writes. Portable SQL only (TEXT ids, epoch ms, JSON as TEXT, 0/1 booleans).
-import type {
-  Activity,
-  AgentDTO,
-  AgentRole,
-  AgentStatus,
-  ContextLayer,
-  ContextXrayDTO,
-  HandoffDTO,
-  Mood,
-  RunDTO,
-  RunStatus,
-  TaskDTO,
-  TaskStatus,
-  Tier,
-  ToolCallDetail,
-  UsageTotals,
+// tool_calls log, the per-agent context_snapshots (X-ray and mind) the engine
+// writes, the project's dynamic roles and the runtime brain decisions.
+// Portable SQL only (TEXT ids, epoch ms, JSON as TEXT, 0/1 booleans).
+import {
+  ROLE_LABEL,
+  type Activity,
+  type AgentDTO,
+  type AgentRole,
+  type AgentStatus,
+  type ContextLayer,
+  type ContextXrayDTO,
+  type DecisionDTO,
+  type HandoffDTO,
+  type Mood,
+  type RoleDTO,
+  type RunDTO,
+  type RunStatus,
+  type TaskDTO,
+  type TaskStatus,
+  type Tier,
+  type ToolCallDetail,
+  type UsageTotals,
 } from "@mengai/shared";
 import type { Db, Row } from "../../core/ports/db";
 import { b01, bool, json, num, numOrNull, toJson } from "../../lib/sql";
+import type { BrainDecisionRow } from "./judge";
 
 export const emptyUsage = (): UsageTotals => ({
   inputTokens: 0,
@@ -79,6 +84,12 @@ export function agentFromRow(r: Row): AgentDTO {
     usage: usageOf(r),
     createdAt: num(r.created_at),
     updatedAt: num(r.updated_at),
+    roleTitle: strOrNull(r.role_title) ?? ROLE_LABEL[str(r.role) as AgentRole] ?? str(r.role),
+    archetype: str(r.role) as AgentRole,
+    roleId: strOrNull(r.role_id),
+    hireReason: strOrNull(r.hire_reason),
+    hiredBy: strOrNull(r.hired_by),
+    leftReason: strOrNull(r.left_reason),
   };
 }
 
@@ -103,7 +114,36 @@ export function taskFromRow(r: Row): TaskDTO {
     updatedAt: num(r.updated_at),
     startedAt: numOrNull(r.started_at),
     endedAt: numOrNull(r.ended_at),
+    roleId: strOrNull(r.role_id),
   };
+}
+
+export function roleFromRow(r: Row): RoleDTO {
+  return {
+    id: str(r.id),
+    projectId: str(r.project_id),
+    runId: strOrNull(r.run_id),
+    key: str(r.key),
+    title: str(r.title),
+    archetype: str(r.archetype) as AgentRole,
+    charter: str(r.charter),
+    charterVersion: num(r.charter_version) || 1,
+    tools: json<string[]>(r.tools, []),
+    reason: str(r.reason),
+    createdBy: strOrNull(r.created_by),
+    createdAt: num(r.created_at),
+  };
+}
+
+/** What the engine put in a cat's head at its latest step (context_snapshots.mind). */
+export interface MindSnapshot {
+  taskId: string | null;
+  taskTitle: string | null;
+  layerVersion: string;
+  charterVersion: number;
+  /** strategies rows injected into its charter layer */
+  addendumIds: string[];
+  lessons: Array<{ id: string; text: string; reason: string }>;
 }
 
 export function handoffFromRow(r: Row): HandoffDTO {
@@ -230,13 +270,14 @@ export function createRunsRepo(db: Db) {
 
     // ---------------------------------------------------------- agents
     async insertAgent(a: AgentDTO): Promise<void> {
-      await db.query`insert into agents (id, run_id, parent_id, role, name, coat, seed, tier, status, activity, mood, status_text, current_task_id, steps, created_at, updated_at)
-        values (${a.id}, ${a.runId}, ${a.parentId}, ${a.role}, ${a.name}, ${a.look.coat}, ${a.look.seed}, ${a.tier}, ${a.status}, ${a.activity}, ${a.mood}, ${a.statusText}, ${a.currentTaskId}, ${a.steps}, ${a.createdAt}, ${a.updatedAt})`;
+      await db.query`insert into agents (id, run_id, parent_id, role, name, coat, seed, tier, status, activity, mood, status_text, current_task_id, steps, created_at, updated_at, hire_reason, hired_by, left_reason, role_id, role_title)
+        values (${a.id}, ${a.runId}, ${a.parentId}, ${a.role}, ${a.name}, ${a.look.coat}, ${a.look.seed}, ${a.tier}, ${a.status}, ${a.activity}, ${a.mood}, ${a.statusText}, ${a.currentTaskId}, ${a.steps}, ${a.createdAt}, ${a.updatedAt},
+          ${a.hireReason ?? null}, ${a.hiredBy ?? null}, ${a.leftReason ?? null}, ${a.roleId ?? null}, ${a.roleTitle ?? null})`;
     },
 
     async saveAgentState(a: AgentDTO): Promise<void> {
       await db.query`update agents set status = ${a.status}, activity = ${a.activity}, mood = ${a.mood}, status_text = ${a.statusText},
-        current_task_id = ${a.currentTaskId}, steps = ${a.steps}, tier = ${a.tier}, updated_at = ${a.updatedAt} where id = ${a.id}`;
+        current_task_id = ${a.currentTaskId}, steps = ${a.steps}, tier = ${a.tier}, left_reason = ${a.leftReason ?? null}, updated_at = ${a.updatedAt} where id = ${a.id}`;
     },
 
     async addAgentUsage(id: string, d: UsageTotals, now: number): Promise<void> {
@@ -262,14 +303,15 @@ export function createRunsRepo(db: Db) {
 
     // ----------------------------------------------------------- tasks
     async insertTask(t: TaskDTO): Promise<void> {
-      await db.query`insert into tasks (id, run_id, parent_id, title, spec, acceptance, role, assignee_id, status, priority, deps, review, attempts, result_summary, created_by, created_at, updated_at, started_at, ended_at)
-        values (${t.id}, ${t.runId}, ${t.parentId}, ${t.title}, ${t.spec}, ${toJson(t.acceptance)}, ${t.role}, ${t.assigneeId}, ${t.status}, ${t.priority}, ${toJson(t.deps)}, ${b01(t.review)}, ${t.attempts}, ${t.resultSummary}, ${t.createdBy}, ${t.createdAt}, ${t.updatedAt}, ${t.startedAt}, ${t.endedAt})`;
+      await db.query`insert into tasks (id, run_id, parent_id, title, spec, acceptance, role, assignee_id, status, priority, deps, review, attempts, result_summary, created_by, created_at, updated_at, started_at, ended_at, role_id)
+        values (${t.id}, ${t.runId}, ${t.parentId}, ${t.title}, ${t.spec}, ${toJson(t.acceptance)}, ${t.role}, ${t.assigneeId}, ${t.status}, ${t.priority}, ${toJson(t.deps)}, ${b01(t.review)}, ${t.attempts}, ${t.resultSummary}, ${t.createdBy}, ${t.createdAt}, ${t.updatedAt}, ${t.startedAt}, ${t.endedAt}, ${t.roleId ?? null})`;
     },
 
     async saveTask(t: TaskDTO): Promise<void> {
       await db.query`update tasks set title = ${t.title}, spec = ${t.spec}, acceptance = ${toJson(t.acceptance)}, role = ${t.role},
         assignee_id = ${t.assigneeId}, status = ${t.status}, priority = ${t.priority}, deps = ${toJson(t.deps)}, review = ${b01(t.review)},
-        attempts = ${t.attempts}, result_summary = ${t.resultSummary}, updated_at = ${t.updatedAt}, started_at = ${t.startedAt}, ended_at = ${t.endedAt}
+        attempts = ${t.attempts}, result_summary = ${t.resultSummary}, updated_at = ${t.updatedAt}, started_at = ${t.startedAt}, ended_at = ${t.endedAt},
+        role_id = ${t.roleId ?? null}
         where id = ${t.id}`;
     },
 
@@ -316,12 +358,67 @@ export function createRunsRepo(db: Db) {
     },
 
     // ------------------------------------------------- context X-ray
-    async upsertSnapshot(runId: string, x: ContextXrayDTO): Promise<void> {
-      await db.query`insert into context_snapshots (agent_id, run_id, task_id, model, budget, layers, total_tokens, compactions, last_cached_tokens, created_at)
-        values (${x.agentId}, ${runId}, ${x.taskId}, ${x.model}, ${x.budget}, ${toJson(x.layers)}, ${x.totalTokens}, ${x.compactions}, ${x.lastCachedTokens}, ${x.createdAt})
+    async upsertSnapshot(runId: string, x: ContextXrayDTO, mind: MindSnapshot | null = null): Promise<void> {
+      const m = mind ? toJson(mind) : null;
+      await db.query`insert into context_snapshots (agent_id, run_id, task_id, model, budget, layers, total_tokens, compactions, last_cached_tokens, created_at, mind)
+        values (${x.agentId}, ${runId}, ${x.taskId}, ${x.model}, ${x.budget}, ${toJson(x.layers)}, ${x.totalTokens}, ${x.compactions}, ${x.lastCachedTokens}, ${x.createdAt}, ${m})
         on conflict (agent_id) do update set run_id = excluded.run_id, task_id = excluded.task_id, model = excluded.model, budget = excluded.budget,
           layers = excluded.layers, total_tokens = excluded.total_tokens, compactions = excluded.compactions,
-          last_cached_tokens = excluded.last_cached_tokens, created_at = excluded.created_at`;
+          last_cached_tokens = excluded.last_cached_tokens, created_at = excluded.created_at, mind = excluded.mind`;
+    },
+
+    async getMind(runId: string, agentId: string): Promise<(MindSnapshot & { at: number }) | null> {
+      const rows = await db.query`select mind, created_at from context_snapshots where agent_id = ${agentId} and run_id = ${runId}`;
+      const m = rows[0] ? json<MindSnapshot | null>(rows[0].mind, null) : null;
+      return m ? { ...m, at: num(rows[0]!.created_at) } : null;
+    },
+
+    // ------------------------------------------------- dynamic roles
+    async insertRole(r: RoleDTO, now: number, decisionRef: string | null): Promise<void> {
+      await db.query`insert into roles (id, project_id, run_id, key, title, archetype, charter, charter_version, tools, reason, created_by, decision_ref, created_at, updated_at)
+        values (${r.id}, ${r.projectId}, ${r.runId}, ${r.key}, ${r.title}, ${r.archetype}, ${r.charter}, ${r.charterVersion}, ${toJson(r.tools)}, ${r.reason}, ${r.createdBy}, ${decisionRef}, ${r.createdAt}, ${now})`;
+    },
+
+    async projectRoles(projectId: string, limit = 100): Promise<RoleDTO[]> {
+      const rows = await db.query`select * from roles where project_id = ${projectId} order by created_at, id limit ${limit}`;
+      return rows.map(roleFromRow);
+    },
+
+    async rolesByIds(ids: string[]): Promise<RoleDTO[]> {
+      const out: RoleDTO[] = [];
+      for (const id of [...new Set(ids)].slice(0, 100)) {
+        const rows = await db.query`select * from roles where id = ${id}`;
+        if (rows[0]) out.push(roleFromRow(rows[0]));
+      }
+      return out;
+    },
+
+    // --------------------------------------------- brain decisions
+    async insertBrainDecision(d: BrainDecisionRow): Promise<void> {
+      await db.query`insert into brain_decisions (id, run_id, agent_id, subject, decision_id, domain, state_digest, questions, answers, action, confidence, verified, stamp, latency_ms, created_at)
+        values (${d.id}, ${d.runId}, ${d.agentId}, ${d.subject}, ${d.decisionId}, ${d.domain}, ${d.stateDigest}, ${toJson(d.questions)}, ${toJson(d.answers)}, ${d.action},
+          ${d.confidence}, ${b01(d.verified)}, ${d.stamp}, ${d.latencyMs}, ${d.createdAt})`;
+    },
+
+    /** the run's brain decisions, oldest first; filtered to one agent (or subjects) when given */
+    async brainDecisions(runId: string, filter: { agentId?: string; subjects?: string[] } = {}, limit = 200): Promise<DecisionDTO[]> {
+      const rows = await db.query`select * from brain_decisions where run_id = ${runId} order by created_at desc, id desc limit ${limit}`;
+      const subjects = new Set(filter.subjects ?? []);
+      return rows
+        .filter((r) => !filter.agentId || strOrNull(r.agent_id) === filter.agentId || (r.subject !== null && subjects.has(str(r.subject))))
+        .reverse()
+        .map((r) => ({
+          id: str(r.id),
+          runId: strOrNull(r.run_id),
+          decisionId: str(r.decision_id),
+          answers: json<Record<string, unknown>>(r.answers, {}),
+          action: str(r.action),
+          confidence: numOrNull(r.confidence),
+          verified: bool(r.verified),
+          stamp: strOrNull(r.stamp),
+          latencyMs: num(r.latency_ms),
+          createdAt: num(r.created_at),
+        }));
     },
 
     async getSnapshot(runId: string, agentId: string): Promise<ContextXrayDTO | null> {

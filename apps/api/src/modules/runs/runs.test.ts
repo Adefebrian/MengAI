@@ -277,7 +277,7 @@ describe("runs control tool parsing", () => {
     expect(parseArgs("create_tasks", createTasksArgs, JSON.stringify({ tasks: [{ title: "x", role: "wizard" }] })).ok).toBe(false);
     expect(parseArgs("create_tasks", createTasksArgs, "not json")).toEqual({ ok: false, error: "Invalid arguments for create_tasks: not valid JSON." });
     const planned = (deps: Array<Array<string | number>>) =>
-      deps.map((d, i) => ({ key: `k${i}`, title: `t${i}`, spec: "", acceptance: [], role: "engineer" as const, deps: d, review: false, priority: 0 }));
+      deps.map((d, i) => ({ key: `k${i}`, title: `t${i}`, spec: "", acceptance: [], role: "engineer" as const, deps: d, review: false, priority: 0, roleTitle: null }));
     expect(resolveDeps(planned([["ghost"]]), ["A"], []).ok).toBe(false);
     const cyc = resolveDeps(planned([["k1"], ["k0"]]), ["A", "B"], []);
     expect(cyc.ok).toBe(false);

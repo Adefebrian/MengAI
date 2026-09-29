@@ -1,9 +1,20 @@
 // Fakes for the runs tests: a scripted LlmRouter and in-memory stand-ins for
 // every service the orchestrator depends on. Test-only; nothing imports this
 // outside *.test.ts files.
-import { ROLE_TOOLS, activityForTool, type AgentRole, type DecisionDTO, type LlmCallDTO, type OwnerSettings, type ProjectDTO, type Tier } from "@mengai/shared";
+import {
+  ROLE_TOOLS,
+  activityForTool,
+  type AgentRole,
+  type DecisionDTO,
+  type LlmCallDTO,
+  type OwnerSettings,
+  type ProjectDTO,
+  type StrategyChoice,
+  type StrategyVersionDTO,
+  type Tier,
+} from "@mengai/shared";
 import type { AppConfig, ModuleContext } from "../../core/module";
-import { LlmError, type BlobStore, type ChatRequest, type ChatResult, type LlmProvider, type LlmRouter, type ToolCall, type Usage } from "../../core/ports";
+import { LlmError, type BlobStore, type ChatRequest, type ChatResult, type JevAnswer, type Judge, type LlmProvider, type LlmRouter, type ToolCall, type Usage } from "../../core/ports";
 import type {
   AutomationService,
   ContextInput,
@@ -22,10 +33,12 @@ import type {
 } from "../../core/services";
 import { notFound } from "../../lib/http";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
+import { REFLEXION_SYSTEM } from "./brain";
 import { CEO_SYSTEM, packetQuestion } from "./company";
 import { CONTROL_TOOLS } from "./controls";
 import { createRunsModule } from "./index";
-import type { CompanyPace, MemoryPromotion, RunsDeps } from "./ports";
+import type { BrainMemory, BrainOptions, CompanyPace, MemoryPromotion, OutcomeKind, RunsDeps, StrategyProposalView, StrategySubject } from "./ports";
+import { ROLE_SYSTEM } from "./roles";
 import { bounded } from "./policy";
 import { createRunsRepo } from "./repo";
 
@@ -44,6 +57,10 @@ export interface Reply {
 export interface CallInfo {
   role: AgentRole;
   title: string;
+  /** a dynamic role's title, when the cat has one */
+  roleTitle: string | null;
+  /** strategy addenda in its charter layer, "role:v1" and "agent:v2" */
+  strategies: string[];
   /** 0-based call index for this role */
   n: number;
   req: ChatRequest;
@@ -53,6 +70,14 @@ export type Script = Partial<Record<AgentRole, Reply[]>> | ((info: CallInfo) => 
 
 /** The CEO decision call: the question in, the lead's raw JSON reply (or an error) out. */
 export type CeoScript = (question: string) => { text?: string; error?: Error; wait?: Promise<void> };
+
+/** The fast-tier side calls of the brain: the self-check critic and the dynamic role charter. */
+export interface SideScript {
+  /** the critic's raw reply for one self-check (default: a pass) */
+  reflexion?: (packet: string, n: number) => { text?: string; error?: Error };
+  /** the charter call's raw reply (default: two lines and the qa tools) */
+  role?: (packet: string) => { text?: string; error?: Error };
+}
 
 const CEO_APPROVE = JSON.stringify({ decision: "approve", answer: "Approved. Go ahead." });
 
@@ -73,16 +98,20 @@ function waitAbortable(p: Promise<void>, signal?: AbortSignal): Promise<void> {
 }
 
 /** Parses the fake context's system prompt: "role=<role>\ntask=<title>". */
-function parseSystem(system: string): { role: AgentRole; title: string } {
+function parseSystem(system: string): { role: AgentRole; title: string; roleTitle: string | null; strategies: string[] } {
   const role = /role=(\w+)/.exec(system)?.[1] as AgentRole;
   const title = /task=(.*)/.exec(system)?.[1] ?? "";
-  return { role, title };
+  const roleTitle = /title=(.*)/.exec(system)?.[1] ?? null;
+  const strategies = [...system.matchAll(/strategy=(\w+:v\d+)/g)].map((m) => m[1]!);
+  return { role, title, roleTitle, strategies };
 }
 
-export function scriptedRouter(script: Script, ceo?: CeoScript, meetingMs: readonly [number, number] = [0, 0]) {
+export function scriptedRouter(script: Script, ceo?: CeoScript, meetingMs: readonly [number, number] = [0, 0], side: SideScript = {}) {
   const perRole = new Map<AgentRole, number>();
   const calls: CallInfo[] = [];
   const ceoCalls: ChatRequest[] = [];
+  const reflexionCalls: ChatRequest[] = [];
+  const roleCalls: ChatRequest[] = [];
   const signals: AbortSignal[] = [];
   let seq = 0;
   const provider: LlmProvider = {
@@ -96,6 +125,24 @@ export function scriptedRouter(script: Script, ceo?: CeoScript, meetingMs: reado
       if (req.system.startsWith("Summarize")) {
         return { text: "summary of earlier steps", toolCalls: [], stopReason: "end", usage: { ...DEFAULT_USAGE, outputTokens: 5 }, model: req.model, latencyMs: 1, retries: 0 };
       }
+      const firstText = () => {
+        const c = req.messages[0]?.content;
+        return typeof c === "string" ? c : "";
+      };
+      if (req.system === REFLEXION_SYSTEM) {
+        reflexionCalls.push(req);
+        const r = side.reflexion ? side.reflexion(firstText(), reflexionCalls.length) : { text: JSON.stringify({ verdict: "pass", critique: "Evidence covers the acceptance." }) };
+        if (r.error) throw r.error;
+        return { text: r.text ?? "", toolCalls: [], stopReason: "end", usage: { ...DEFAULT_USAGE, outputTokens: 30 }, model: req.model, latencyMs: 1, retries: 0 };
+      }
+      if (req.system === ROLE_SYSTEM) {
+        roleCalls.push(req);
+        const r = side.role
+          ? side.role(firstText())
+          : { text: JSON.stringify({ charter: ["Test the page like a first visitor.", "Name every check you ran and its exit code."], tools: ["fs_read", "fs_search", "shell_run"] }) };
+        if (r.error) throw r.error;
+        return { text: r.text ?? "", toolCalls: [], stopReason: "end", usage: { ...DEFAULT_USAGE, outputTokens: 60 }, model: req.model, latencyMs: 1, retries: 0 };
+      }
       if (req.system === CEO_SYSTEM) {
         ceoCalls.push(req);
         const content = req.messages[0]?.content;
@@ -104,10 +151,10 @@ export function scriptedRouter(script: Script, ceo?: CeoScript, meetingMs: reado
         if (r.error) throw r.error;
         return { text: r.text ?? CEO_APPROVE, toolCalls: [], stopReason: "end", usage: { ...DEFAULT_USAGE, outputTokens: 20 }, model: req.model, latencyMs: 2, retries: 0 };
       }
-      const { role, title } = parseSystem(req.system);
+      const { role, title, roleTitle, strategies } = parseSystem(req.system);
       const n = perRole.get(role) ?? 0;
       perRole.set(role, n + 1);
-      const info: CallInfo = { role, title, n, req };
+      const info: CallInfo = { role, title, roleTitle, strategies, n, req };
       calls.push(info);
       let reply: Reply | undefined;
       if (typeof script === "function") reply = script(info);
@@ -131,9 +178,19 @@ export function scriptedRouter(script: Script, ceo?: CeoScript, meetingMs: reado
     },
   };
   const router: LlmRouter &
-    CompanyPace & { calls: CallInfo[]; ceoCalls: ChatRequest[]; signals: AbortSignal[]; resolved: Array<{ tier: Tier; role?: AgentRole }>; configuredValue: boolean } = {
+    CompanyPace & {
+      calls: CallInfo[];
+      ceoCalls: ChatRequest[];
+      reflexionCalls: ChatRequest[];
+      roleCalls: ChatRequest[];
+      signals: AbortSignal[];
+      resolved: Array<{ tier: Tier; role?: AgentRole }>;
+      configuredValue: boolean;
+    } = {
     calls,
     ceoCalls,
+    reflexionCalls,
+    roleCalls,
     signals,
     // meetings are held for a few ms in tests
     company: { meetingMs },
@@ -159,9 +216,14 @@ export function fakeContext(opts: { compactWhen?: (input: ContextInput) => boole
     charter: (role) => `charter for ${role}`,
     build(input) {
       builds.push(input);
+      const brain = input as ContextInput & { roleKey?: string; charter?: { title: string } | null; addenda?: Array<{ scope: string; version: number }> | null };
+      const extra = [
+        brain.charter ? `\ntitle=${brain.charter.title}` : "",
+        ...(brain.addenda ?? []).map((a) => `\nstrategy=${a.scope}:v${a.version}`),
+      ].join("");
       return {
         request: {
-          system: `role=${input.role}\ntask=${input.task?.title ?? ""}`,
+          system: `role=${input.role}\ntask=${input.task?.title ?? ""}${extra}`,
           messages: [{ role: "user", content: JSON.stringify({ task: input.task, steps: input.steps.length, summary: input.summary }) }],
           tools: input.tools,
           cacheSystem: true,
@@ -328,6 +390,126 @@ export function fakeMemory() {
   return service;
 }
 
+/**
+ * In-memory BrainMemory: role outcomes, versioned strategies. A subject is
+ * due for tuning after `tuneAfter` losses in a row with nothing attempted
+ * since; the candidate text comes from `candidate` (null = no usable one).
+ */
+export function fakeBrain(
+  opts: {
+    tuneAfter?: number;
+    candidate?: (subject: StrategySubject) => string | null;
+    ruleAdopt?: boolean;
+    /** the candidate's replay costs more than legacy (the prompt.adopt precheck keeps it) */
+    overLegacy?: boolean;
+    /** active strategies that exist before the run */
+    seed?: StrategyVersionDTO[];
+  } = {},
+) {
+  const tuneAfter = opts.tuneAfter ?? 3;
+  const trace = {
+    outcomes: [] as Array<{ role: string; agentId: string | null; outcome: "win" | "loss"; kind: OutcomeKind; cause: string }>,
+    proposals: [] as StrategyProposalView[],
+    applied: [] as Array<{ subject: StrategySubject; choice: StrategyChoice; verified: boolean; stamp: string | null }>,
+  };
+  const rows: StrategyVersionDTO[] = [...(opts.seed ?? [])];
+  const lastTry = new Map<string, number>();
+  let n = 0;
+  const brain: BrainMemory & { trace: typeof trace; rows: StrategyVersionDTO[] } = {
+    trace,
+    rows,
+    async recordRoleOutcome(input) {
+      trace.outcomes.push({ role: input.role, agentId: input.agentId, outcome: input.outcome, kind: input.kind, cause: input.cause });
+      const mine = trace.outcomes.filter((o) => o.role === input.role);
+      const since = mine.slice(lastTry.get(`role:${input.role}`) ?? 0);
+      const tail = since.slice(-tuneAfter);
+      const tuneDue = tail.length >= tuneAfter && tail.every((o) => o.outcome === "loss");
+      return { tuneDue, rate: mine.filter((o) => o.outcome === "win").length / mine.length, samples: mine.length };
+    },
+    async proposeStrategy(input) {
+      const k = `${input.subject.kind}:${input.subject.key}`;
+      lastTry.set(k, trace.outcomes.filter((o) => o.role === input.subject.key).length);
+      const text = opts.candidate ? opts.candidate(input.subject) : `- Check the work before finishing (${input.subject.key}).`;
+      if (!text) return null;
+      const current = rows.find((r) => r.subject === input.subject.kind && r.subjectKey === input.subject.key && r.status === "active") ?? null;
+      const p: StrategyProposalView = {
+        subject: input.subject,
+        current,
+        candidate: text,
+        merged: current ? `${text}\n${current.text}` : null,
+        version: rows.filter((r) => r.subject === input.subject.kind && r.subjectKey === input.subject.key && r.status !== "rejected").length + 1,
+        eval: { adopt: opts.ruleAdopt ?? true, reason: "addresses 2 of 2 recent failures", legacyBillableInputTokens: 10_000, candidate: { tokens: 12, billableInputTokens: 1_200 } },
+        evidence: {
+          scores: { current: 0, candidate: 0.9 },
+          addressed: { current: 0, candidate: 2, losses: 2 },
+          billableInputTokens: { current: 1_100, candidate: opts.overLegacy ? 20_000 : 1_200, legacy: 10_000 },
+          tokens: { current: current?.tokens ?? 0, candidate: Math.ceil(text.length / 4) },
+        },
+        causes: (input.cases ?? []).map((c) => c.cause),
+      };
+      trace.proposals.push(p);
+      return p;
+    },
+    async applyStrategy(input) {
+      const p = input.proposal;
+      trace.applied.push({ subject: p.subject, choice: input.choice, verified: input.decision?.verified ?? false, stamp: input.decision?.stamp ?? null });
+      const adopt = input.choice !== "keep";
+      if (adopt) for (const r of rows) if (r.subject === p.subject.kind && r.subjectKey === p.subject.key && r.status === "active") r.status = "retired";
+      const text = input.choice === "merge" && p.merged ? p.merged : p.candidate;
+      const row: StrategyVersionDTO = {
+        id: `strategy_${++n}`,
+        subject: p.subject.kind,
+        subjectKey: p.subject.key,
+        role: p.subject.role,
+        version: p.version,
+        text,
+        tokens: Math.ceil(text.length / 4),
+        status: adopt ? "active" : "rejected",
+        choice: input.choice,
+        reason: input.reason ?? p.eval.reason,
+        decision: input.decision,
+        evidence: p.evidence,
+        createdAt: n,
+      };
+      rows.push(row);
+      return row;
+    },
+    async activeStrategy(subject) {
+      return rows.find((r) => r.subject === subject.kind && r.subjectKey === subject.key && r.status === "active") ?? null;
+    },
+    async strategiesByIds(ids) {
+      return rows.filter((r) => ids.includes(r.id));
+    },
+    async strategyHistory(subject) {
+      return rows.filter((r) => r.subject === subject.kind && r.subjectKey === subject.key).reverse();
+    },
+  };
+  return brain;
+}
+
+/** A verified runtime JEV that answers from a script: (decisionId, state) -> answers, or null for an outage. */
+export function fakeJudge(answer: (decisionId: string, state: Record<string, unknown>) => Partial<Record<string, JevAnswer>> | null) {
+  const calls: Array<{ decisionId: string; state: Record<string, unknown> }> = [];
+  const judge: Judge & { calls: typeof calls } = {
+    calls,
+    async configured() {
+      return true;
+    },
+    async decide(req) {
+      calls.push({ decisionId: req.decisionId, state: req.state });
+      const a = answer(req.decisionId, req.state);
+      if (!a) return { verified: false, stamp: "UNVERIFIED BY JEV", error: "scripted outage", latencyMs: 1 };
+      const answers: Record<string, JevAnswer> = {};
+      for (const [k, v] of Object.entries(a)) if (v) answers[k] = v;
+      return { verified: true, model: "jev-test", answers, latencyMs: 2 };
+    },
+  };
+  return judge;
+}
+
+/** A choice answer with the given confidence. */
+export const choice = (c: string, confidence = 0.9): JevAnswer => ({ type: "choice", choice: c, confidence, probabilities: { [c]: confidence } });
+
 function decision(decisionId: string, action: string): DecisionDTO {
   return { id: `d_${decisionId}`, runId: null, decisionId, answers: {}, action, confidence: null, verified: false, stamp: "UNVERIFIED BY JEV", latencyMs: 0, createdAt: 0 };
 }
@@ -368,6 +550,9 @@ export function fakeSettings(over: Partial<OwnerSettings> = {}): SettingsService
     defaultBudgetTokens: 400_000,
     defaultBudgetUsd: 5,
     maxConcurrentAgents: 4,
+    ceoName: "Oyen",
+    maxAgents: 0,
+    maxDepth: 0,
     allowNetworkTools: false,
     motion: "full",
     prices: {},
@@ -487,6 +672,14 @@ export interface HarnessOptions {
   automation?: AutomationService;
   db?: Awaited<ReturnType<typeof createTestDb>>;
   clock?: ReturnType<typeof fakeClock>;
+  /** brain switches; the harness turns them all off unless a test opts in */
+  brain?: Partial<BrainOptions>;
+  /** the in-memory brain memory (outcomes, strategies); none by default */
+  brainMemory?: ReturnType<typeof fakeBrain>;
+  /** the runtime JEV; none by default (every brain decision falls back, stamped) */
+  judge?: Judge;
+  /** fast-tier side calls: the self-check critic and the role charter */
+  side?: SideScript;
 }
 
 export async function harness(opts: HarnessOptions) {
@@ -494,11 +687,11 @@ export async function harness(opts: HarnessOptions) {
   const clock = opts.clock ?? fakeClock();
   const events = captureEvents(clock);
   const ctx: ModuleContext = { config: CONFIG, db, kv: memoryKv(), blob: noBlob, vault: memoryVault(), clock, logger: silentLogger, events };
-  const llm = scriptedRouter(opts.script, opts.ceo, opts.meetingMs);
+  const llm = scriptedRouter(opts.script, opts.ceo, opts.meetingMs, opts.side);
   const tools = opts.tools ?? fakeTools();
   tools.bind(ctx);
   const usage = fakeUsage();
-  const memory = fakeMemory();
+  const memory = opts.brainMemory ? Object.assign(fakeMemory(), opts.brainMemory) : fakeMemory();
   const decisions = opts.decisions ?? fakeDecisions();
   const context = opts.context ?? fakeContext();
   const killswitch = fakeKillswitch();
@@ -516,6 +709,8 @@ export async function harness(opts: HarnessOptions) {
     automation: opts.automation ?? fakeAutomation(false),
     workspace: fakeWorkspace(),
     eventLog: opts.eventLog,
+    brain: { reflexion: false, tuning: false, org: false, ...(opts.brain ?? {}) },
+    ...(opts.judge ? { judge: opts.judge } : {}),
   };
   const mod = createRunsModule(ctx, deps);
   await mod.ready;

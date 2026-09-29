@@ -13,17 +13,60 @@ import type {
   FindingDTO,
   HandoffDTO,
   LessonDTO,
+  RoleDTO,
   RunDTO,
+  RunStage,
   TaskDTO,
   UsageTotals,
 } from "./dto";
-import type { Activity, AgentStatus, Capability, Mood, Risk, RunStatus, Severity } from "./enums";
+import type { Activity, AgentRole, AgentStatus, Capability, Mood, Risk, RunStatus, Severity } from "./enums";
 
 export interface EventMap {
   "run.created": { run: RunDTO };
   "run.status": { status: RunStatus; reason: string | null };
   "run.usage": { usage: UsageTotals; budgetTokens: number; budgetUsd: number; progress: number };
-  "agent.spawned": { agent: AgentDTO };
+  "agent.spawned": {
+    agent: AgentDTO;
+    /** why the cat was hired (the plan needs the role, work is waiting, a cat asked for help, a replacement), at most 160 chars */
+    reason?: string;
+    /** the cat that hired it: the CEO or the cat that asked for help; null for the CEO itself */
+    hiredBy?: string | null;
+  };
+  /** a cat left the company: the CEO let it go (runtime JEV orch.let_go); its tasks went back on the board */
+  "agent.left": { agentId: string; reason: string; byAgentId: string | null; requeued: string[] };
+  /**
+   * The self-critique before a finish is accepted, evidence first (files
+   * changed, checks run and their exit codes). pass accepts the finish,
+   * revise sends the cat into another round. by: a rule decided on
+   * conclusive evidence, or the fast-tier critic read the evidence.
+   */
+  "agent.reflexion": {
+    taskId: string;
+    /** 1-based check number for this task */
+    check: number;
+    verdict: "pass" | "revise";
+    critique: string;
+    by: "rule" | "critic";
+    evidence: { files: number; checks: number; failedChecks: number };
+  };
+  /** a role or one cat adopted a new strategy addendum (runtime JEV prompt.adopt); it reaches the next step */
+  "strategy.updated": {
+    subject: "role" | "agent";
+    /** role key or agent id */
+    subjectKey: string;
+    role: AgentRole;
+    roleTitle: string;
+    version: number;
+    previousVersion: number | null;
+    text: string;
+    choice: "adopt" | "merge";
+    reason: string;
+    scores: { current: number; candidate: number };
+  };
+  /** a cat defined a new role from context (runtime JEV orch.role picked the archetype) */
+  "role.created": { role: RoleDTO; reason: string; byAgentId: string | null };
+  /** the run moved on the tracker; a failed review loops back to working */
+  "run.stage": { stage: RunStage; previous: RunStage | null; reason: string };
   "agent.status": {
     status: AgentStatus;
     activity: Activity;
@@ -91,6 +134,7 @@ export const EVENT_TYPES = [
   "run.status",
   "run.usage",
   "agent.spawned",
+  "agent.left",
   "agent.status",
   "agent.say",
   "tool.call",
@@ -113,6 +157,10 @@ export const EVENT_TYPES = [
   "meeting.ended",
   "request.raised",
   "request.decided",
+  "agent.reflexion",
+  "strategy.updated",
+  "role.created",
+  "run.stage",
   "error",
 ] as const satisfies readonly EventType[];
 

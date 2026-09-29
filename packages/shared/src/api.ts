@@ -4,6 +4,7 @@
 // `{ error: { code, message } }` with a matching HTTP status.
 import type {
   AgentDTO,
+  AgentMindDTO,
   ApprovalDTO,
   AssetDTO,
   AuditEntryDTO,
@@ -76,10 +77,12 @@ export interface ProviderTestResult {
 
 // projects and runs
 export interface CreateProjectBody { name: string; workspacePath?: string }
+/** budgetTokens and budgetUsd: 0 means unlimited */
 export interface CreateRunBody { projectId: string; goal: string; budgetTokens?: number; budgetUsd?: number }
 export interface EstimateRunBody { projectId: string; goal: string }
 export interface RunEstimate { tasks: number; tokens: number; costUsd: number; basis: "history" | "heuristic" }
 export interface HumanMessageBody { text: string; agentId?: string }
+/** 0 means unlimited */
 export interface BudgetBody { budgetTokens?: number; budgetUsd?: number }
 export interface TaskPatchBody { status?: Extract<TaskStatus, "queued" | "cancelled">; assigneeId?: string | null; priority?: number }
 export interface FileContent { path: string; content: string; truncated: boolean; size: number; binary: boolean }
@@ -152,9 +155,18 @@ export interface KillSwitchResult { stoppedRuns: number; killedProcesses: number
 
 // settings
 export interface OwnerSettings {
+  /** 0 means unlimited */
   defaultBudgetTokens: number;
+  /** 0 means unlimited */
   defaultBudgetUsd: number;
+  /** the scheduler's concurrency queue: at most this many cats work at once */
   maxConcurrentAgents: number;
+  /** the CEO cat's name (default "Oyen"); always present in GET /api/settings */
+  ceoName?: string;
+  /** cats in one run at most, the CEO included; 0 means unlimited (default); always present in GET /api/settings */
+  maxAgents?: number;
+  /** levels of the org below the CEO; 0 means unlimited (default); always present in GET /api/settings */
+  maxDepth?: number;
   /** network consent for dependency audits (OSV) and web research */
   allowNetworkTools: boolean;
   /** celebration and quirk animations can be turned down here as well as by the OS */
@@ -204,6 +216,8 @@ export interface Routes {
   "GET /api/runs/:id/calls": [never, LlmCallDTO[]];
   "GET /api/runs/:id/tools/:callId": [never, ToolCallDetail];
   "GET /api/runs/:id/xray/:agentId": [never, ContextXrayDTO];
+  /** what is in one cat's head: charter version, strategy addenda, lessons, skills, JEV decisions, history */
+  "GET /api/runs/:id/agents/:agentId/mind": [never, AgentMindDTO];
   /** SSE stream: query runId (optional) and after (seq); honors Last-Event-ID */
   "GET /api/events": [never, never];
 

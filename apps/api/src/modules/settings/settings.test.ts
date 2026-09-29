@@ -77,6 +77,26 @@ describe("settings", () => {
     await db.close();
   });
 
+  test("the org: CEO Oyen, unlimited cats and depth, a bounded concurrency queue, budget 0 means unlimited", async () => {
+    const { mod, db } = await setup();
+    const s = await mod.service.get();
+    expect(s.ceoName).toBe("Oyen");
+    expect(s.maxAgents).toBe(0);
+    expect(s.maxDepth).toBe(0);
+    expect(s.maxConcurrentAgents).toBe(4);
+    const out = await mod.service.patch({ ceoName: "  Mas Oyen ", maxAgents: 12, maxDepth: 3, defaultBudgetTokens: 0, defaultBudgetUsd: 0 });
+    expect(out).toMatchObject({ ceoName: "Mas Oyen", maxAgents: 12, maxDepth: 3, defaultBudgetTokens: 0, defaultBudgetUsd: 0 });
+    await expect(mod.service.patch({ defaultBudgetTokens: 500 })).rejects.toThrow();
+    await expect(mod.service.patch({ ceoName: "" })).rejects.toThrow();
+    await expect(mod.service.patch({ ceoName: "Oyen <b>" })).rejects.toThrow();
+    await expect(mod.service.patch({ ceoName: "Oyen \u{1F431}" })).rejects.toThrow();
+    await expect(mod.service.patch({ ceoName: "x".repeat(25) })).rejects.toThrow();
+    await expect(mod.service.patch({ maxAgents: -1 })).rejects.toThrow();
+    await expect(mod.service.patch({ maxConcurrentAgents: 0 })).rejects.toThrow();
+    expect((await mod.service.get()).ceoName).toBe("Mas Oyen");
+    await db.close();
+  });
+
   test("a corrupted stored row falls back to the default", async () => {
     const { mod, db } = await setup();
     await db.query`insert into settings (owner_id, key, value, updated_at) values (${"owner"}, ${"maxConcurrentAgents"}, ${'"lots"'}, ${1})`;

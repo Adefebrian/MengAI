@@ -7,6 +7,9 @@ export const DEFAULT_SETTINGS: OwnerSettings = {
   defaultBudgetTokens: 400_000,
   defaultBudgetUsd: 5,
   maxConcurrentAgents: 4,
+  ceoName: "Oyen",
+  maxAgents: 0,
+  maxDepth: 0,
   allowNetworkTools: false,
   motion: "full",
   prices: {},
@@ -22,9 +25,25 @@ const price = z
   .strict();
 
 export const settingsFields = {
-  defaultBudgetTokens: z.number().int().min(1_000).max(100_000_000),
+  // 0 means unlimited; a real limit starts at 1,000 tokens
+  defaultBudgetTokens: z
+    .number()
+    .int()
+    .min(0)
+    .max(100_000_000)
+    .refine((v) => v === 0 || v >= 1_000, "0 (unlimited) or at least 1000"),
   defaultBudgetUsd: z.number().min(0).max(100_000),
+  // the scheduler's concurrency queue stays bounded: the org is unlimited, the cats at work at once are not
   maxConcurrentAgents: z.number().int().min(1).max(16),
+  // letters, digits, spaces and . ' - only: no markup, no emoji
+  ceoName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(24)
+    .regex(/^[\p{L}\p{N}][\p{L}\p{N} .'-]*$/u, "letters, digits, spaces and . ' - only"),
+  maxAgents: z.number().int().min(0).max(1_000),
+  maxDepth: z.number().int().min(0).max(100),
   allowNetworkTools: z.boolean(),
   motion: z.enum(["full", "calm", "off"]),
   prices: z

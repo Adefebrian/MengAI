@@ -154,6 +154,7 @@ const ROUTES = [
   "GET /api/automation/audit",
   "GET /api/automation/audit/verify",
   "GET /api/automation/frames/:id",
+  "GET /api/runs/:id/agents/:agentId/mind",
   "POST /api/killswitch",
   "GET /api/settings",
   "PATCH /api/settings",

@@ -9,7 +9,22 @@ import { HttpError, errorBody } from "../../lib/http";
 import { redact } from "../../lib/redact";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
 import { createContextModule } from "../context";
-import { createEvalsModule, MockLlmRouter, ScriptedProvider } from "./index";
+import {
+  OUTPUT_WEIGHT,
+  STRATEGY,
+  costUnits,
+  createEvalsModule,
+  evaluateStrategy,
+  mergeStrategies,
+  MockLlmRouter,
+  parseStrategy,
+  sampleStrategy,
+  ScriptedProvider,
+  strategyEvidence,
+  strategyText,
+  terms,
+  worstCaseBrain,
+} from "./index";
 import { RUN_LIMIT_PER_WINDOW } from "./routes";
 import { LEGACY, legacyConversation, legacyToolOutput, type LegacyMessage } from "./legacy";
 import { billableInput, CACHED_WEIGHT, charEstimate, measurePrompt, PrefixCache } from "./meter";
@@ -394,5 +409,83 @@ describe("run limiter mounted through core/app createApp", () => {
     expect(statuses).toEqual([...Array(RUN_LIMIT_PER_WINDOW).fill(400), 429]);
     // another client behind the same proxy has its own bucket
     expect(await call({ "x-forwarded-for": "10.0.0.1, 198.51.100.9" }, "172.16.0.2")).toBe(400);
+  });
+});
+
+describe("the brain stays below the legacy token cost", () => {
+  test("worst case: full addenda for every cat, a critic on every task, extra rounds and tuning, still far below legacy", async () => {
+    const ctx = await makeCtx();
+    const context = createContextModule(ctx).service;
+    const r = await replaySuite(suite(), { context, specsFor: fixtureSpecsFor }, { brain: worstCaseBrain() });
+    const brain = r.brain!.metrics;
+    // the brain costs something on top of plain v2
+    expect(brain.calls).toBeGreaterThan(r.v2.metrics.calls);
+    expect(brain.inputTokens).toBeGreaterThan(r.v2.metrics.inputTokens);
+    expect(brain.passed).toBe(brain.scenarios);
+    // and stays far below legacy on billable input and on cost units (output weighted at gpt-4o-mini prices)
+    expect(brain.billableInputTokens).toBeLessThan(r.legacy.metrics.billableInputTokens * 0.5);
+    expect(costUnits(brain)).toBeLessThan(costUnits(r.legacy.metrics));
+    expect(r.brainSavingsPct!).toBeGreaterThanOrEqual(45);
+    expect(OUTPUT_WEIGHT).toBe(4);
+    // deterministic
+    const again = await replaySuite(suite(), { context: createContextModule(ctx).service, specsFor: fixtureSpecsFor }, { brain: worstCaseBrain() });
+    expect(again.brain!.metrics).toEqual(brain);
+    // the service switch replays the same worst case
+    const mod = createEvalsModule(ctx, { context });
+    const viaService = await mod.service.replay("core", { brain: true });
+    expect(viaService.brain!.metrics).toEqual(brain);
+    expect((await mod.service.replay("core")).brain).toBeUndefined();
+  });
+
+  test("the sample addendum is exactly the 120-token cap", () => {
+    expect(charEstimate(sampleStrategy().text)).toBe(STRATEGY.maxTokens);
+  });
+});
+
+describe("the strategy lab", () => {
+  test("candidates parse to at most three redacted rules within 120 tokens", () => {
+    const secret = "sk-" + "e".repeat(40);
+    expect(parseStrategy('{"rules":["Run the tests after the last edit.","1. Add alt text first.","x"]}')).toBe("- Run the tests after the last edit.\n- Add alt text first.");
+    expect(parseStrategy(`{"rules":["Never paste ${secret} anywhere."]}`)).not.toContain(secret);
+    const long = parseStrategy(JSON.stringify({ rules: Array.from({ length: 6 }, (_, i) => `Rule ${i} ${"word ".repeat(40)}`) }))!;
+    expect(long.split("\n").length).toBeLessThanOrEqual(STRATEGY.maxRules);
+    expect(charEstimate(long)).toBeLessThanOrEqual(STRATEGY.maxTokens);
+    expect(parseStrategy("no json")).toBeNull();
+    expect(parseStrategy('{"rules":[]}')).toBeNull();
+    expect(strategyText([])).toBeNull();
+    expect(STRATEGY.outputTokens).toBe(120);
+  });
+
+  test("merge keeps the candidate first and drops current rules it repeats", () => {
+    const merged = mergeStrategies("- Run the tests after the last edit.\n- Keep diffs small.", "- Run the tests after every last edit.\n- Add alt text first.")!;
+    expect(merged.split("\n")).toEqual(["- Run the tests after every last edit.", "- Add alt text first.", "- Keep diffs small."]);
+    expect(mergeStrategies(null, "- One rule here.")).toBe("- One rule here.");
+  });
+
+  test("the offline evaluation scores failures addressed against the replay cost; the rule adopts only a clear win", async () => {
+    const ctx = await makeCtx();
+    const context = createContextModule(ctx).service;
+    const cases = [
+      { outcome: "loss" as const, kind: "review_fail", cause: "The hero image has no alt text" },
+      { outcome: "loss" as const, kind: "blocked", cause: "Never ran the tests after the last edit" },
+      { outcome: "win" as const, kind: "done", cause: "" },
+    ];
+    const good = await evaluateStrategy({ context, subject: "role", role: "engineer", current: null, candidate: "- Add alt text to every image.\n- Run the tests after the last edit.", cases });
+    expect(good.candidate.addressed).toBe(2);
+    expect(good.candidate.losses).toBe(2);
+    expect(good.adopt).toBe(true);
+    expect(good.candidate.billableInputTokens).toBeGreaterThan(good.current.billableInputTokens);
+    expect(good.candidate.billableInputTokens).toBeLessThan(good.legacyBillableInputTokens);
+    const evidence = strategyEvidence(good);
+    expect(evidence).toEqual({
+      scores: { current: good.current.score, candidate: good.candidate.score },
+      addressed: { current: 0, candidate: 2, losses: 2 },
+      billableInputTokens: { current: good.current.billableInputTokens, candidate: good.candidate.billableInputTokens, legacy: good.legacyBillableInputTokens },
+      tokens: { current: 0, candidate: good.candidate.tokens },
+    });
+    const vague = await evaluateStrategy({ context, subject: "agent", role: "engineer", current: { version: 1, text: "- Add alt text to every image." }, candidate: "- Be careful.", cases });
+    expect(vague.adopt).toBe(false);
+    expect(vague.reason).toStartWith("rejected: addresses 0 of 2");
+    expect(terms("Running the tests").has("test")).toBe(true);
   });
 });
