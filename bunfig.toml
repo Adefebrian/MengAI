@@ -1,0 +1,27 @@
+## Root bunfig.toml for crew.
+##
+## IMPORTANT (verified empirically, do not "clean this up"): when `bun test`
+## is invoked from the repo root, Bun reads ONLY this root bunfig.toml. It
+## does NOT merge in apps/web/bunfig.toml or any other nested workspace
+## bunfig.toml while walking the tree. That is why the happy-dom preload
+## below is duplicated here, not just left in apps/web/bunfig.toml.
+##
+## apps/web/bunfig.toml still exists and still preloads happy-dom, because
+## it is what applies when `bun test` is invoked with cwd already inside
+## apps/web (e.g. turbo's per-package `test` script, or a developer running
+## `cd apps/web && bun test`). Keep both in sync; removing the preload here
+## will break `bun test` run from the repo root (apps/web/App.test.tsx will
+## fail with "document is not defined") even though apps/web/bunfig.toml
+## looks like it should have covered it.
+
+[install]
+peer = true
+# Hoist every workspace dependency into the root node_modules so the Docker
+# runner stages (which copy only /repo/node_modules) can resolve hono, pg,
+# react, and the rest. Bun 1.3 defaults workspaces to the isolated linker,
+# which keeps them under apps/*/node_modules and breaks those images.
+linker = "hoisted"
+
+[test]
+preload = ["./apps/web/src/happydom.ts"]
+pathIgnorePatterns = ["legacy/**", "**/node_modules/**"]

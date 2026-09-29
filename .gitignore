@@ -1,0 +1,40 @@
+# deps and build output
+node_modules/
+dist/
+build/
+artifacts/
+.turbo/
+target/
+coverage/
+*.log
+*.tsbuildinfo
+
+# env and secrets: never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# local data (sqlite, blobs, workspaces)
+*.db
+*.db-shm
+*.db-wal
+data/
+.data/
+
+# legacy app kept locally for reference only (contains secrets and DB dumps)
+legacy/
+
+# OS and editor
+.DS_Store
+.idea/
+.vscode/
+
+# Claude local settings
+.claude/settings.local.json
+
+# JEV decision logs and UI screenshots: local audit trail
+**/.jal/decisions/
+.jal/shots/

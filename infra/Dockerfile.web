@@ -1,0 +1,38 @@
+# Multi-stage build for apps/web. Bun.build() produces the static SPA
+# bundle, a slim Hono server serves it. oven/bun base throughout, no Vite,
+# no Nginx.
+FROM oven/bun:1-slim AS deps
+WORKDIR /repo
+COPY package.json bun.lock ./
+# bun install --frozen-lockfile validates the whole workspace, not just the
+# packages this image needs at runtime: every apps/* and packages/*
+# package.json must be present or the install fails with "lockfile had
+# changes" even though the lockfile itself is fine.
+COPY apps/web/package.json apps/web/package.json
+COPY apps/api/package.json apps/api/package.json
+COPY packages/ui/package.json packages/ui/package.json
+COPY packages/config/package.json packages/config/package.json
+RUN bun install --frozen-lockfile
+
+FROM deps AS build
+WORKDIR /repo
+COPY package.json turbo.json tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/web ./apps/web
+WORKDIR /repo/apps/web
+RUN bun run build.ts
+
+FROM oven/bun:1-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /repo/apps/web/dist ./dist
+COPY --from=build /repo/apps/web/server.ts ./server.ts
+COPY --from=build /repo/apps/web/serve.ts ./serve.ts
+COPY --from=deps /repo/node_modules ./node_modules
+
+EXPOSE 3000
+USER bun
+# serve.ts, not server.ts: server.ts is a pure module whose default export is
+# the Hono app, and Bun auto-serves a default export with a `fetch` method when
+# it is the entrypoint. See the comments in both files.
+CMD ["bun", "serve.ts"]

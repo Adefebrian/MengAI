@@ -1,0 +1,25 @@
+# Multi-stage build for apps/api. oven/bun base throughout, slim final image.
+FROM oven/bun:1-slim AS deps
+WORKDIR /repo
+COPY package.json bun.lock ./
+# bun install --frozen-lockfile validates the whole workspace, not just the
+# packages this image needs at runtime: every apps/* and packages/*
+# package.json must be present or the install fails with "lockfile had
+# changes" even though the lockfile itself is fine.
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/ui/package.json packages/ui/package.json
+RUN bun install --frozen-lockfile
+
+FROM oven/bun:1-slim AS runner
+WORKDIR /repo
+ENV NODE_ENV=production
+COPY --from=deps /repo/node_modules ./node_modules
+COPY package.json turbo.json tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/api ./apps/api
+
+EXPOSE 3001
+USER bun
+CMD ["bun", "apps/api/src/index.ts"]

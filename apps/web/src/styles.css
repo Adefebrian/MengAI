@@ -1,0 +1,74 @@
+@import "../../../packages/ui/src/tokens.css";
+@import "../../../packages/ui/src/ui.css";
+@import "../../../packages/ui/src/kit.css";
+
+/* App-specific layout only. Base reset, form controls, buttons, and the
+   Bento grid all live in packages/ui/src/ui.css so every app in the
+   product shares one system; nothing below redeclares them. */
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-32px) var(--space-16px);
+}
+
+/* Anchored sections scroll inside the shell content region. */
+.app-hero, .app-bento, .app-demo { scroll-margin-top: var(--space-16px); }
+
+.app-hero h1 {
+  font-size: var(--text-5);
+  line-height: var(--line-5);
+  font-weight: var(--weight-semibold);
+  margin: 0 0 var(--space-8px);
+}
+
+.app-hero p {
+  color: var(--color-ink-muted);
+  margin: 0 0 var(--space-24px);
+}
+
+.app-bento {
+  margin-top: var(--space-24px);
+}
+
+/* Three equal one-sentence facts, not a hero-plus-two layout: a 4-column
+   desktop track with one card spanning wide leaves that wide card short of
+   its narrower siblings (more width wraps less text into fewer lines), which
+   opens an empty band. Three equal columns match the content exactly, so
+   height stays even without spanning a card wider than its text needs. */
+@media (min-width: 1024px) {
+  .app-bento {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* The RPC demo is its own job (prove the typed client works), not another
+   stack fact, so it gets its own divided section below the bento instead of
+   a fourth tile: a hairline divider is the lightest container that still
+   reads as a separate group, and it keeps the button and result text from
+   ever reshaping the sibling tiles above. */
+.app-demo {
+  margin-top: var(--space-24px);
+  padding-top: var(--space-24px);
+  border-top: 1px solid var(--color-border);
+}
+
+.app-demo h2 {
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  font-weight: var(--weight-semibold);
+  margin: 0 0 var(--space-8px);
+}
+
+.app-demo > p:not(.app-demo-result) {
+  color: var(--color-ink-muted);
+  margin: 0 0 var(--space-16px);
+}
+
+.app-demo-result {
+  min-height: var(--line-n1);
+  margin: var(--space-12px) 0 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}

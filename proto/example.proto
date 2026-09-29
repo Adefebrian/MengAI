@@ -1,0 +1,44 @@
+// proto/example.proto
+//
+// Minimal sample gRPC service contract, the polyglot-sidecar counterpart to
+// apps/api/src/modules/example: a starting point for defining a new
+// services/<name> sidecar's API before any implementation code is written
+// (see services/README.md, "Proto-first contracts").
+//
+// This file describes a contract only. No code here is generated or wired
+// up by this template; running `protoc` (or `buf generate`) against it with
+// the appropriate language plugins is how a real sidecar and its
+// apps/api caller would each get typed bindings from the exact same source.
+
+syntax = "proto3";
+
+package jal.example.v1;
+
+// ExampleService is a minimal stand-in for a real sidecar's API: list
+// existing items, create one, and fetch a single item by id. Mirrors the
+// shape of apps/api/src/modules/example so the two are easy to compare.
+service ExampleService {
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+  rpc CreateItem(CreateItemRequest) returns (Item);
+  rpc GetItem(GetItemRequest) returns (Item);
+}
+
+message Item {
+  string id = 1;
+  string name = 2;
+  string created_at = 3; // RFC 3339 timestamp
+}
+
+message ListItemsRequest {}
+
+message ListItemsResponse {
+  repeated Item items = 1;
+}
+
+message CreateItemRequest {
+  string name = 1;
+}
+
+message GetItemRequest {
+  string id = 1;
+}

@@ -1,0 +1,132 @@
+/* ---------------------------------------------------------------------
+ * JAL frame core: composition stage and Player controls
+ * (packages/ui/src/frames). Source of truth is frames/player.css. ui.css
+ * uses no @import, so this block is copied verbatim to the end of ui.css;
+ * frames/player-css.test.ts fails if the two drift.
+ *
+ * Controls sit below the stage, never over it (no overlap). Every target
+ * is 44px (--control-h). Control boundaries use --color-border-control.
+ * No gradient, no shadow, no emoji.
+ * ------------------------------------------------------------------- */
+.frames-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8px);
+  width: 100%;
+  min-width: 0;
+}
+
+.frames-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: var(--border-weight) solid var(--color-border);
+  border-radius: var(--radius-12);
+}
+
+.frames-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+/* Every value inside a composition derives from the frame. CSS
+   transitions and keyframe animations run on their own clock and would
+   break scrubbing and the poster frame, so the stage switches them off. */
+.frames-stage *,
+.frames-stage *::before,
+.frames-stage *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+.frames-fill {
+  position: absolute;
+  inset: 0;
+}
+
+.frames-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+  min-height: var(--control-h);
+  min-width: 0;
+}
+
+.frames-toggle {
+  flex: 0 0 auto;
+  min-width: calc(var(--control-h) * 2);
+  height: var(--control-h);
+  border-color: var(--color-border-control);
+}
+
+.frames-toggle[data-icon="true"] {
+  min-width: var(--control-h);
+  width: var(--control-h);
+  padding: 0;
+}
+
+.frames-scrub {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: var(--control-h);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .frames-scrub:enabled:hover {
+    background-color: transparent;
+  }
+}
+
+.frames-scrub::-webkit-slider-runnable-track {
+  height: var(--space-4px);
+  background: var(--color-layer-2);
+  border: var(--border-weight) solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+}
+
+.frames-scrub::-moz-range-track {
+  height: var(--space-4px);
+  background: var(--color-layer-2);
+  border: var(--border-weight) solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+}
+
+.frames-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--space-20px);
+  height: var(--space-20px);
+  margin-top: calc((var(--space-4px) - var(--space-20px)) / 2 - var(--border-weight));
+  background: var(--color-ink);
+  border: 0;
+  border-radius: var(--radius-pill);
+}
+
+.frames-scrub::-moz-range-thumb {
+  width: var(--space-20px);
+  height: var(--space-20px);
+  background: var(--color-ink);
+  border: 0;
+  border-radius: var(--radius-pill);
+}
+
+.frames-time {
+  flex: 0 0 auto;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

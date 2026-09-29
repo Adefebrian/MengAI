@@ -1,0 +1,67 @@
+/* JAL Core @theme for Tailwind (opt-in, v0.4.0).
+ * Apps that install tailwindcss + bun-plugin-tailwind import it from their
+ * entry CSS after `@import "tailwindcss";` (apps/web/build.ts loads the
+ * plugin automatically when it is installed). Every utility points at a
+ * JAL variable; Tailwind's default palette, shadows, blurs, easings, and
+ * animations are wiped so off-token, shadow, and purple utilities do not
+ * exist. Recipes: skills/jal-motion/references/components.md section 2.3. */
+
+/* inline: utilities emit var(--color-ink) directly; reference: Tailwind does not
+   re-declare the variables, so no --x: var(--x) cycle is ever emitted. */
+@theme inline reference {
+  --color-*: initial; --shadow-*: initial; --inset-shadow-*: initial;
+  --drop-shadow-*: initial; --text-shadow-*: initial; --blur-*: initial;
+  --ease-*: initial; --animate-*: initial; --radius-*: initial;
+
+  --color-page: var(--color-page);       --color-surface: var(--color-surface);
+  --color-layer-1: var(--color-layer-1); --color-layer-2: var(--color-layer-2);
+  --color-border: var(--color-border);   --color-border-strong: var(--color-border-strong);
+  --color-border-control: var(--color-border-control);
+  --color-ink: var(--color-ink); --color-ink-muted: var(--color-ink-muted); --color-ink-subtle: var(--color-ink-subtle);
+  --color-accent: var(--color-accent);   --color-accent-contrast: var(--color-accent-contrast);
+  --color-primary: var(--color-primary); --color-primary-contrast: var(--color-primary-contrast);
+  --color-danger: var(--color-danger);   --color-danger-surface: var(--color-danger-surface);
+  --color-success: var(--color-success); --color-success-surface: var(--color-success-surface);
+  --color-warning: var(--color-warning); --color-warning-surface: var(--color-warning-surface);
+  --color-info: var(--color-info);       --color-info-surface: var(--color-info-surface);
+  --color-scrim: var(--color-scrim);
+  --color-state-hover: var(--state-hover); --color-state-pressed: var(--state-pressed);
+  --color-state-focus: var(--state-focus);
+
+  --spacing-2px: var(--space-2px);   --spacing-4px: var(--space-4px);   --spacing-6px: var(--space-6px);
+  --spacing-8px: var(--space-8px);   --spacing-12px: var(--space-12px); --spacing-16px: var(--space-16px);
+  --spacing-20px: var(--space-20px); --spacing-24px: var(--space-24px); --spacing-32px: var(--space-32px);
+  --spacing-40px: var(--space-40px); --spacing-48px: var(--space-48px); --spacing-64px: var(--space-64px);
+  --spacing-80px: var(--space-80px); --spacing-96px: var(--space-96px);
+  --spacing-control: var(--control-h);
+
+  --radius-sm: var(--radius-sm); --radius-md: var(--radius-md); --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl); --radius-pill: var(--radius-pill);
+
+  --text-n2: var(--text-n2); --text-n2--line-height: var(--line-n2);
+  --text-n1: var(--text-n1); --text-n1--line-height: var(--line-n1);
+  --text-0: var(--text-0);   --text-0--line-height: var(--line-0);
+  --text-1: var(--text-1);   --text-1--line-height: var(--line-1);
+  --text-2: var(--text-2);   --text-2--line-height: var(--line-2);
+  --text-3: var(--text-3);   --text-3--line-height: var(--line-3);
+  --text-4: var(--text-4);   --text-4--line-height: var(--line-4);
+  --text-5: var(--text-5);   --text-5--line-height: var(--line-5);
+  --text-6: var(--text-6);   --text-6--line-height: var(--line-6);
+  --text-display-1: var(--text-display-1); --text-display-1--line-height: var(--line-display-1);
+  --text-display-2: var(--text-display-2); --text-display-2--line-height: var(--line-display-2);
+  --text-display-3: var(--text-display-3); --text-display-3--line-height: var(--line-display-3);
+  --tracking-*: initial;
+  --tracking-display: var(--tracking-display); --tracking-heading: var(--tracking-heading);
+  --tracking-title: var(--tracking-title);     --tracking-body: var(--tracking-body);
+
+  --ease-standard: var(--ease-standard);
+  --default-transition-duration: var(--dur-150);
+  --default-transition-timing-function: var(--ease-standard);
+
+  --animate-marquee: jal-marquee var(--mq-dur, 40s) linear infinite;
+  --animate-spin: jal-spin var(--loop-spin) linear infinite;
+  --animate-pulse: jal-pulse var(--loop-pulse) var(--ease-standard) infinite alternate;
+  @keyframes jal-marquee { to { transform: translateX(calc(-100% - var(--mq-gap, 0px))); } }
+  @keyframes jal-spin { to { transform: rotate(1turn); } }
+  @keyframes jal-pulse { to { opacity: 0.6; } }
+}

@@ -1,0 +1,76 @@
+/*
+ * JAL Core default faces: Geist Sans and Geist Mono (Vercel, in
+ * collaboration with basement.studio), SIL Open Font License 1.1, license
+ * text in ./OFL.txt. Vendored from the official `geist` npm package 1.7.2
+ * (dist/fonts/geist-sans/Geist-Variable.woff2 and
+ * dist/fonts/geist-mono/GeistMono-Variable.woff2), unmodified.
+ *
+ * One variable file per family (wght 100 to 900, default 400; JAL uses 400,
+ * 500, and 600 only). The official files are not split by script, so each
+ * face is one whole file and carries no unicode-range: latin, latin-ext,
+ * cyrillic, greek, and vietnamese all come from the same request. Upright
+ * only: JAL has no italic role, so no italic file ships.
+ *
+ * Numerals: Geist Sans has the tnum feature, so `tabular-nums` works on the
+ * display face. Geist Mono is monospaced (every digit is tabular by
+ * construction) and draws a slashed zero by default; its ss09 is the
+ * non-slashed zero, which JAL never turns on. Geist Mono has no `zero`
+ * feature, so `slashed-zero` is a no-op on it and only acts on a pool mono
+ * that implements `zero`.
+ *
+ * Fallbacks: "Geist Fallback" and "Geist Mono Fallback" are local system
+ * faces rescaled to Geist's metrics, so the swap moves nothing. Method:
+ * size-adjust = Geist average advance / fallback average advance (English
+ * letter frequency plus the space, measured on the Regular instance);
+ * ascent, descent, and line-gap overrides = Geist hhea values / (unitsPerEm
+ * x size-adjust). Arial (and its metric twins Liberation Sans and Arimo) is
+ * the sans reference, Courier New (Liberation Mono, Cousine) the mono one.
+ *   Geist:      avg 0.4639 em vs Arial 0.43985 em, hhea 1005 / -295 / 0
+ *   Geist Mono: avg 0.6000 em vs Courier New 0.6001 em, hhea 1005 / -295 / 0
+ * The family stacks that use these names live in ../tokens.css
+ * (--font-sans, --font-display, --font-mono). Pool faces are never vendored
+ * here: scripts/assets/fonts.ts fetches them into the client project.
+ *
+ * Served as real files, never inlined: the faces are referenced by the
+ * absolute URL /fonts/<file>.woff2, which apps/web/build.ts marks external
+ * (Bun.build would otherwise inline each file under about 128 KB into the
+ * CSS as base64, so every page paid for both faces inside index.css and
+ * nothing could be cached apart). The build copies this folder's woff2 files
+ * to dist/fonts, index.html preloads the two faces, and the server sends
+ * /fonts with a one-year immutable cache. Any other host of these styles
+ * (the kit preview) serves /fonts the same way.
+ */
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("Arimo");
+  size-adjust: 105.47%;
+  ascent-override: 95.29%;
+  descent-override: 27.97%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Geist Mono Fallback";
+  src: local("Courier New"), local("CourierNewPSMT"), local("Liberation Mono"), local("Cousine");
+  size-adjust: 99.98%;
+  ascent-override: 100.52%;
+  descent-override: 29.5%;
+  line-gap-override: 0%;
+}

@@ -1,0 +1,3300 @@
+/*
+ * JAL Core component CSS. Built on tokens.css only: every value below is a
+ * var() reference, never an inline hex or font size. Import tokens.css
+ * before this file.
+ *
+ * Covers: base reset, the no-overlap prevention layer (tidiness rule
+ * number 1), form-control normalization (one 44px control-h for every
+ * input, select, date input, and button, measured not eyeballed),
+ * checkbox and radio, field-row layout, the button component with all
+ * eight states, and the mobile-first Bento grid primitive.
+ *
+ * White-first, no gradient, no shadow (focus is an outline, so there is
+ * no box-shadow at all here), no side border or accent bar, no emoji.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* The document grows with its content (document-scroll shell); a contained
+   shell sizes itself to 100dvh, so nothing here pins the root height. */
+html {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+}
+
+/* Focus is always visible, never a color-only cue, never a shadow: an
+   outline, offset so it never reads as a fill or a stripe. Instant, never
+   animated. */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------
+ * No overlap, nothing outside its box. Every grid and flex child may
+ * shrink below its content width; media never pushes out of its box;
+ * long words and URLs wrap inside their box. The only boxes allowed to
+ * hold wider content scroll it inside themselves (.scroll-x).
+ * ------------------------------------------------------------------- */
+:where(.grid, .bento, .bento-item, .field-row, .field, .row, .stack, .cluster) > * {
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-16px);
+}
+
+:where(img, video) {
+  max-width: 100%;
+  height: auto;
+}
+
+:where(canvas, svg, iframe) {
+  max-width: 100%;
+}
+
+:where(h1, h2, h3, h4, p, li, dd, td, .row-title) {
+  overflow-wrap: anywhere;
+}
+
+/* Deliberate truncation only: pair with the full value in title or
+   aria-label so nothing is silently cut off. */
+.truncate {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.scroll-x {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* ---------------------------------------------------------------------
+ * Text controls: one height token (--control-h, 44px) for every input,
+ * select, and date or time input. Identical box-sizing, padding, radius,
+ * 1px --color-border-control boundary on all four sides (3:1), font-size
+ * (16px, blocks iOS focus zoom), and font-family across every control
+ * type, so a row of mixed controls always lines up. Every control fills
+ * its track (width 100%), never its content, so a row cannot overflow.
+ * Base selectors sit in :where() (zero specificity) so the select
+ * chevron lane and the .control-icon-* lanes always win over the base
+ * padding.
+ * ------------------------------------------------------------------- */
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  color: var(--color-ink);
+  background-color: var(--color-surface);
+  border: var(--border-weight) solid var(--color-border-control);
+  border-radius: var(--radius-8);
+  padding: 0 var(--space-12px);
+  transition:
+    background-color var(--dur-150) var(--ease-standard),
+    border-color var(--dur-150) var(--ease-standard);
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]), select) {
+  height: var(--control-h);
+  text-overflow: ellipsis;
+}
+
+:where(
+    input[type="date"],
+    input[type="time"],
+    input[type="datetime-local"],
+    input[type="month"],
+    input[type="week"],
+    select
+  ) {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* Select: the chevron gets a reserved lane. The value stops 40px from
+   the inline end (12px chevron inset + 12px chevron + 16px gap), so the
+   longest value ellipsizes before it can touch the chevron. The fill is a
+   literal hex baked into the data URI (a CSS var cannot be read inside an
+   encoded asset); it mirrors --color-ink-muted (#474747) and must be
+   updated by hand if that token ever changes. Flat SVG, no gradient. */
+select {
+  padding-inline-end: var(--space-40px);
+  white-space: nowrap;
+  overflow: hidden;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1.5 1.75L6 6.25L10.5 1.75' stroke='%23474747' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-12px) center;
+  background-size: var(--space-12px) var(--space-8px);
+}
+
+[dir="rtl"] select {
+  background-position: left var(--space-12px) center;
+}
+
+select[multiple],
+select[size]:not([size="1"]) {
+  height: auto;
+  padding-inline-end: var(--space-12px);
+  background-image: none;
+}
+
+textarea {
+  min-height: calc(var(--control-h) * 2);
+  padding-block: var(--space-12px);
+  resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-ink-subtle);
+}
+
+/* Icon lanes inside a control wrapper: icon size (20px) plus a 12px gap,
+   reserved, so a leading search icon or trailing clear button never sits
+   on the value. */
+.control-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.control-wrap > .icon {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  pointer-events: none;
+  color: var(--color-ink-muted);
+}
+
+.control-wrap > .icon-start {
+  inset-inline-start: var(--space-12px);
+}
+
+.control-wrap > .icon-end {
+  inset-inline-end: var(--space-12px);
+}
+
+.control-icon-start {
+  padding-inline-start: var(--space-40px);
+}
+
+.control-icon-end {
+  padding-inline-end: var(--space-40px);
+}
+
+/* ---------------------------------------------------------------------
+ * Checkbox and radio: same --color-border-control boundary, drawn on all
+ * four sides. 20px box inside a 44px-tall .choice label, so the whole
+ * label is the touch target. Checked fill is ink; the glyph is a flat
+ * SVG in the data URI (white mirrors --color-surface).
+ * ------------------------------------------------------------------- */
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: var(--space-20px);
+  height: var(--space-20px);
+  margin: 0;
+  background-color: var(--color-surface);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: var(--space-12px) var(--space-12px);
+  border: var(--border-weight) solid var(--color-border-control);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-100) var(--ease-standard),
+    border-color var(--dur-100) var(--ease-standard);
+}
+
+input[type="checkbox"] {
+  border-radius: var(--radius-4);
+}
+
+input[type="radio"] {
+  border-radius: var(--radius-pill);
+}
+
+input[type="checkbox"]:checked {
+  background-color: var(--color-ink);
+  border-color: var(--color-ink);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 6.25L4.75 9L10 3' stroke='%23ffffff' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+input[type="checkbox"]:indeterminate {
+  background-color: var(--color-ink);
+  border-color: var(--color-ink);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2.5 6H9.5' stroke='%23ffffff' stroke-width='1.75' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+input[type="radio"]:checked {
+  background-color: var(--color-ink);
+  border-color: var(--color-ink);
+  background-size: var(--space-8px) var(--space-8px);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Ccircle cx='4' cy='4' r='4' fill='%23ffffff'/%3E%3C/svg%3E");
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-12px);
+  min-height: var(--control-h);
+  min-width: 0;
+  cursor: pointer;
+}
+
+/* Control states. Hover is a state layer, gated to real pointers and to
+   enabled controls only. Focus turns the boundary ink and adds the focus
+   outline. Invalid is a danger boundary on all four sides plus the
+   message in the field hint slot, never color alone. */
+@media (hover: hover) {
+  input:enabled:hover,
+  select:enabled:hover,
+  textarea:enabled:hover {
+    background-color: var(--state-hover);
+  }
+
+  input[type="checkbox"]:enabled:checked:hover,
+  input[type="checkbox"]:enabled:indeterminate:hover,
+  input[type="radio"]:enabled:checked:hover {
+    background-color: var(--color-primary-hover);
+  }
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--color-ink);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--state-disabled-content);
+  background-color: var(--state-disabled-container);
+  border-color: var(--color-border);
+  cursor: default;
+}
+
+input[type="checkbox"]:disabled:checked,
+input[type="checkbox"]:disabled:indeterminate,
+input[type="radio"]:disabled:checked {
+  background-color: var(--state-disabled-content);
+  border-color: var(--state-disabled-content);
+}
+
+/* ---------------------------------------------------------------------
+ * Field layout. A row is a grid of equal minmax(0, 1fr) tracks, TOP
+ * aligned, so a row can never be wider than its container: one column on
+ * phone, two from 640px, and 3 or 4 from 1024px only when the row opts in
+ * with data-cols. Each field reserves a fixed helper/error slot so a row
+ * never jumps height when a hint appears on one field but not the next.
+ * ------------------------------------------------------------------- */
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-16px);
+}
+
+@media (min-width: 640px) {
+  .field-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .field-row[data-cols="1"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .field-row[data-cols="3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .field-row[data-cols="4"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-6px);
+  min-width: 0;
+}
+
+.field > label,
+.field-label {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.field-hint {
+  min-height: var(--line-n1);
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.field-hint[data-tone="danger"],
+.field-hint[data-state="error"] {
+  color: var(--color-danger);
+}
+
+.field-hint[data-tone="success"],
+.field-hint[data-state="success"] {
+  color: var(--color-success);
+}
+
+/* ---------------------------------------------------------------------
+ * Buttons. A bare <button> defaults to the primary (ink) treatment, so
+ * existing markup needs no class. `.btn-secondary` and `.btn-ghost` are
+ * explicit opt-ins for a lighter action. `.btn` is the same base for a
+ * non-<button> element (a link styled as a button). All eight states:
+ * default, hover, focus-visible, active, disabled, loading, error,
+ * success. A clickable target never wraps to two lines and never grows
+ * past its container.
+ * ------------------------------------------------------------------- */
+button,
+.btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8px);
+  height: var(--control-h);
+  max-width: 100%;
+  padding: 0 var(--space-16px);
+  font: inherit;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  border-radius: var(--radius-8);
+  cursor: pointer;
+  position: relative;
+  text-decoration: none;
+  transition:
+    background-color var(--dur-150) var(--ease-standard),
+    border-color var(--dur-150) var(--ease-standard),
+    color var(--dur-150) var(--ease-standard),
+    transform var(--dur-100) var(--ease-standard);
+}
+
+button,
+.btn,
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  border: var(--border-weight) solid var(--color-primary);
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: var(--border-weight) solid var(--color-border-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-ink);
+  border: var(--border-weight) solid transparent;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+@media (hover: hover) {
+  button:enabled:hover,
+  .btn:not(:disabled):not([aria-disabled="true"]):hover,
+  .btn-primary:not(:disabled):not([aria-disabled="true"]):hover {
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+  }
+
+  .btn-secondary:not(:disabled):not([aria-disabled="true"]):hover,
+  .btn-ghost:not(:disabled):not([aria-disabled="true"]):hover {
+    background: var(--state-hover);
+  }
+}
+
+button:enabled:active,
+.btn:not(:disabled):not([aria-disabled="true"]):active {
+  background: var(--color-primary-active);
+  border-color: var(--color-primary-active);
+  transform: scale(0.98);
+}
+
+.btn-secondary:not(:disabled):not([aria-disabled="true"]):active,
+.btn-ghost:not(:disabled):not([aria-disabled="true"]):active {
+  background: var(--state-pressed);
+}
+
+button:disabled,
+.btn:disabled,
+.btn[aria-disabled="true"],
+.btn[data-state="disabled"] {
+  color: var(--state-disabled-content);
+  background: var(--state-disabled-container);
+  border-color: transparent;
+  cursor: default;
+  transform: none;
+}
+
+/* Loading: the label hides and a ring spinner takes its place, so the
+   width never changes. Transform-only motion (rotate), collapsed under
+   reduced motion below. */
+button[data-state="loading"],
+.btn[data-state="loading"],
+button[aria-busy="true"],
+.btn[aria-busy="true"] {
+  color: transparent;
+  pointer-events: none;
+  cursor: progress;
+}
+
+button[data-state="loading"]::after,
+.btn[data-state="loading"]::after,
+button[aria-busy="true"]::after,
+.btn[aria-busy="true"]::after {
+  content: "";
+  position: absolute;
+  width: var(--space-16px);
+  height: var(--space-16px);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--color-primary-contrast);
+  border-top-color: transparent;
+  animation: btn-spin var(--dur-600) linear infinite;
+}
+
+.btn-secondary[data-state="loading"]::after,
+.btn-ghost[data-state="loading"]::after,
+.btn-secondary[aria-busy="true"]::after,
+.btn-ghost[aria-busy="true"]::after {
+  border-color: var(--color-ink);
+  border-top-color: transparent;
+}
+
+@keyframes btn-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error and success pair the color with an icon and a word in the label;
+   the boundary is a full four-side border, never one edge. */
+button[data-state="error"],
+.btn[data-state="error"] {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+button[data-state="success"],
+.btn[data-state="success"] {
+  background: var(--color-success-surface);
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+/* ---------------------------------------------------------------------
+ * Bento grid primitive, mobile-first. One column below 640px, two from
+ * 640px (tablet 640 to 1023), four from 1024px (desktop). Tracks are
+ * minmax(0, 1fr) so no tile can be pushed wider than the grid. One gap
+ * value; every tile shares the same radius, padding, and full four-side
+ * hairline; visual weight varies only by span, never by a colored edge.
+ * `.bento-item-footer` is the explicit opt-in for the one repeated
+ * trailing element (CTA, meta row) pinned to a shared baseline; nothing
+ * gets margin-top:auto by default, so short tiles never grow a void.
+ * ------------------------------------------------------------------- */
+.bento {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: auto; /* rows follow content: no fixed floor that opens a void in a short tile */
+  gap: var(--space-16px);
+}
+
+.bento-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8px);
+  min-width: 0;
+  border-radius: var(--radius-12);
+  border: var(--border-weight) solid var(--color-border);
+  background: var(--color-surface);
+  padding: var(--space-16px);
+}
+
+/* Only an interactive tile responds to hover, with a state layer. Never
+   a lift, never a shadow, never a colored edge. */
+@media (hover: hover) {
+  a.bento-item:hover,
+  button.bento-item:hover {
+    background: var(--state-hover);
+  }
+}
+
+.bento-item h2 {
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  font-weight: var(--weight-semibold);
+  margin: 0;
+}
+
+.bento-item p {
+  color: var(--color-ink-muted);
+  margin: 0;
+}
+
+.bento-item-footer {
+  margin-top: auto;
+}
+
+@media (min-width: 640px) {
+  .bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bento-lg,
+  .bento-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (min-width: 1024px) {
+  .bento {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .bento-lg {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+  .bento-wide {
+    grid-column: span 2;
+    grid-row: span 1;
+  }
+  .bento-tall {
+    grid-column: span 1;
+    grid-row: span 2;
+  }
+  .bento-sm {
+    grid-column: span 1;
+    grid-row: span 1;
+  }
+}
+
+/* App-shell (AppShell.tsx, rules in jal-design-system references/chrome.md).
+   Two scroll modes, keyed on data-scroll.
+   document (default, also a bare .shell): the document scrolls, so
+   ScrollTrigger, Lenis, pins, iOS address-bar collapse, scroll restoration,
+   and anchor links work unwired. The header is sticky at top 0 with one
+   fixed height (--shell-header-h), so condensing on scroll moves only
+   transforms and opacity and never shifts layout. Below 640px the bottom bar
+   is fixed at bottom 0 and the shell reserves its height (--shell-nav-h plus
+   the safe area) as bottom padding, so nothing hides under it.
+   contained: a grid sized to the viewport, the document never scrolls and
+   main.shell-main scrolls on its own (dense product screens). The header
+   keeps its condensed geometry there and only changes tone.
+   One Primary nav serves both sizes: below 640px it is the bottom bar
+   (position fixed inside the header, so nothing above it may carry a
+   transform there), from 640px it sits in the header bar.
+
+   Archetypes are knob bundles: each one sets the same --shell-* heights and
+   private --_hd-* (header) and --_nb-* (bottom bar) values, and the rules
+   below read only those. A knob that must change at 640px either folds the
+   switch into a calc with --shell-bp or comes as a pair (--_hd-x and
+   --_hd-x-md). A bundle applies on a direction element ([data-direction]
+   D1 to D13, on or above the shell), on the shell itself when the archetype
+   prop is set (data-header, data-bar, data-labels, which win), and on html
+   through :has() so the html scroll-padding rule sees the same heights.
+   Bundles read existing tokens only.
+   Direction defaults (chrome.md section 3):
+     header  island    none, D1, D2, D4, D8, D9, D12
+             rail      D3, D5, D6, D10, D13
+             masthead  D7, D11
+     bar     dock      none, D1, D4, D5, D8, D11, D12
+             bar       D3, D6, D7, D13
+             split     D2, D9, D10
+     labels  active    D4, D11 (all elsewhere)
+   Radius: chrome rounds concentrically. A floating container takes
+   min(16, card + 4) (the island) or min(20, card + 8) (the dock), never past
+   a third of its height, and everything nested inside it subtracts its
+   inset, so the island, its track, its thumb, and its action share one
+   centre of curvature.
+   Motion: every transition sits under .shell-motion, which AppShell sets
+   only when prefers-reduced-motion is not reduce, one frame after the first
+   paint. Durations and the curve are the jal-motion tokens; a state that
+   appears runs the entrance duration, a state that leaves runs the exit. */
+
+/* 1. The breakpoint switch. --shell-bp is 0 below 640px and 1 from 640px,
+   so one calc holds both sizes of a bundle. Bundles also land on :root and
+   on html (custom properties inherit downward only, and the html
+   scroll-padding rule reads the heights). */
+:root {
+  --shell-bp: 0;
+}
+@media (min-width: 640px) {
+  :root {
+    --shell-bp: 1;
+  }
+}
+
+/* 2. Header bundles. island is the default (:root, D1). */
+:root,
+:is([data-direction="D1"], [data-direction="D2"], [data-direction="D4"], [data-direction="D8"], [data-direction="D9"], [data-direction="D12"]),
+html:has(:is([data-direction="D1"], [data-direction="D2"], [data-direction="D4"], [data-direction="D8"], [data-direction="D9"], [data-direction="D12"]) .shell:not([data-header]):not([data-scroll="contained"])),
+.shell[data-header="island"],
+html:has(.shell[data-header="island"]:not([data-scroll="contained"])) {
+  /* One floating object, 56 tall. Below 640px a full-width inset bar 8px
+     from the top and sides (the band ends at its bottom edge); from 640px it
+     hugs its content and centres, with 12px of band above and below it, so
+     content scrolling past never meets its edge. */
+  --shell-header-h: calc(64px + var(--shell-bp) * 16px);
+  --shell-bar-h: 56px;
+  /* A literal, not var(--shell-header-h): contained mode sets
+     --shell-header-h from --_hd-hc on the shell, and a reference back
+     would be a cycle. */
+  --_hd-hc: calc(64px + var(--shell-bp) * 16px);
+  --_hd-inset-t: calc(8px + var(--shell-bp) * 4px);
+  /* Below 640px the inset bar sits on a page-tone band that ends at its
+     bottom edge, so content never shows in the 8px around it. From 640px
+     the island floats free: a full-width band would cut a page-tone strip
+     across every tonal section scrolling under it. */
+  --_hd-band: color-mix(in srgb, var(--color-page) calc((1 - var(--shell-bp)) * 100%), transparent);
+  --_hd-band-s: 1;
+  --_hd-rest-line: transparent;
+  --_hd-cond: 0;
+  --_hd-box-h: var(--shell-bar-h);
+  --_hd-bar-bg: var(--color-surface);
+  --_hd-bar-bw: 1px;
+  --_hd-bar-line: var(--color-border);
+  --_hd-bar-line-on: var(--color-border-strong);
+  --_hd-r: min(var(--radius-16), var(--kit-radius-card, var(--radius-12)) + var(--space-4px));
+  --_hd-pad: var(--space-6px);
+  --_hd-inner-r: max(var(--radius-4) / 2, var(--_hd-r) - var(--_hd-pad));
+  --_hd-bar-w: calc(100% - 2 * var(--space-8px));
+  --_hd-bar-w-md: fit-content;
+  --_hd-gap: var(--space-6px);
+  --_hd-grid-md: "brand nav actions" / auto auto auto;
+  --_hd-grid-cmd: var(--_hd-grid-md);
+  --_hd-title-pad: var(--space-2px);
+  --_hd-title-pad-md: var(--space-12px) var(--space-8px);
+  --_hd-title-font: var(--kit-font-sans, var(--font-sans));
+  --_hd-title-size: var(--text-1);
+  --_hd-title-line: var(--line-1);
+  --_hd-title-weight: var(--weight-semibold);
+  --_hd-title-track: var(--tracking-title, -0.01em);
+  --_hd-title-justify-md: start;
+  --_hd-title-origin-md: 0 50%;
+  --_hd-title-cond: none;
+  --_hd-title-fade: 0;
+  --_hd-row2-cond: none;
+  --_hd-mark-md: none;
+  --_hd-title-contained: block;
+  --_hd-cta-r: var(--_hd-inner-r);
+  --_hd-cta-inset: 0px;
+  --_hd-nav-justify: center;
+  /* The segmented track: layer-1 at the inner radius, one surface thumb
+     with a hairline 4px inside it. */
+  --_hd-track-bg: var(--color-layer-1);
+  --_hd-track-r: var(--_hd-inner-r);
+  --_hd-item-pad: var(--space-16px);
+  --_hd-ind-y: var(--space-4px);
+  --_hd-ind-x: var(--space-4px);
+  --_hd-ind-r: max(var(--radius-4) / 2, var(--_hd-inner-r) - var(--space-4px));
+  --_hd-ind-bg: var(--color-surface);
+  --_hd-ind-line: var(--color-border);
+  --_hd-sheet-l: 0px;
+  --_hd-sheet-mi: auto;
+}
+
+:is([data-direction="D3"], [data-direction="D5"], [data-direction="D6"], [data-direction="D10"], [data-direction="D13"]),
+html:has(:is([data-direction="D3"], [data-direction="D5"], [data-direction="D6"], [data-direction="D10"], [data-direction="D13"]) .shell:not([data-header]):not([data-scroll="contained"])),
+.shell[data-header="rail"],
+html:has(.shell[data-header="rail"]:not([data-scroll="contained"])) {
+  /* Edge to edge on the kit margin: the wordmark on the start edge, the
+     destinations and the action grouped on the end edge. 64 tall below
+     640px and 72 from 640px in the page tone, stepping down to a 56px
+     surface bar with a hairline once scrolled. */
+  --shell-header-h: calc(64px + var(--shell-bp) * 8px);
+  --shell-bar-h: 56px;
+  --_hd-hc: var(--shell-bar-h);
+  --_hd-inset-t: 0px;
+  /* Transparent at the top, so a tonal first section runs up behind it. */
+  --_hd-band: transparent;
+  --_hd-band-s: 0;
+  --_hd-rest-line: transparent;
+  --_hd-cond: 1;
+  --_hd-box-h: var(--shell-header-h);
+  --_hd-bar-bg: transparent;
+  --_hd-bar-bw: 0px;
+  --_hd-bar-line: transparent;
+  --_hd-bar-line-on: transparent;
+  --_hd-r: 0px;
+  --_hd-pad: 0px;
+  --_hd-inner-r: min(var(--kit-radius-control, var(--radius-8)), var(--radius-16));
+  --_hd-bar-w: min(100% - 2 * var(--kit-margin, var(--space-16px)), var(--kit-max, 1280px));
+  --_hd-bar-w-md: var(--_hd-bar-w);
+  --_hd-gap: var(--space-16px);
+  --_hd-grid-md: "brand nav actions" / minmax(max-content, 1fr) auto auto;
+  --_hd-grid-cmd: var(--_hd-grid-md);
+  --_hd-title-pad: 0px;
+  --_hd-title-pad-md: 0px;
+  /* The wordmark rests at --text-2 and settles to the --text-1 size (19 of
+     23) as the row rises to the centre of the 56px band. */
+  --_hd-title-font: var(--kit-font-sans, var(--font-sans));
+  --_hd-title-size: var(--text-2);
+  --_hd-title-line: var(--line-2);
+  --_hd-title-weight: var(--weight-semibold);
+  --_hd-title-track: var(--tracking-title, -0.01em);
+  --_hd-title-justify-md: start;
+  --_hd-title-origin-md: 0 50%;
+  --_hd-title-cond: translateY(calc((var(--shell-bar-h) - var(--shell-header-h)) / 2)) scale(0.826);
+  --_hd-title-fade: 0;
+  --_hd-row2-cond: translateY(calc((var(--shell-bar-h) - var(--shell-header-h)) / 2));
+  --_hd-mark-md: none;
+  --_hd-title-contained: block;
+  --_hd-cta-r: var(--kit-radius-control, var(--radius-8));
+  /* A 44px target that draws a 36px fill: header actions sit a step
+     quieter than the page's own buttons. */
+  --_hd-cta-inset: var(--space-4px);
+  --_hd-nav-justify: end;
+  /* Text destinations; the one sliding indicator is a 32px layer-2 pill. */
+  --_hd-track-bg: transparent;
+  --_hd-track-r: 0px;
+  --_hd-item-pad: var(--space-12px);
+  --_hd-ind-y: var(--space-6px);
+  --_hd-ind-x: 0px;
+  --_hd-ind-r: var(--_hd-inner-r);
+  --_hd-ind-bg: var(--color-layer-2);
+  --_hd-ind-line: transparent;
+  --_hd-sheet-l: auto;
+  --_hd-sheet-mi: 0px;
+}
+
+:is([data-direction="D7"], [data-direction="D11"]),
+html:has(:is([data-direction="D7"], [data-direction="D11"]) .shell:not([data-header]):not([data-scroll="contained"])),
+.shell[data-header="masthead"],
+html:has(.shell[data-header="masthead"]:not([data-scroll="contained"])) {
+  /* A nameplate. From 640px two tiers, 128 tall: the wordmark centred at
+     --text-6 in the direction's display face over a 56px row (the compact
+     mark, the destinations centred, the action), one hairline under both.
+     Scrolled, the nameplate fades, the row rises 72px into one 56px surface
+     bar, and the compact mark takes the start edge. Below 640px one 64px row
+     with the wordmark at --text-2, condensing to 56 at --text-1. */
+  --shell-header-h: calc(64px + var(--shell-bp) * 64px);
+  --shell-bar-h: 56px;
+  --_hd-hc: var(--shell-bar-h);
+  --_hd-inset-t: 0px;
+  /* Transparent at the top, so a tonal first section runs up behind it. */
+  --_hd-band: transparent;
+  --_hd-band-s: 0;
+  --_hd-rest-line: var(--color-border);
+  --_hd-cond: 1;
+  --_hd-box-h: var(--shell-header-h);
+  --_hd-bar-bg: transparent;
+  --_hd-bar-bw: 0px;
+  --_hd-bar-line: transparent;
+  --_hd-bar-line-on: transparent;
+  --_hd-r: 0px;
+  --_hd-pad: 0px;
+  --_hd-inner-r: min(var(--kit-radius-control, var(--radius-8)), var(--radius-16));
+  --_hd-bar-w: min(100% - 2 * var(--kit-margin, var(--space-16px)), var(--kit-max, 1280px));
+  --_hd-bar-w-md: var(--_hd-bar-w);
+  --_hd-gap: var(--space-16px);
+  --_hd-grid-md: "brand brand brand" 72px "mark nav actions" 56px / minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  --_hd-grid-cmd: "mark nav actions" / minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  --_hd-title-pad: 0px;
+  --_hd-title-pad-md: 0px;
+  --_hd-title-font: var(--kit-font-display, var(--font-sans));
+  --_hd-title-size: calc(var(--text-2) + var(--shell-bp) * (var(--text-6) - var(--text-2)));
+  --_hd-title-line: calc(var(--line-2) + var(--shell-bp) * (var(--line-6) - var(--line-2)));
+  --_hd-title-weight: var(--kit-display-weight, var(--weight-medium));
+  --_hd-title-track: var(--tracking-display, -0.03em);
+  --_hd-title-justify-md: center;
+  --_hd-title-origin-md: 50% 50%;
+  /* Below 640px the wordmark scales to the --text-1 size (19 of 23) and
+     rises 4px to the centre of the 56px band; from 640px it lifts 8px and
+     fades while the mark fades in. */
+  --_hd-title-cond: translateY(calc(-4px - var(--shell-bp) * 4px)) scale(calc(0.826 + var(--shell-bp) * 0.134));
+  --_hd-title-fade: var(--shell-bp);
+  --_hd-row2-cond: translateY(calc(-4px - var(--shell-bp) * 68px));
+  --_hd-mark-md: block;
+  --_hd-title-contained: none;
+  --_hd-cta-r: var(--kit-radius-control, var(--radius-8));
+  /* A 44px target that draws a 36px fill: header actions sit a step
+     quieter than the page's own buttons. */
+  --_hd-cta-inset: var(--space-4px);
+  --_hd-nav-justify: center;
+  --_hd-track-bg: transparent;
+  --_hd-track-r: 0px;
+  --_hd-item-pad: var(--space-12px);
+  --_hd-ind-y: var(--space-6px);
+  --_hd-ind-x: 0px;
+  --_hd-ind-r: var(--_hd-inner-r);
+  --_hd-ind-bg: var(--color-layer-2);
+  --_hd-ind-line: transparent;
+  --_hd-sheet-l: auto;
+  --_hd-sheet-mi: 0px;
+}
+
+/* 3. Bottom bar bundles. dock is the default (:root, D1). */
+:root,
+:is([data-direction="D1"], [data-direction="D4"], [data-direction="D5"], [data-direction="D8"], [data-direction="D11"], [data-direction="D12"]),
+html:has(:is([data-direction="D1"], [data-direction="D4"], [data-direction="D5"], [data-direction="D8"], [data-direction="D11"], [data-direction="D12"]) .shell:not([data-bar])),
+.shell[data-bar="dock"],
+html:has(.shell[data-bar="dock"]) {
+  /* A 64px dock floating 12px above the bottom edge (and the safe area)
+     and 12px from the sides; the shell reserves 76. */
+  --shell-nav-h: 76px;
+  --_nb-inset: var(--space-12px);
+  /* The dock floats on a page-tone tray, so scrolling content never shows
+     in the inset around it. */
+  --_nb-tray: var(--color-page);
+  --_nb-edge: 0px;
+  --_nb-bg: var(--color-surface);
+  --_nb-line: 1px;
+  --_nb-r: min(var(--space-20px), var(--kit-radius-card, var(--radius-12)) + var(--space-8px));
+  --_nb-pill-w: 56px;
+  --_nb-ind-on: 1;
+  --_nb-pill-on: 0;
+  /* Scrolling down, the labels fade, the icons settle to the centre, and
+     the dock draws in to 0.94; scrolling up restores it. */
+  --_nb-compact: scale(0.94);
+  --_nb-compact-lbl: 1;
+  --_nb-action: none;
+  --_nb-cta: inline-flex;
+  --_nb-split-over: flex;
+  --_nb-split-more: none;
+}
+
+:is([data-direction="D3"], [data-direction="D6"], [data-direction="D7"], [data-direction="D13"]),
+html:has(:is([data-direction="D3"], [data-direction="D6"], [data-direction="D7"], [data-direction="D13"]) .shell:not([data-bar])),
+.shell[data-bar="bar"],
+html:has(.shell[data-bar="bar"]) {
+  /* The Material 3 navigation bar on the bottom edge: a 64px surface row
+     under one 1px hairline, a 64 by 32 pill behind the icon. */
+  --shell-nav-h: 65px;
+  --_nb-inset: 0px;
+  --_nb-tray: var(--color-surface);
+  --_nb-edge: 1px;
+  --_nb-bg: transparent;
+  --_nb-line: 0px;
+  --_nb-r: 0px;
+  --_nb-pill-w: 64px;
+  --_nb-ind-on: 0;
+  --_nb-pill-on: 1;
+  --_nb-compact: none;
+  --_nb-compact-lbl: 0;
+  --_nb-action: none;
+  --_nb-cta: inline-flex;
+  --_nb-split-over: flex;
+  --_nb-split-more: none;
+}
+
+:is([data-direction="D2"], [data-direction="D9"], [data-direction="D10"]),
+html:has(:is([data-direction="D2"], [data-direction="D9"], [data-direction="D10"]) .shell:not([data-bar])),
+.shell[data-bar="split"],
+html:has(.shell[data-bar="split"]) {
+  /* The dock with its last segment loaded: 3 or 4 destinations, then the
+     primary action as a filled segment 6px inside the dock's end. */
+  --shell-nav-h: 76px;
+  --_nb-inset: var(--space-12px);
+  /* The dock floats on a page-tone tray, so scrolling content never shows
+     in the inset around it. */
+  --_nb-tray: var(--color-page);
+  --_nb-edge: 0px;
+  --_nb-bg: var(--color-surface);
+  --_nb-line: 1px;
+  --_nb-r: min(var(--space-20px), var(--kit-radius-card, var(--radius-12)) + var(--space-8px));
+  --_nb-pill-w: 56px;
+  --_nb-ind-on: 1;
+  --_nb-pill-on: 0;
+  --_nb-compact: scale(0.94);
+  --_nb-compact-lbl: 1;
+  /* The primary action moves from the mobile header into the bar. */
+  --_nb-action: flex;
+  --_nb-cta: none;
+  --_nb-split-over: none;
+  --_nb-split-more: flex;
+}
+
+/* Labels: on every item (default), or on the active item only. */
+:root,
+.shell[data-labels="all"] {
+  --_nb-lbl: 0;
+  --_nb-lbl-vis: visible;
+}
+:is([data-direction="D4"], [data-direction="D11"]),
+.shell[data-labels="active"] {
+  --_nb-lbl: 1;
+  --_nb-lbl-vis: hidden;
+}
+
+/* 4. The frame. */
+.shell {
+  box-sizing: border-box;
+  display: grid;
+  min-height: 100dvh;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "header"
+    "main";
+  padding-bottom: calc(var(--shell-nav-h) + env(safe-area-inset-bottom));
+  background: var(--color-page);
+}
+/* Anchor links and focus scrolling land below the sticky header and above
+   the fixed bottom bar. */
+html:has(.shell:not([data-scroll="contained"])) {
+  scroll-padding-top: calc(var(--shell-header-h, 64px) + env(safe-area-inset-top));
+  scroll-padding-bottom: calc(var(--shell-nav-h, 76px) + env(safe-area-inset-bottom));
+}
+.shell-main {
+  grid-area: main;
+  min-width: 0;
+  /* Content z-indexes stay below the pinned header and bottom bar. */
+  isolation: isolate;
+}
+
+/* Skip link: off screen until focused, then a surface chip at the top left. */
+.shell-skip {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + var(--space-8px));
+  left: var(--space-8px);
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h);
+  padding: 0 var(--space-16px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-8);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  transform: translateY(calc(-100% - var(--space-16px) - env(safe-area-inset-top)));
+}
+.shell-skip:focus-visible {
+  transform: none;
+}
+
+/* 5. Header. The outer box keeps one height; what is inside it moves. */
+.shell-header {
+  grid-area: header;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  height: calc(var(--shell-header-h) + env(safe-area-inset-top));
+  padding-top: calc(env(safe-area-inset-top) + var(--_hd-inset-t));
+  /* The band a condensed or floating bar leaves free passes input through. */
+  pointer-events: none;
+}
+/* Two tonal layers, never a shadow: the rest layer (the mobile island's
+   page-tone band, or the masthead's one hairline; transparent otherwise),
+   and the condensed layer, a surface bar with a 1px hairline that fades in
+   after the first 24px scrolled. */
+.shell-header::before,
+.shell-header::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: -1;
+  box-sizing: border-box;
+}
+.shell-header::before {
+  height: 100%;
+  background: var(--_hd-band);
+  border-bottom: 1px solid var(--_hd-rest-line);
+}
+.shell-header::after {
+  height: calc(var(--shell-bar-h) + env(safe-area-inset-top));
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  opacity: 0;
+}
+.shell[data-scrolled] > .shell-header::before {
+  opacity: var(--_hd-band-s);
+}
+.shell[data-scrolled] > .shell-header::after {
+  opacity: var(--_hd-cond);
+}
+
+.shell-bar {
+  box-sizing: border-box;
+  display: grid;
+  grid-template: "brand actions" / minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--_hd-gap);
+  inline-size: var(--_hd-bar-w);
+  max-inline-size: calc(100% - 2 * var(--space-8px));
+  height: var(--_hd-box-h);
+  margin-inline: auto;
+  padding-inline: var(--_hd-pad);
+  border: var(--_hd-bar-bw) solid var(--_hd-bar-line);
+  border-radius: var(--_hd-r);
+  background: var(--_hd-bar-bg);
+  pointer-events: auto;
+}
+.shell[data-scrolled] .shell-bar {
+  border-color: var(--_hd-bar-line-on);
+}
+
+.shell-title {
+  grid-area: brand;
+  justify-self: start;
+  max-width: 100%;
+  margin: 0;
+  min-width: 0;
+  padding-inline: var(--_hd-title-pad);
+  overflow: hidden;
+  font-family: var(--_hd-title-font);
+  font-size: var(--_hd-title-size);
+  line-height: var(--_hd-title-line);
+  font-weight: var(--_hd-title-weight);
+  letter-spacing: var(--_hd-title-track);
+  color: var(--color-ink);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform-origin: 0 50%;
+}
+.shell[data-scrolled] .shell-title {
+  opacity: calc(1 - var(--_hd-title-fade));
+  transform: var(--_hd-title-cond);
+}
+.shell-title > svg,
+.shell-mark > svg {
+  display: block;
+  height: 1em;
+  width: auto;
+}
+/* The masthead's compact mark: the wordmark at the --text-1 size on the
+   condensed bar's start edge, shown once the nameplate has faded. */
+.shell-mark {
+  display: none;
+  grid-area: mark;
+  justify-self: start;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--_hd-title-font);
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-title, -0.01em);
+  color: var(--color-ink);
+  text-decoration: none;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+}
+.shell[data-scrolled] .shell-mark {
+  opacity: 1;
+  visibility: visible;
+}
+.shell-actions {
+  grid-area: actions;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+}
+.shell-actions:empty {
+  display: none;
+}
+.shell[data-scrolled] .shell-actions {
+  transform: var(--_hd-row2-cond);
+}
+/* Below 640px the split bar carries the primary action instead. */
+.shell .shell-cta {
+  position: relative;
+  display: var(--_nb-cta, inline-flex);
+  height: calc(var(--control-h) - 2 * var(--_hd-cta-inset));
+  border-radius: var(--_hd-cta-r);
+  font-size: calc(var(--text-0) - var(--_hd-cta-inset) / 2);
+  padding-inline: calc(var(--space-16px) - var(--_hd-cta-inset));
+}
+/* The quieter header action still takes a 44px tap. */
+.shell .shell-cta::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--_hd-cta-inset)) 0;
+}
+
+/* 6. The Primary nav. Below 640px: the bottom bar. The nav box always
+   touches the bottom edge and spans it; the dock floats inside it, inset
+   by the box's own padding. Taps in the inset reach the page. */
+.shell-nav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  padding: 0 var(--_nb-inset) calc(var(--_nb-inset) + env(safe-area-inset-bottom));
+  border-top: var(--_nb-edge) solid var(--color-border);
+  background: var(--_nb-tray);
+  pointer-events: none;
+}
+.shell-dock {
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 64px;
+  border: var(--_nb-line) solid var(--color-border);
+  border-radius: var(--_nb-r);
+  background: var(--_nb-bg);
+  transform-origin: 50% 100%;
+  pointer-events: auto;
+}
+.shell-nav-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+.shell-nav .shell-nav-item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2px);
+  min-width: 0;
+  height: auto;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-ink-muted);
+  font: inherit;
+  /* 11px on a 320px phone, 13px from 360px (section 8), one 16px line. */
+  font-size: var(--text-n2);
+  line-height: var(--line-n2);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.shell-nav .shell-nav-item:focus-visible {
+  outline-offset: -2px;
+  border-radius: max(var(--radius-4), var(--_nb-r) - var(--space-4px));
+}
+.shell-nav .shell-nav-item[data-active] {
+  color: var(--color-ink);
+}
+.shell-nav .shell-nav-item[data-active] .shell-nav-text {
+  font-weight: var(--weight-semibold);
+}
+/* More is a <button>: the global button fill, press lift, and fixed height
+   do not apply, so it reads as one more destination. */
+.shell .shell-more {
+  transition: none;
+}
+.shell .shell-more.shell-nav-item:enabled:active {
+  background: none;
+  border-color: transparent;
+  transform: none;
+}
+/* The pill: the 32px tall target behind the icon (Material navigation bar
+   anatomy), or behind the label on a label-only destination. On the bar it
+   is the active indicator; on the dock and split it carries only the hover
+   and press state layers, because one sliding pill marks the active item. */
+.shell-nav .shell-nav-icon,
+.shell-nav .shell-nav-item:not(:has(.shell-nav-icon)) .shell-nav-label {
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--radius-pill);
+}
+.shell-nav .shell-nav-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: min(var(--_nb-pill-w), 100%);
+  height: 32px;
+}
+.shell-nav .shell-nav-icon > svg,
+.shell-nav .shell-nav-icon > .icon {
+  width: 24px;
+  height: 24px;
+}
+.shell-nav .shell-nav-item:not(:has(.shell-nav-icon)) .shell-nav-label {
+  padding: var(--space-8px) var(--space-12px);
+}
+.shell-nav .shell-nav-icon::before,
+.shell-nav .shell-nav-item:not(:has(.shell-nav-icon)) .shell-nav-label::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--color-layer-2);
+  opacity: 0;
+  transform: scaleX(0.6);
+}
+.shell-nav .shell-nav-item[data-active] :is(.shell-nav-icon, .shell-nav-label)::before {
+  opacity: var(--_nb-pill-on);
+  transform: none;
+}
+/* Before the sliding pill is measured (server render, no script), the
+   active item wears its own pill, so the current page always shows. */
+.shell-nav-track:not([data-ind]) .shell-nav-item[data-active] :is(.shell-nav-icon, .shell-nav-label)::before {
+  opacity: 1;
+  transform: none;
+}
+/* One line, always: a label that does not fit ends in an ellipsis. */
+.shell-nav-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4px);
+  max-width: calc(100% - var(--space-8px));
+  min-width: 0;
+}
+.shell-nav-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Active-only labels: an inactive item shows its icon, centred. */
+.shell-nav .shell-nav-item:not([data-active]):has(.shell-nav-icon) .shell-nav-label {
+  visibility: var(--_nb-lbl-vis);
+  opacity: calc(1 - var(--_nb-lbl));
+}
+.shell-nav .shell-nav-item:not([data-active]) .shell-nav-icon {
+  transform: translateY(calc(var(--_nb-lbl) * 9px));
+}
+/* Press: the icon (or label) scales to 0.96 and the state layer darkens to
+   the pressed step. */
+.shell-nav .shell-nav-item:active .shell-nav-icon > *,
+.shell-nav .shell-nav-item:not(:has(.shell-nav-icon)):active .shell-nav-text {
+  scale: 0.96;
+}
+.shell-nav .shell-nav-item:active :is(.shell-nav-icon, .shell-nav-label)::before {
+  opacity: 1;
+  transform: none;
+  background: var(--state-pressed);
+}
+.shell-nav .shell-nav-item[data-active]:active :is(.shell-nav-icon, .shell-nav-label)::before {
+  background: color-mix(in oklab, var(--color-ink) 12%, var(--color-layer-2));
+}
+
+/* The one sliding indicator. AppShell writes the active item's box into
+   --shell-ind-x and --shell-ind-w on its track, and it shows once measured
+   (data-ind). Below 640px: a pill behind the active icon on the dock and
+   split (the label box on a label-only dock); from 640px: the island's
+   thumb and the rail and masthead pill (section 8). */
+.shell-ind {
+  position: absolute;
+  top: calc(50% - 25px);
+  left: 0;
+  box-sizing: border-box;
+  width: var(--_nb-pill-w);
+  height: 32px;
+  transform: translateX(calc(var(--shell-ind-x, 0px) + (var(--shell-ind-w, 0px) - var(--_nb-pill-w)) / 2));
+  border-radius: var(--radius-pill);
+  background: var(--color-layer-2);
+  opacity: 0;
+  pointer-events: none;
+}
+.shell:not([data-icons]) .shell-nav-track > .shell-ind {
+  top: var(--space-8px);
+  bottom: var(--space-8px);
+  height: auto;
+  width: calc(var(--shell-ind-w, 0px) - 2 * var(--space-6px));
+  transform: translateX(calc(var(--shell-ind-x, 0px) + var(--space-6px)));
+  border-radius: max(var(--radius-4), var(--_nb-r) - var(--space-8px));
+}
+.shell-nav-track[data-ind] > .shell-ind {
+  opacity: var(--_nb-ind-on);
+}
+
+/* Badges: flat ink, a dot or a count up to 9+, at the pill's top end beside
+   the icon, or after the label on a label-only destination and in the
+   header. */
+.shell-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-4px);
+  border-radius: var(--radius-pill);
+  background: var(--color-ink);
+  color: var(--color-surface);
+  font-size: var(--text-n2);
+  line-height: var(--line-n2);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.shell-badge[data-kind="dot"] {
+  min-width: 0;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+}
+.shell-nav-icon > .shell-badge {
+  position: absolute;
+  top: var(--space-2px);
+  /* Past the 24px icon's end edge, inside the pill. */
+  left: calc(50% + var(--space-12px));
+}
+.shell-nav-icon > .shell-badge[data-kind="dot"] {
+  top: var(--space-4px);
+}
+.shell-nav .shell-nav-item:has(.shell-nav-icon) .shell-nav-label > .shell-badge {
+  display: none;
+}
+
+/* The split bar's primary segment: the dock's last segment, filled, 6px
+   inside its end at the dock's radius minus that inset. */
+.shell-nav-action {
+  display: var(--_nb-action);
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8px);
+  box-sizing: border-box;
+  min-width: 64px;
+  margin: var(--space-6px);
+  padding: 0 var(--space-16px);
+  border: 1px solid var(--color-primary);
+  border-radius: max(var(--radius-4), var(--_nb-r) - var(--space-6px) - 1px);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.shell-nav-action:active {
+  background: var(--color-primary-active);
+}
+.shell-nav-action:active > * {
+  scale: 0.96;
+}
+.shell-nav-action-icon {
+  display: inline-flex;
+}
+/* Four destinations beside the action: the action shows its icon only
+   (its aria-label keeps the name), so no destination label truncates. */
+.shell-dock:has(> .shell-nav-track > :nth-child(5)) .shell-nav-action:has(.shell-nav-action-icon) {
+  min-width: 56px;
+  padding: 0;
+}
+.shell-dock:has(> .shell-nav-track > :nth-child(5)) .shell-nav-action:has(.shell-nav-action-icon) > span:last-child {
+  display: none;
+}
+.shell-nav-action-icon > svg {
+  width: 20px;
+  height: 20px;
+}
+.shell[data-has-action] .shell-nav :is([data-split-overflow], [data-more="bar"]) {
+  display: var(--_nb-split-over);
+}
+.shell-nav [data-more="split"] {
+  display: var(--_nb-split-more);
+}
+
+/* More: the system chevron (the select glyph), up in the bottom bar where
+   the sheet opens upward, down after the label in the header. */
+.shell-more-glyph {
+  flex: none;
+  width: 14px;
+  height: 10px;
+  rotate: 180deg;
+}
+.shell-nav-label > .shell-more-glyph {
+  display: none;
+  width: 10px;
+  height: 7px;
+  rotate: none;
+}
+
+/* The overflow sheet (a popover, so Escape and outside taps close it). */
+.shell-sheet {
+  position: fixed;
+  inset: auto var(--space-12px) calc(var(--shell-nav-h) + env(safe-area-inset-bottom) + var(--space-8px)) var(--space-12px);
+  box-sizing: border-box;
+  width: auto;
+  max-height: 60dvh;
+  margin: 0;
+  padding: var(--space-6px);
+  overflow: auto;
+  border: 1px solid var(--color-border-strong);
+  border-radius: min(var(--space-20px), var(--kit-radius-card, var(--radius-12)) + var(--space-8px));
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+.shell-sheet > nav {
+  display: grid;
+  gap: var(--space-2px);
+}
+.shell-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12px);
+  min-height: var(--control-h);
+  padding: 0 var(--space-12px);
+  border-radius: max(var(--radius-4), min(var(--space-20px), var(--kit-radius-card, var(--radius-12)) + var(--space-8px)) - var(--space-6px));
+  color: var(--color-ink-muted);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+}
+.shell-sheet-item:focus-visible {
+  outline-offset: -2px;
+}
+.shell-sheet .shell-nav-icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+}
+.shell-sheet .shell-nav-icon > svg {
+  width: 20px;
+  height: 20px;
+}
+.shell-sheet-item[aria-current="page"] {
+  background: var(--color-layer-2);
+  color: var(--color-ink);
+  font-weight: var(--weight-semibold);
+}
+.shell-sheet-item:active {
+  background: var(--state-pressed);
+}
+.shell-sheet [data-split-only] {
+  display: var(--_nb-split-more);
+}
+
+@media (hover: hover) {
+  .shell-nav .shell-nav-item:not([data-active]):hover {
+    color: var(--color-ink);
+  }
+  .shell-nav .shell-nav-item:not([data-active]):hover :is(.shell-nav-icon, .shell-nav-label)::before {
+    opacity: 1;
+    transform: none;
+    background: var(--state-hover);
+  }
+  .shell .shell-more.shell-nav-item:enabled:hover {
+    background: none;
+    border-color: transparent;
+  }
+  .shell-nav-action:hover {
+    background: var(--color-primary-hover);
+  }
+  .shell-sheet-item:not([aria-current="page"]):hover {
+    background: var(--state-hover);
+    color: var(--color-ink);
+  }
+}
+
+/* 7. contained: the viewport-sized grid with an inner scroller. The header
+   keeps its condensed geometry and only changes tone on scroll; the bottom
+   bar stays fixed and the shell reserves its height. */
+/* The condense knobs are reset here, on the shell, and not as transforms:
+   a bundle computes them on the direction element against the document
+   header height, and a scrolled rule would otherwise move the row out of
+   the 56px bar (the masthead's 72px rise would lift the nav off screen).
+   This rule sits after every bundle, so it wins over data-header too. */
+.shell[data-scroll="contained"] {
+  --shell-header-h: var(--_hd-hc);
+  --_hd-title-cond: none;
+  --_hd-row2-cond: none;
+  --_hd-title-fade: 0;
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.shell[data-scroll="contained"] > .shell-header {
+  position: static;
+}
+.shell[data-scroll="contained"] > .shell-main {
+  /* The containing block for absolutely positioned content, so a visually
+     hidden label deep in the page scrolls and clips with it instead of
+     stretching the document the shell keeps still. */
+  position: relative;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.shell[data-scroll="contained"] .shell-bar {
+  height: min(var(--_hd-box-h), var(--shell-bar-h));
+}
+.shell[data-scroll="contained"] .shell-title {
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+}
+
+/* 8. Sizes. */
+@media (min-width: 360px) {
+  .shell-nav .shell-nav-item {
+    font-size: var(--text-n1);
+  }
+  .shell-nav-action {
+    padding: 0 var(--space-20px);
+  }
+}
+
+/* From 640px the Primary nav moves into the header bar. */
+@media (min-width: 640px) {
+  .shell,
+  .shell[data-scroll="contained"] {
+    padding-bottom: 0;
+  }
+  html:has(.shell:not([data-scroll="contained"])) {
+    scroll-padding-bottom: 0;
+  }
+  .shell-bar {
+    grid-template: var(--_hd-grid-md);
+    inline-size: var(--_hd-bar-w-md);
+    max-inline-size: calc(100% - 2 * var(--kit-margin, var(--space-16px)));
+  }
+  .shell[data-scroll="contained"] .shell-bar {
+    grid-template: var(--_hd-grid-cmd);
+  }
+  .shell-title {
+    justify-self: var(--_hd-title-justify-md);
+    padding-inline: var(--_hd-title-pad-md);
+    transform-origin: var(--_hd-title-origin-md);
+  }
+  .shell-mark {
+    display: var(--_hd-mark-md);
+  }
+  .shell[data-scroll="contained"] .shell-title {
+    display: var(--_hd-title-contained);
+  }
+  .shell[data-scroll="contained"] .shell-mark {
+    opacity: 1;
+    visibility: visible;
+  }
+  .shell .shell-cta {
+    display: inline-flex;
+  }
+  .shell-nav {
+    position: static;
+    grid-area: nav;
+    justify-self: var(--_hd-nav-justify);
+    display: flex;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    pointer-events: auto;
+  }
+  .shell[data-scrolled] .shell-nav,
+  .shell[data-scrolled] .shell-mark {
+    transform: var(--_hd-row2-cond);
+  }
+  .shell-dock {
+    flex: none;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    transform: none;
+  }
+  /* The track: the island's segmented control, or a plain row on the rail
+     and masthead. */
+  .shell-nav-track {
+    display: flex;
+    align-items: center;
+    flex: none;
+    border-radius: var(--_hd-track-r);
+    background: var(--_hd-track-bg);
+  }
+  .shell-nav .shell-nav-item {
+    flex-direction: row;
+    gap: var(--space-6px);
+    min-height: var(--control-h);
+    padding: 0 var(--_hd-item-pad);
+    font-size: var(--text-n1);
+    line-height: var(--line-n1);
+  }
+  .shell-nav .shell-nav-item:focus-visible {
+    border-radius: var(--_hd-track-r);
+  }
+  .shell-nav .shell-nav-icon {
+    display: none;
+  }
+  .shell-nav .shell-nav-item:not(:has(.shell-nav-icon)) .shell-nav-label {
+    padding: 0;
+  }
+  .shell-nav .shell-nav-item:not(:has(.shell-nav-icon)) .shell-nav-label::before {
+    content: none;
+  }
+  .shell-nav-label {
+    max-width: none;
+  }
+  .shell-nav .shell-nav-item:has(.shell-nav-icon) .shell-nav-label > .shell-badge,
+  .shell-nav-label > .shell-more-glyph {
+    display: inline-flex;
+  }
+  .shell-nav .shell-nav-item:not([data-active]):has(.shell-nav-icon) .shell-nav-label {
+    visibility: visible;
+    opacity: 1;
+  }
+  .shell[data-has-action] .shell-nav :is([data-split-overflow], [data-more="bar"]) {
+    display: inline-flex;
+  }
+  .shell-nav [data-more="split"],
+  .shell-nav-action {
+    display: none;
+  }
+  /* The per-item layer: the hover and press state layer, and the active
+     fill before the indicator is measured. */
+  .shell-nav .shell-nav-item::before {
+    content: "";
+    position: absolute;
+    inset: var(--_hd-ind-y) var(--_hd-ind-x);
+    z-index: -1;
+    border-radius: var(--_hd-ind-r);
+    background: var(--_hd-ind-bg);
+    opacity: 0;
+  }
+  .shell-nav-track:not([data-ind]) .shell-nav-item[data-active]::before {
+    opacity: 1;
+  }
+  .shell-nav .shell-nav-item:active::before {
+    opacity: 1;
+    background: var(--state-pressed);
+  }
+  .shell-nav .shell-nav-item:active .shell-nav-text {
+    scale: 0.96;
+  }
+  /* Active weight is 600; the text reserves that width, so nothing shifts. */
+  .shell-nav-text {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: visible;
+  }
+  .shell-nav-text::after {
+    content: attr(data-label);
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: var(--weight-semibold);
+    user-select: none;
+    pointer-events: none;
+  }
+  .shell-ind,
+  .shell:not([data-icons]) .shell-nav-track > .shell-ind {
+    top: var(--_hd-ind-y);
+    bottom: var(--_hd-ind-y);
+    height: auto;
+    width: calc(var(--shell-ind-w, 0px) - 2 * var(--_hd-ind-x));
+    transform: translateX(calc(var(--shell-ind-x, 0px) + var(--_hd-ind-x)));
+    border: 1px solid var(--_hd-ind-line);
+    border-radius: var(--_hd-ind-r);
+    background: var(--_hd-ind-bg);
+  }
+  .shell-nav-track[data-ind] > .shell-ind {
+    opacity: 1;
+  }
+  .shell-sheet {
+    inset: calc(var(--shell-header-h) + env(safe-area-inset-top) + var(--space-8px)) max(var(--kit-margin, var(--space-16px)), (100vw - var(--kit-max, 1280px)) / 2) auto var(--_hd-sheet-l);
+    width: 240px;
+    margin-inline: var(--_hd-sheet-mi);
+  }
+  .shell-sheet [data-split-only] {
+    display: none;
+  }
+  /* Where anchor positioning exists, the sheet hangs 12px under More, its
+     end edge on More's end edge; elsewhere it keeps the placement above. */
+  @supports (anchor-name: --shell-more) {
+    .shell-nav .shell-more {
+      anchor-name: --shell-more;
+    }
+    .shell-sheet {
+      position-anchor: --shell-more;
+      inset: calc(anchor(bottom) + var(--space-12px)) anchor(right) auto auto;
+      margin: 0;
+    }
+  }
+  /* Hide on scroll down, reveal on scroll up (hideOnScroll, document mode). */
+  .shell:not([data-scroll="contained"])[data-hide][data-hidden] > .shell-header:not(:focus-within) {
+    transform: translateY(-100%);
+  }
+}
+@media (min-width: 640px) and (hover: hover) {
+  .shell-nav .shell-nav-item:not([data-active]):hover::before {
+    opacity: 1;
+    background: var(--state-hover);
+  }
+  .shell-nav-track[data-ind] .shell-nav-item[data-active]:hover::before {
+    opacity: 0;
+  }
+}
+/* 9. Motion, only under .shell-motion (never set under reduced motion). */
+.shell-motion > .shell-header {
+  transition: transform var(--dur-200) var(--ease-standard);
+}
+.shell-motion[data-hidden] > .shell-header {
+  transition-duration: var(--dur-200-exit);
+}
+.shell-motion > .shell-header::before,
+.shell-motion > .shell-header::after {
+  transition: opacity var(--dur-200-exit) var(--ease-standard);
+}
+.shell-motion[data-scrolled] > .shell-header::before,
+.shell-motion[data-scrolled] > .shell-header::after {
+  transition-duration: var(--dur-200);
+}
+.shell-motion .shell-bar {
+  transition: border-color var(--dur-200-exit) var(--ease-standard);
+}
+.shell-motion[data-scrolled] .shell-bar {
+  transition-duration: var(--dur-200);
+}
+.shell-motion :is(.shell-title, .shell-actions) {
+  transition:
+    transform var(--dur-300-exit) var(--ease-standard),
+    opacity var(--dur-200-exit) var(--ease-standard);
+}
+.shell-motion[data-scrolled] :is(.shell-title, .shell-actions) {
+  transition-duration: var(--dur-300), var(--dur-200);
+}
+.shell-motion .shell-mark {
+  transition:
+    transform var(--dur-300-exit) var(--ease-standard),
+    opacity var(--dur-150-exit) var(--ease-standard),
+    visibility var(--dur-150-exit) var(--ease-standard);
+}
+.shell-motion[data-scrolled] .shell-mark {
+  transition-duration: var(--dur-300), var(--dur-200), var(--dur-200);
+}
+.shell-motion .shell-ind {
+  transition:
+    transform var(--dur-200) var(--ease-standard),
+    width var(--dur-200) var(--ease-standard),
+    opacity var(--dur-150) var(--ease-standard);
+}
+.shell-motion .shell-nav .shell-nav-item {
+  transition: color var(--dur-100) var(--ease-standard);
+}
+.shell-motion .shell-dock {
+  transition: transform var(--dur-200) var(--ease-standard);
+}
+.shell-motion .shell-nav .shell-nav-icon {
+  transition: transform var(--dur-200) var(--ease-standard);
+}
+.shell-motion .shell-nav .shell-nav-icon > *,
+.shell-motion .shell-nav .shell-nav-text {
+  transition: scale var(--dur-100) var(--ease-standard);
+}
+.shell-motion .shell-nav .shell-nav-label {
+  transition:
+    opacity var(--dur-150-exit) var(--ease-standard),
+    visibility var(--dur-150-exit) var(--ease-standard);
+}
+.shell-motion .shell-nav [data-active] .shell-nav-label {
+  transition-duration: var(--dur-150), var(--dur-150);
+}
+.shell-motion .shell-nav :is(.shell-nav-icon, .shell-nav-label)::before {
+  transition:
+    opacity var(--dur-200-exit) var(--ease-standard),
+    transform var(--dur-200-exit) var(--ease-standard),
+    background-color var(--dur-100) var(--ease-standard);
+}
+.shell-motion .shell-nav [data-active] :is(.shell-nav-icon, .shell-nav-label)::before {
+  transition-duration: var(--dur-200), var(--dur-200), var(--dur-100);
+}
+.shell-motion .shell-nav-action,
+.shell-motion .shell-sheet-item {
+  transition: background-color var(--dur-100) var(--ease-standard);
+}
+.shell-motion .shell-nav-action > * {
+  transition: scale var(--dur-100) var(--ease-standard);
+}
+.shell-motion .shell-sheet {
+  opacity: 0;
+  translate: 0 var(--space-4px);
+  transition:
+    opacity var(--dur-150-exit) var(--ease-standard),
+    translate var(--dur-150-exit) var(--ease-standard),
+    display var(--dur-150-exit) allow-discrete,
+    overlay var(--dur-150-exit) allow-discrete;
+}
+.shell-motion .shell-sheet:popover-open {
+  opacity: 1;
+  translate: none;
+  transition-duration: var(--dur-150);
+}
+@starting-style {
+  .shell-motion .shell-sheet:popover-open {
+    opacity: 0;
+    translate: 0 var(--space-4px);
+  }
+}
+/* Compaction (dock and split, below 640px): the labels fade, the icons and
+   the sliding pill settle 9px to the dock's centre, and the dock draws in.
+   data-compact is never written under reduced motion, and these rules sit
+   under .shell-motion as well. */
+@media (max-width: 639.98px) {
+  .shell-motion[data-compact] .shell-dock {
+    transform: var(--_nb-compact);
+    transition-duration: var(--dur-200-exit);
+  }
+  .shell.shell-motion[data-compact] .shell-nav .shell-nav-item .shell-nav-label {
+    opacity: calc(1 - var(--_nb-compact-lbl));
+  }
+  .shell-motion[data-compact] .shell-nav .shell-nav-icon,
+  .shell-motion[data-compact] .shell-nav-track > .shell-ind {
+    translate: 0 calc(var(--_nb-compact-lbl) * 9px);
+  }
+  /* An inactive icon under active-only labels is centred already. */
+  .shell-motion[data-compact] .shell-nav .shell-nav-item:not([data-active]) .shell-nav-icon {
+    translate: 0 calc(max(0, var(--_nb-compact-lbl) - var(--_nb-lbl)) * 9px);
+  }
+  .shell-motion .shell-nav-track > .shell-ind {
+    transition:
+      transform var(--dur-200) var(--ease-standard),
+      width var(--dur-200) var(--ease-standard),
+      opacity var(--dur-150) var(--ease-standard),
+      translate var(--dur-200) var(--ease-standard);
+  }
+  .shell-motion .shell-nav .shell-nav-icon {
+    transition:
+      transform var(--dur-200) var(--ease-standard),
+      translate var(--dur-200) var(--ease-standard);
+  }
+}
+@media (min-width: 640px) {
+  .shell-motion .shell-nav {
+    transition: transform var(--dur-300-exit) var(--ease-standard);
+  }
+  .shell-motion[data-scrolled] .shell-nav {
+    transition-duration: var(--dur-300);
+  }
+  .shell-motion .shell-nav .shell-nav-item::before {
+    transition:
+      opacity var(--dur-100) var(--ease-standard),
+      background-color var(--dur-100) var(--ease-standard);
+  }
+}
+
+/* =====================================================================
+ * Material Web port (JAL Core specs "From: Material Web" in
+ * jal-design-system references/components.md): checkbox, radio, switch,
+ * slider, progress, icon button, segmented button, menu.
+ *
+ * Built on native elements (input checkbox, radio, range, progress,
+ * button, a role=menu list) so every control works without JS. JAL tokens
+ * only. Each component resolves its component tokens
+ * (--jal-<component>-<part>-<property>) once at its root, with a system
+ * token fallback, into private --_* properties, so a scoped override
+ * reskins a subtree without JS (foundations.md section 11.1).
+ *
+ * State layers are color-mix tints bounded by the control's own shape: no
+ * ripple, no circle around small controls, no shadow, no gradient, full
+ * four-side borders only, 44px targets (the whole row or box is the
+ * target even where the visual is smaller).
+ * ===================================================================== */
+
+/* Shared row pattern for checkbox, radio, and switch: a 44px label row,
+   control top-aligned to the first text line, optional description. */
+.jal-checkbox,
+.jal-radio,
+.jal-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-12px);
+  min-height: var(--control-h);
+  min-width: 0;
+  padding-block: calc((var(--control-h) - var(--line-0)) / 2);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+:is(.jal-checkbox, .jal-radio, .jal-switch) [data-slot="description"] {
+  display: block;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+:is(.jal-checkbox, .jal-radio, .jal-switch):has(> input:disabled) {
+  color: var(--state-disabled-content);
+  cursor: default;
+}
+
+:is(.jal-checkbox, .jal-radio, .jal-switch)[aria-busy="true"] {
+  pointer-events: none;
+}
+
+/* Checkbox (base chrome lives in the checkbox and radio section above). */
+.jal-checkbox {
+  --_selected: var(--jal-checkbox-selected-container-color, var(--color-ink));
+  --_outline: var(--jal-checkbox-outline-color, var(--color-border-control));
+}
+
+.jal-radio {
+  --_selected: var(--jal-radio-selected-color, var(--color-ink));
+  --_outline: var(--jal-radio-outline-color, var(--color-border-control));
+}
+
+.jal-checkbox > input[type="checkbox"],
+.jal-radio > input[type="radio"] {
+  margin-block-start: calc((var(--line-0) - var(--space-20px)) / 2);
+}
+
+/* The outline token applies only at rest, so focus (ink), invalid
+   (danger), and disabled (hairline) keep their base boundaries. */
+.jal-checkbox > input[type="checkbox"]:enabled:not(:checked):not(:indeterminate):not(:focus-visible):not([aria-invalid="true"]),
+.jal-radio > input[type="radio"]:enabled:not(:checked):not(:focus-visible):not([aria-invalid="true"]) {
+  border-color: var(--_outline);
+}
+
+.jal-checkbox > input[type="checkbox"]:enabled:is(:checked, :indeterminate),
+.jal-radio > input[type="radio"]:enabled:checked {
+  background-color: var(--_selected);
+  border-color: var(--_selected);
+}
+
+@media (hover: hover) {
+  .jal-checkbox:hover > input[type="checkbox"]:enabled:not(:checked):not(:indeterminate),
+  .jal-radio:hover > input[type="radio"]:enabled:not(:checked) {
+    background-color: color-mix(in oklab, var(--color-ink) 8%, var(--color-surface));
+  }
+
+  .jal-checkbox:hover > input[type="checkbox"]:enabled:is(:checked, :indeterminate),
+  .jal-radio:hover > input[type="radio"]:enabled:checked {
+    background-color: color-mix(in oklab, var(--color-surface) 8%, var(--_selected));
+  }
+}
+
+.jal-checkbox:active > input[type="checkbox"]:enabled:not(:checked):not(:indeterminate),
+.jal-radio:active > input[type="radio"]:enabled:not(:checked) {
+  background-color: color-mix(in oklab, var(--color-ink) 12%, var(--color-surface));
+}
+
+.jal-checkbox:active > input[type="checkbox"]:enabled:is(:checked, :indeterminate),
+.jal-radio:active > input[type="radio"]:enabled:checked {
+  background-color: color-mix(in oklab, var(--color-surface) 12%, var(--_selected));
+}
+
+.jal-checkbox > input[type="checkbox"][aria-invalid="true"],
+.jal-radio > input[type="radio"][aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+.jal-checkbox > input[type="checkbox"][aria-invalid="true"]:enabled:is(:checked, :indeterminate),
+.jal-radio > input[type="radio"][aria-invalid="true"]:enabled:checked {
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+/* Radio group: a fieldset reset, the legend is the group label. */
+.jal-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.jal-radio-group > legend {
+  margin-block-end: var(--space-4px);
+  padding: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+/* Switch: the native checkbox (role="switch") is transparent and covers
+   the whole row, so the row is the target; .jal-switch-track draws the
+   track and its ::after the handle. The handle is one 24px circle scaled
+   (0.667 off = 16px, 1 on = 24px, 1.167 pressed = 28px) and moved by
+   transform only. Track 52 x 32. */
+.jal-switch {
+  --_track: var(--jal-switch-track-color, var(--color-layer-2));
+  --_track-on: var(--jal-switch-selected-track-color, var(--color-ink));
+  --_handle: var(--jal-switch-handle-color, var(--color-ink-muted));
+  --_handle-on: var(--jal-switch-selected-handle-color, var(--color-surface));
+  align-items: center;
+  padding-block: 0;
+}
+
+.jal-switch > input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.jal-switch-track {
+  position: relative;
+  flex: 0 0 auto;
+  inline-size: calc(var(--space-32px) + var(--space-20px));
+  block-size: var(--space-32px);
+  background-color: var(--_track);
+  border: var(--border-weight) solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+  transition:
+    background-color var(--dur-150) var(--ease-standard),
+    border-color var(--dur-150) var(--ease-standard);
+}
+
+.jal-switch-track::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--space-4px) - var(--border-weight));
+  margin-block: auto;
+  inline-size: var(--space-24px);
+  block-size: var(--space-24px);
+  background-color: var(--_handle);
+  border-radius: var(--radius-pill);
+  transform: translateX(0) scale(0.667);
+  transition:
+    transform var(--dur-150) var(--ease-standard),
+    background-color var(--dur-150) var(--ease-standard);
+}
+
+.jal-switch > input:checked ~ .jal-switch-track {
+  background-color: var(--_track-on);
+  border-color: var(--_track-on);
+}
+
+.jal-switch > input:checked ~ .jal-switch-track::after {
+  background-color: var(--_handle-on);
+  transform: translateX(var(--space-20px)) scale(1);
+}
+
+[dir="rtl"] .jal-switch > input:checked ~ .jal-switch-track::after {
+  transform: translateX(calc(var(--space-20px) * -1)) scale(1);
+}
+
+.jal-switch:active > input:enabled:not(:checked) ~ .jal-switch-track::after {
+  transform: translateX(0) scale(1.167);
+  transition-duration: var(--dur-100);
+}
+
+.jal-switch:active > input:enabled:checked ~ .jal-switch-track::after {
+  transform: translateX(var(--space-20px)) scale(1.167);
+  transition-duration: var(--dur-100);
+}
+
+[dir="rtl"] .jal-switch:active > input:enabled:checked ~ .jal-switch-track::after {
+  transform: translateX(calc(var(--space-20px) * -1)) scale(1.167);
+}
+
+.jal-switch > input:focus-visible ~ .jal-switch-track {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .jal-switch:hover > input:enabled:not(:checked) ~ .jal-switch-track {
+    background-color: color-mix(in oklab, var(--color-ink) 8%, var(--_track));
+  }
+
+  .jal-switch:hover > input:enabled:not(:checked) ~ .jal-switch-track::after {
+    background-color: var(--color-ink);
+  }
+
+  .jal-switch:hover > input:enabled:checked ~ .jal-switch-track {
+    background-color: color-mix(in oklab, var(--color-surface) 8%, var(--_track-on));
+  }
+}
+
+.jal-switch:active > input:enabled:not(:checked) ~ .jal-switch-track {
+  background-color: color-mix(in oklab, var(--color-ink) 12%, var(--_track));
+}
+
+.jal-switch:active > input:enabled:checked ~ .jal-switch-track {
+  background-color: color-mix(in oklab, var(--color-surface) 12%, var(--_track-on));
+}
+
+.jal-switch > input:disabled ~ .jal-switch-track {
+  background-color: var(--state-disabled-container);
+  border-color: var(--color-border);
+}
+
+.jal-switch > input:disabled ~ .jal-switch-track::after {
+  background-color: var(--state-disabled-content);
+}
+
+.jal-switch > input:disabled:checked ~ .jal-switch-track {
+  background-color: var(--state-disabled-content);
+  border-color: var(--state-disabled-content);
+}
+
+.jal-switch > input:disabled:checked ~ .jal-switch-track::after {
+  background-color: var(--color-surface);
+}
+
+.jal-switch > input[aria-invalid="true"] ~ .jal-switch-track {
+  border-color: var(--color-danger);
+}
+
+/* Loading: a pending write. Input is blocked by the shared rule above;
+   the handle reads as pending, the hint row carries the words. */
+.jal-switch[aria-busy="true"] > input ~ .jal-switch-track::after {
+  background-color: var(--state-disabled-content);
+}
+
+/* Slider: label and <output> readout on row one, the control on row two.
+   .jal-slider-track draws the track (::before) and the active fill
+   (::after, from --jal-slider-start to --jal-slider-end, fractions 0 to 1
+   the app sets on input; unset = no fill, the thumb alone carries the
+   value). The native range input is 44px tall and transparent; only its
+   20px thumb paints. data-range holds two inputs, thumbs are the only
+   hit areas. */
+.jal-slider {
+  --_active: var(--jal-slider-active-track-color, var(--color-ink));
+  --_inactive: var(--jal-slider-inactive-track-color, var(--color-layer-2));
+  --_handle: var(--jal-slider-handle-color, var(--color-ink));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-width: 0;
+  min-inline-size: calc(var(--space-96px) * 2);
+}
+
+.jal-slider > :is(label, [data-slot="label"]) {
+  min-width: 0;
+  font-weight: var(--weight-medium);
+}
+
+.jal-slider > output {
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.jal-slider[aria-busy="true"] > output {
+  color: var(--color-ink-muted);
+}
+
+.jal-slider-track {
+  position: relative;
+  grid-column: 1 / -1;
+  block-size: var(--control-h);
+  min-width: 0;
+}
+
+.jal-slider-track::before,
+.jal-slider-track::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  margin-block: auto;
+  block-size: var(--space-6px);
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+
+.jal-slider-track::before {
+  inset-inline: 0;
+  background-color: var(--_inactive);
+  border: var(--border-weight) solid var(--color-border-control);
+}
+
+.jal-slider-track::after {
+  inset-inline-start: 0;
+  inline-size: max(0px, calc(var(--space-20px) / 2 + (100% - var(--space-20px)) * var(--jal-slider-end, -1)));
+  background-color: var(--_active);
+}
+
+.jal-slider-track[data-range]::after {
+  inset-inline-start: calc(var(--space-20px) / 2 + (100% - var(--space-20px)) * var(--jal-slider-start, 0));
+  inline-size: max(0px, calc((100% - var(--space-20px)) * (var(--jal-slider-end, 0) - var(--jal-slider-start, 0))));
+}
+
+.jal-slider-track > input[type="range"] {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: var(--control-h);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-8);
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.jal-slider-track[data-range] > input[type="range"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.jal-slider-track[data-range] > input[type="range"] + input[type="range"] {
+  z-index: 2;
+}
+
+.jal-slider-track > input[type="range"]:disabled {
+  background: transparent;
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .jal-slider-track > input[type="range"]:enabled:hover {
+    background-color: transparent;
+  }
+
+  .jal-slider-track > input[type="range"]:enabled:hover::-webkit-slider-thumb {
+    background-color: color-mix(in oklab, var(--color-surface) 8%, var(--_handle));
+  }
+
+  .jal-slider-track > input[type="range"]:enabled:hover::-moz-range-thumb {
+    background-color: color-mix(in oklab, var(--color-surface) 8%, var(--_handle));
+  }
+}
+
+.jal-slider-track > input[type="range"]::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+
+.jal-slider-track > input[type="range"]::-moz-range-track {
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+
+.jal-slider-track > input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--space-20px);
+  height: var(--space-20px);
+  margin-top: calc((var(--control-h) - var(--space-20px)) / 2);
+  background-color: var(--_handle);
+  border: 0;
+  border-radius: var(--radius-pill);
+  pointer-events: auto;
+  transition: background-color var(--dur-100) var(--ease-standard);
+}
+
+.jal-slider-track > input[type="range"]::-moz-range-thumb {
+  width: var(--space-20px);
+  height: var(--space-20px);
+  background-color: var(--_handle);
+  border: 0;
+  border-radius: var(--radius-pill);
+  pointer-events: auto;
+  transition: background-color var(--dur-100) var(--ease-standard);
+}
+
+.jal-slider-track > input[type="range"]:enabled:active::-webkit-slider-thumb {
+  background-color: color-mix(in oklab, var(--color-surface) 12%, var(--_handle));
+}
+
+.jal-slider-track > input[type="range"]:enabled:active::-moz-range-thumb {
+  background-color: color-mix(in oklab, var(--color-surface) 12%, var(--_handle));
+}
+
+.jal-slider-track > input[type="range"]:disabled::-webkit-slider-thumb {
+  background-color: var(--state-disabled-content);
+}
+
+.jal-slider-track > input[type="range"]:disabled::-moz-range-thumb {
+  background-color: var(--state-disabled-content);
+}
+
+.jal-slider-track:has(> input:disabled)::before {
+  border-color: var(--color-border);
+}
+
+.jal-slider-track:has(> input:disabled)::after {
+  background-color: var(--state-disabled-content);
+}
+
+.jal-slider-track:has(> input[aria-invalid="true"])::before {
+  border-color: var(--color-danger);
+}
+
+/* Discrete scale: min and max as text at the track ends, never dots. */
+.jal-slider-scale {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.jal-slider-scale > :last-child {
+  grid-column: 3;
+}
+
+/* Progress: .jal-progress wraps a native <progress>. Linear: 4px pill
+   track, one ink indicator. Indeterminate (no value attribute) paints a
+   40% segment on the wrapper's ::after that travels by transform, linear
+   timing (a constant loop). Circular: data-shape="circular" (24px, or
+   48px with data-size="lg"); indeterminate is a quarter arc turning once
+   per --loop-spin, determinate is an aria-hidden .jal-progress-ring SVG
+   (pathLength="100", value in --jal-progress-value) with the native
+   element kept for assistive tech. */
+.jal-progress {
+  --_track: var(--jal-progress-track-color, var(--color-layer-2));
+  --_indicator: var(--jal-progress-indicator-color, var(--color-ink));
+  position: relative;
+  display: block;
+  inline-size: 100%;
+  block-size: var(--space-4px);
+  overflow: hidden;
+  background-color: var(--_track);
+  border-radius: var(--radius-pill);
+}
+
+.jal-progress[data-state="error"] {
+  --_indicator: var(--color-danger);
+}
+
+.jal-progress[data-state="paused"] {
+  --_indicator: var(--state-disabled-content);
+}
+
+.jal-progress > progress {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  color: var(--_indicator);
+  background-color: transparent;
+  border: 0;
+  border-radius: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.jal-progress > progress::-webkit-progress-bar {
+  background-color: transparent;
+  border-radius: inherit;
+}
+
+.jal-progress > progress::-webkit-progress-value {
+  background-color: var(--_indicator);
+  border-radius: inherit;
+}
+
+.jal-progress > progress::-moz-progress-bar {
+  background-color: var(--_indicator);
+  border-radius: inherit;
+}
+
+.jal-progress > progress:indeterminate::-moz-progress-bar {
+  background-color: transparent;
+}
+
+.jal-progress:has(> progress:indeterminate)::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 40%;
+  background-color: var(--_indicator);
+  border-radius: inherit;
+  animation: jal-progress-travel calc(var(--loop-spin) * 2) linear infinite;
+}
+
+[dir="rtl"] .jal-progress:has(> progress:indeterminate)::after {
+  animation-name: jal-progress-travel-rtl;
+}
+
+@keyframes jal-progress-travel {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes jal-progress-travel-rtl {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-250%);
+  }
+}
+
+.jal-progress[data-shape="circular"] {
+  display: inline-block;
+  flex: 0 0 auto;
+  inline-size: var(--space-24px);
+  block-size: var(--space-24px);
+  overflow: visible;
+  vertical-align: middle;
+  background-color: transparent;
+}
+
+.jal-progress[data-shape="circular"][data-size="lg"] {
+  inline-size: var(--space-48px);
+  block-size: var(--space-48px);
+}
+
+/* Visually hidden, still announced. */
+.jal-progress[data-shape="circular"] > progress {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.jal-progress[data-shape="circular"]:has(> progress:indeterminate)::after {
+  inset: 0;
+  inline-size: auto;
+  background-color: transparent;
+  border: var(--space-2px) solid var(--_track);
+  border-top-color: var(--_indicator);
+  border-radius: var(--radius-pill);
+  animation: jal-progress-spin var(--loop-spin) linear infinite;
+}
+
+.jal-progress[data-shape="circular"][data-size="lg"]:has(> progress:indeterminate)::after {
+  border-width: var(--space-4px);
+}
+
+@keyframes jal-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.jal-progress-ring {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  transform: rotate(-90deg);
+}
+
+.jal-progress-ring circle {
+  fill: none;
+  stroke-width: var(--space-4px);
+}
+
+.jal-progress-ring [data-part="track"] {
+  stroke: var(--_track);
+}
+
+.jal-progress-ring [data-part="indicator"] {
+  stroke: var(--_indicator);
+  stroke-dasharray: var(--jal-progress-value, 0) 100;
+}
+
+/* Icon button: 44 x 44 pill, 20px icon. data-variant = outlined, tonal,
+   filled; none is standard. aria-pressed makes it a toggle; optional
+   [data-icon="off"] and [data-icon="on"] children swap with the state. */
+.jal-icon-btn {
+  --_container: var(--jal-icon-btn-container-color, transparent);
+  --_content: var(--jal-icon-btn-icon-color, var(--color-ink-muted));
+  --_outline: var(--jal-icon-btn-outline-color, transparent);
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--control-h);
+  min-inline-size: var(--control-h);
+  block-size: var(--control-h);
+  padding: 0;
+  color: var(--_content);
+  background: var(--_container);
+  border: var(--border-weight) solid var(--_outline);
+  border-radius: var(--radius-pill);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.jal-icon-btn > svg {
+  flex: 0 0 auto;
+  inline-size: var(--space-20px);
+  block-size: var(--space-20px);
+}
+
+.jal-icon-btn[data-variant="outlined"] {
+  --_container: var(--jal-icon-btn-container-color, var(--color-surface));
+  --_content: var(--jal-icon-btn-icon-color, var(--color-ink));
+  --_outline: var(--jal-icon-btn-outline-color, var(--color-border-control));
+}
+
+.jal-icon-btn[data-variant="tonal"] {
+  --_container: var(--jal-icon-btn-container-color, var(--color-layer-2));
+  --_content: var(--jal-icon-btn-icon-color, var(--color-ink));
+}
+
+.jal-icon-btn[data-variant="filled"] {
+  --_container: var(--jal-icon-btn-container-color, var(--color-ink));
+  --_content: var(--jal-icon-btn-icon-color, var(--color-surface));
+}
+
+/* Toggle states: the on state changes fill and icon, never color alone. */
+.jal-icon-btn[aria-pressed="true"] {
+  --_container: var(--jal-icon-btn-selected-container-color, var(--color-layer-2));
+  --_content: var(--color-ink);
+}
+
+.jal-icon-btn[data-variant="outlined"][aria-pressed="true"] {
+  --_container: var(--jal-icon-btn-selected-container-color, var(--color-ink));
+  --_content: var(--color-surface);
+  --_outline: var(--color-ink);
+}
+
+.jal-icon-btn[data-variant="tonal"][aria-pressed="false"] {
+  --_container: var(--color-layer-1);
+  --_content: var(--color-ink-muted);
+}
+
+.jal-icon-btn[data-variant="filled"][aria-pressed="false"] {
+  --_container: var(--color-layer-2);
+  --_content: var(--color-ink);
+}
+
+.jal-icon-btn[data-variant="filled"][aria-pressed="true"] {
+  --_container: var(--jal-icon-btn-selected-container-color, var(--color-ink));
+  --_content: var(--color-surface);
+}
+
+.jal-icon-btn > [data-icon="on"],
+.jal-icon-btn[aria-pressed="true"] > [data-icon="off"] {
+  display: none;
+}
+
+.jal-icon-btn[aria-pressed="true"] > [data-icon="on"] {
+  display: block;
+}
+
+@media (hover: hover) {
+  .jal-icon-btn:enabled:not([aria-disabled="true"]):hover,
+  a.jal-icon-btn:not([aria-disabled="true"]):hover {
+    background: color-mix(in oklab, var(--_content) 8%, var(--_container));
+    border-color: var(--_outline);
+  }
+}
+
+.jal-icon-btn:enabled:not([aria-disabled="true"]):active,
+a.jal-icon-btn:not([aria-disabled="true"]):active {
+  background: color-mix(in oklab, var(--_content) 12%, var(--_container));
+  border-color: var(--_outline);
+  transform: scale(0.98);
+}
+
+.jal-icon-btn:disabled,
+.jal-icon-btn[aria-disabled="true"] {
+  color: var(--state-disabled-content);
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+  transform: none;
+}
+
+.jal-icon-btn:is([data-variant="filled"], [data-variant="tonal"]):is(:disabled, [aria-disabled="true"]) {
+  background: var(--state-disabled-container);
+}
+
+.jal-icon-btn[data-variant="outlined"]:is(:disabled, [aria-disabled="true"]) {
+  border-color: var(--color-border);
+}
+
+.jal-icon-btn:is([aria-busy="true"], [data-state="loading"])::after {
+  border-color: var(--_content);
+  border-top-color: transparent;
+}
+
+/* Segmented button: a group of 44px segments, each with a full 1px
+   control border; neighbors overlap by one border so the group reads as
+   one outlined bar, radius on the outer ends only. No JS: <label> segments
+   wrapping a hidden radio (single) or checkbox (multi), the visual lives on
+   the <span> after the input. With app state: <button aria-pressed>. */
+.jal-segmented {
+  --_container: var(--jal-segmented-container-color, var(--color-surface));
+  --_selected: var(--jal-segmented-selected-container-color, var(--color-layer-2));
+  --_outline: var(--jal-segmented-outline-color, var(--color-border-control));
+  --_label: var(--jal-segmented-label-color, var(--color-ink));
+  display: flex;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.jal-segmented > legend {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.jal-segmented > :is(label, button) {
+  position: relative;
+  display: inline-flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8px);
+  height: var(--control-h);
+  margin: 0;
+  padding: 0 var(--space-16px);
+  font: inherit;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  color: var(--_label);
+  background: var(--_container);
+  border: var(--border-weight) solid var(--_outline);
+  border-radius: 0;
+  cursor: pointer;
+  transform: none;
+}
+
+.jal-segmented > :is(label, button) + :is(label, button) {
+  margin-inline-start: calc(var(--border-weight) * -1);
+}
+
+.jal-segmented > :is(label, button):first-of-type {
+  border-start-start-radius: var(--radius-8);
+  border-end-start-radius: var(--radius-8);
+}
+
+.jal-segmented > :is(label, button):last-of-type {
+  border-start-end-radius: var(--radius-8);
+  border-end-end-radius: var(--radius-8);
+}
+
+.jal-segmented > label {
+  padding: 0;
+  overflow: hidden;
+}
+
+.jal-segmented > label > input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.jal-segmented > label > span {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8px);
+  min-width: 0;
+  block-size: 100%;
+  padding: 0 var(--space-16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: inherit;
+}
+
+.jal-segmented > label > input:checked + span,
+.jal-segmented > button[aria-pressed="true"] {
+  background: var(--_selected);
+  font-weight: var(--weight-semibold);
+}
+
+.jal-segmented [data-icon="check"] {
+  display: none;
+  flex: 0 0 auto;
+  inline-size: var(--space-20px);
+  block-size: var(--space-20px);
+}
+
+.jal-segmented > label > input:checked + span > [data-icon="check"],
+.jal-segmented > button[aria-pressed="true"] > [data-icon="check"] {
+  display: inline-block;
+}
+
+.jal-segmented > label > input:focus-visible + span {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--color-focus);
+  outline-offset: calc(var(--space-2px) * -1);
+}
+
+.jal-segmented > button:focus-visible {
+  z-index: 1;
+}
+
+@media (hover: hover) {
+  .jal-segmented > label:hover > input:enabled:not(:checked) + span,
+  .jal-segmented > button:enabled:hover {
+    background: color-mix(in oklab, var(--_label) 8%, var(--_container));
+    border-color: var(--_outline);
+  }
+
+  .jal-segmented > button[aria-pressed="true"]:enabled:hover {
+    background: var(--_selected);
+  }
+}
+
+.jal-segmented > label:active > input:enabled:not(:checked) + span,
+.jal-segmented > button:enabled:active {
+  background: color-mix(in oklab, var(--_label) 12%, var(--_container));
+  border-color: var(--_outline);
+  transform: none;
+}
+
+.jal-segmented > button[aria-pressed="true"]:enabled:active {
+  background: var(--_selected);
+}
+
+.jal-segmented > label > input:disabled + span,
+.jal-segmented > button:disabled {
+  color: var(--state-disabled-content);
+  cursor: default;
+}
+
+.jal-segmented > button:disabled {
+  background: var(--_container);
+  border-color: var(--color-border);
+}
+
+.jal-segmented > label:has(> input:disabled) {
+  border-color: var(--color-border);
+  cursor: default;
+}
+
+.jal-segmented[data-state="error"] > :is(label, button) {
+  border-color: var(--color-danger);
+}
+
+.jal-segmented[aria-busy="true"] {
+  pointer-events: none;
+}
+
+@media (min-width: 640px) {
+  .jal-segmented {
+    display: inline-flex;
+    inline-size: auto;
+  }
+}
+
+/* Menu: a popover (or any container) with role="menu", items are
+   role="menuitem", "menuitemcheckbox", or "menuitemradio" (buttons or
+   links). Mobile-first: below 640px a popover menu is a bottom sheet;
+   from 640px it is a floating surface, anchored to its trigger when the
+   browser supports anchor positioning and the menu opts in with
+   data-anchor (trigger sets anchor-name, menu sets position-anchor),
+   otherwise centered. Opens with opacity and a 0.98 scale, closes
+   instantly. Native popover gives light dismiss and Escape without JS. */
+.jal-menu {
+  --_container: var(--jal-menu-container-color, var(--color-surface));
+  --_outline: var(--jal-menu-outline-color, var(--color-border-strong));
+  --_selected: var(--jal-menu-item-selected-container-color, var(--color-layer-2));
+  box-sizing: border-box;
+  min-inline-size: calc(var(--space-96px) + var(--space-16px));
+  max-inline-size: min(calc(100vw - var(--space-32px)), calc(var(--space-96px) * 3));
+  max-block-size: min(calc(100dvh - var(--space-32px)), calc(var(--control-h) * 8 + var(--space-16px)));
+  margin: 0;
+  padding: var(--space-8px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  color: var(--color-ink);
+  background-color: var(--_container);
+  border: var(--border-weight) solid var(--_outline);
+  border-radius: var(--radius-16);
+}
+
+.jal-menu[popover] {
+  inset: auto 0 0 0;
+  inline-size: 100%;
+  max-inline-size: none;
+  max-block-size: calc(100dvh - var(--space-64px));
+  padding-block-end: calc(var(--space-8px) + env(safe-area-inset-bottom));
+  border-radius: var(--radius-28) var(--radius-28) 0 0;
+  transform-origin: bottom center;
+}
+
+.jal-menu:popover-open {
+  animation: jal-menu-in var(--dur-200) var(--ease-standard);
+}
+
+@keyframes jal-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@media (min-width: 640px) {
+  .jal-menu[popover] {
+    inset: 0;
+    margin: auto;
+    inline-size: fit-content;
+    max-inline-size: min(calc(100vw - var(--space-32px)), calc(var(--space-96px) * 3));
+    max-block-size: min(calc(100dvh - var(--space-32px)), calc(var(--control-h) * 8 + var(--space-16px)));
+    padding-block-end: var(--space-8px);
+    border-radius: var(--radius-16);
+    transform-origin: top left;
+  }
+
+  [dir="rtl"] .jal-menu[popover] {
+    transform-origin: top right;
+  }
+}
+
+@supports (position-area: block-end) {
+  @media (min-width: 640px) {
+    .jal-menu[popover][data-anchor] {
+      inset: auto;
+      margin: var(--space-4px) 0;
+      position-area: block-end span-inline-end;
+      position-try-fallbacks: flip-block, flip-inline;
+    }
+  }
+}
+
+.jal-menu > li {
+  margin: 0;
+  padding: 0;
+}
+
+.jal-menu [role^="menuitem"] {
+  --_item: transparent;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-12px);
+  width: 100%;
+  height: auto;
+  min-height: var(--control-h);
+  margin: 0;
+  padding: var(--space-8px) var(--space-12px);
+  font: inherit;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-regular);
+  text-align: start;
+  text-decoration: none;
+  white-space: normal;
+  color: var(--color-ink);
+  background-color: var(--_item);
+  border: 0;
+  border-radius: var(--radius-8);
+  cursor: pointer;
+  transform: none;
+  transition: none;
+}
+
+.jal-menu [role^="menuitem"] > svg,
+.jal-menu [data-slot="check"] {
+  flex: 0 0 auto;
+  inline-size: var(--space-20px);
+  block-size: var(--space-20px);
+}
+
+.jal-menu [data-slot="check"] {
+  visibility: hidden;
+}
+
+.jal-menu [role^="menuitem"][aria-checked="true"] > [data-slot="check"] {
+  visibility: visible;
+}
+
+.jal-menu [data-slot="trailing"] {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-inline-start: auto;
+  padding-inline-start: var(--space-12px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+[dir="rtl"] .jal-menu [aria-haspopup="menu"] > [data-slot="trailing"] > svg {
+  transform: scaleX(-1);
+}
+
+.jal-menu [role^="menuitem"]:is([aria-checked="true"], [aria-expanded="true"]) {
+  --_item: var(--_selected);
+  font-weight: var(--weight-medium);
+}
+
+@media (hover: hover) {
+  .jal-menu [role^="menuitem"]:not(:disabled):not([aria-disabled="true"]):hover {
+    background-color: color-mix(in oklab, var(--color-ink) 8%, var(--_item));
+  }
+}
+
+.jal-menu [role^="menuitem"]:not(:disabled):not([aria-disabled="true"]):active {
+  background-color: color-mix(in oklab, var(--color-ink) 12%, var(--_item));
+  transform: none;
+}
+
+.jal-menu [role^="menuitem"]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: calc(var(--space-2px) * -1);
+}
+
+.jal-menu [role^="menuitem"]:is(:disabled, [aria-disabled="true"]) {
+  color: var(--state-disabled-content);
+  background-color: transparent;
+  cursor: default;
+}
+
+.jal-menu [role^="menuitem"][data-tone="danger"]:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--color-danger);
+}
+
+.jal-menu :is([role="separator"], hr) {
+  display: block;
+  block-size: var(--border-weight);
+  margin: var(--space-4px) 0;
+  padding: 0;
+  background-color: var(--color-border);
+  border: 0;
+}
+
+.jal-menu [data-slot="status"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12px);
+  min-height: var(--control-h);
+  padding-inline: var(--space-12px);
+  color: var(--color-ink-muted);
+}
+
+/* Forced colors: native checkbox and radio rendering, system colors on
+   the switch, slider, and progress parts (boundaries are real borders and
+   focus is an outline, so both survive). */
+@media (forced-colors: active) {
+  .jal-checkbox > input[type="checkbox"],
+  .jal-radio > input[type="radio"] {
+    -webkit-appearance: auto;
+    appearance: auto;
+    background-image: none;
+  }
+
+  .jal-switch-track,
+  .jal-switch-track::after,
+  .jal-slider-track::before,
+  .jal-slider-track::after,
+  .jal-progress,
+  .jal-progress::after {
+    forced-color-adjust: none;
+  }
+
+  .jal-switch-track {
+    background-color: Canvas;
+    border-color: ButtonText;
+  }
+
+  .jal-switch-track::after {
+    background-color: ButtonText;
+  }
+
+  .jal-switch > input:checked ~ .jal-switch-track {
+    background-color: Highlight;
+    border-color: Highlight;
+  }
+
+  .jal-switch > input:checked ~ .jal-switch-track::after {
+    background-color: HighlightText;
+  }
+
+  .jal-switch > input:disabled ~ .jal-switch-track {
+    border-color: GrayText;
+  }
+
+  .jal-switch > input:disabled ~ .jal-switch-track::after {
+    background-color: GrayText;
+  }
+
+  .jal-switch > input:focus-visible ~ .jal-switch-track {
+    outline-color: CanvasText;
+  }
+
+  .jal-slider-track::before {
+    background-color: Canvas;
+    border-color: ButtonText;
+  }
+
+  .jal-slider-track::after {
+    background-color: Highlight;
+  }
+
+  .jal-progress {
+    background-color: Canvas;
+    border: var(--border-weight) solid CanvasText;
+  }
+
+  .jal-progress > progress::-webkit-progress-value {
+    background-color: Highlight;
+  }
+
+  .jal-progress::after {
+    background-color: Highlight;
+  }
+}
+
+/* Reduced motion for this block: loops stop and read as a static state
+   (the visible busy text carries the meaning), no press scale, the menu
+   appears without its entrance. */
+@media (prefers-reduced-motion: reduce) {
+  .jal-progress:has(> progress:indeterminate)::after {
+    animation: none;
+    inline-size: 100%;
+    opacity: 0.38;
+  }
+
+  .jal-progress[data-shape="circular"]:has(> progress:indeterminate)::after {
+    animation: none;
+    inline-size: auto;
+    opacity: 1;
+  }
+
+  .jal-menu:popover-open {
+    animation: none;
+  }
+
+  .jal-icon-btn:enabled:not([aria-disabled="true"]):active,
+  a.jal-icon-btn:not([aria-disabled="true"]):active {
+    transform: none;
+  }
+
+  .jal-switch:active > input:enabled:not(:checked) ~ .jal-switch-track::after {
+    transform: translateX(0) scale(0.667);
+  }
+
+  .jal-switch:active > input:enabled:checked ~ .jal-switch-track::after {
+    transform: translateX(var(--space-20px)) scale(1);
+  }
+
+  [dir="rtl"] .jal-switch:active > input:enabled:checked ~ .jal-switch-track::after {
+    transform: translateX(calc(var(--space-20px) * -1)) scale(1);
+  }
+}
+/* ===================== end Material Web port ======================== */
+
+/* Honor reduced motion everywhere: collapse to a near-instant change,
+   never a slide or scale, transform-based motion included. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  button:enabled:active,
+  .btn:active {
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * JAL frame core: composition stage and Player controls
+ * (packages/ui/src/frames). Source of truth is frames/player.css. ui.css
+ * uses no @import, so this block is copied verbatim to the end of ui.css;
+ * frames/player-css.test.ts fails if the two drift.
+ *
+ * Controls sit below the stage, never over it (no overlap). Every target
+ * is 44px (--control-h). Control boundaries use --color-border-control.
+ * No gradient, no shadow, no emoji.
+ * ------------------------------------------------------------------- */
+.frames-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8px);
+  width: 100%;
+  min-width: 0;
+}
+
+.frames-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: var(--border-weight) solid var(--color-border);
+  border-radius: var(--radius-12);
+}
+
+.frames-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+/* Every value inside a composition derives from the frame. CSS
+   transitions and keyframe animations run on their own clock and would
+   break scrubbing and the poster frame, so the stage switches them off. */
+.frames-stage *,
+.frames-stage *::before,
+.frames-stage *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+.frames-fill {
+  position: absolute;
+  inset: 0;
+}
+
+.frames-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+  min-height: var(--control-h);
+  min-width: 0;
+}
+
+.frames-toggle {
+  flex: 0 0 auto;
+  min-width: calc(var(--control-h) * 2);
+  height: var(--control-h);
+  border-color: var(--color-border-control);
+}
+
+.frames-toggle[data-icon="true"] {
+  min-width: var(--control-h);
+  width: var(--control-h);
+  padding: 0;
+}
+
+.frames-scrub {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: var(--control-h);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .frames-scrub:enabled:hover {
+    background-color: transparent;
+  }
+}
+
+.frames-scrub::-webkit-slider-runnable-track {
+  height: var(--space-4px);
+  background: var(--color-layer-2);
+  border: var(--border-weight) solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+}
+
+.frames-scrub::-moz-range-track {
+  height: var(--space-4px);
+  background: var(--color-layer-2);
+  border: var(--border-weight) solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+}
+
+.frames-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--space-20px);
+  height: var(--space-20px);
+  margin-top: calc((var(--space-4px) - var(--space-20px)) / 2 - var(--border-weight));
+  background: var(--color-ink);
+  border: 0;
+  border-radius: var(--radius-pill);
+}
+
+.frames-scrub::-moz-range-thumb {
+  width: var(--space-20px);
+  height: var(--space-20px);
+  background: var(--color-ink);
+  border: 0;
+  border-radius: var(--radius-pill);
+}
+
+.frames-time {
+  flex: 0 0 auto;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
