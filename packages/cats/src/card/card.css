@@ -1,0 +1,177 @@
+/*
+ * CatCard: one agent at a glance (card.tsx). JAL Core tokens only, flat
+ * surfaces and one hairline, selection as a tonal fill with an ink hairline
+ * on all four sides. Imported by cats.css.
+ */
+
+/* ---------------------------------------------------------------------
+ * CatCard: the cat on its cushion, who it is, what it does, energy used
+ * ------------------------------------------------------------------- */
+.cat-card {
+  container-type: inline-size;
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  block-size: auto;
+  min-block-size: var(--control-h);
+  margin: 0;
+  padding: var(--space-16px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-12);
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-regular);
+  white-space: normal;
+  text-align: start;
+}
+.cat-card[data-selected] {
+  border-color: var(--color-ink);
+  background-color: var(--color-layer-1);
+}
+/* Selectors out-rank the base button treatment in ui.css. */
+button.cat-card {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur-100) var(--ease-standard),
+    transform var(--dur-100) var(--ease-standard);
+}
+@media (hover: hover) {
+  button.cat-card:enabled:hover {
+    border-color: var(--color-border);
+    background-color: var(--state-hover);
+  }
+  button.cat-card[data-selected]:enabled:hover {
+    border-color: var(--color-ink);
+    background-color: color-mix(in oklab, var(--color-ink) 8%, var(--color-layer-1));
+  }
+}
+button.cat-card:enabled:active {
+  border-color: var(--color-border);
+  background-color: var(--state-pressed);
+  transform: scale(0.98);
+}
+button.cat-card[data-selected]:enabled:active {
+  border-color: var(--color-ink);
+  background-color: color-mix(in oklab, var(--color-ink) 12%, var(--color-layer-1));
+}
+.cat-card:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.cat-card-layout {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-16px);
+  min-inline-size: 0;
+}
+@container (min-width: 280px) {
+  .cat-card-layout {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+.cat-card-media {
+  display: block;
+  justify-self: start;
+  align-self: start;
+  line-height: 0;
+}
+.cat-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8px);
+  min-inline-size: 0;
+}
+.cat-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-8px);
+  min-inline-size: 0;
+}
+.cat-card-name {
+  min-inline-size: 0;
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-title);
+  overflow-wrap: anywhere;
+}
+.cat-card-role {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.cat-card-status {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-8px);
+  min-inline-size: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+}
+.cat-card-state {
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+.cat-card-detail {
+  min-inline-size: 0;
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+.cat-card-task {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.cat-card-task[data-empty] {
+  color: var(--color-ink-muted);
+}
+.cat-card-meter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-8px);
+  row-gap: var(--space-4px);
+  margin-top: auto;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.cat-card-meter-value {
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+.cat-card-bar {
+  grid-column: 1 / -1;
+  display: block;
+  block-size: var(--space-6px);
+  overflow: hidden;
+  background-color: var(--color-layer-2);
+}
+.cat-card-fill {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  background-color: var(--color-ink);
+  transform-origin: 0 50%;
+  transform: scaleX(var(--cat-energy, 0));
+  transition: transform var(--dur-300) var(--ease-standard);
+}

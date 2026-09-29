@@ -1,1 +1,1281 @@
-/* placeholder, replaced by the cats workstream */
+/*
+ * @mengai/cats: the living cat character and its card.
+ *
+ * One flat vector rig (rig.tsx) on a 160 x 160 viewBox, drawn with flat
+ * fills and one warm ink line (JEV ui.component_recipe: ink_outline).
+ * Every loop is a CSS keyframe on transform or opacity, played only under
+ * .cat--live (never under reduced motion or `still`), paused offscreen
+ * (data-offscreen), on the one --ease-standard curve for anything that
+ * starts and stops, and linear only for constant loops. Loop tempo and
+ * travel follow JEV motion.intensity: lively (a 1600ms beat, 3 to 5 units).
+ *
+ * UI chrome uses JAL Core tokens only. The character art has its own flat
+ * palette below (coats and props): art, never UI chrome, flat fills only,
+ * never the purple family.
+ */
+
+/* CatCard styles live beside it (card/card.css). */
+@import "./card/card.css";
+
+/* ---------------------------------------------------------------------
+ * Art tokens
+ * ------------------------------------------------------------------- */
+.cat {
+  /* line and face */
+  --cat-line: #3a3230;
+  --cat-eye: #c9a646;
+  --cat-inner: #e8b0a4;
+  --cat-nose: #d98b86;
+  --cat-mouth: #8a3d3a;
+  --cat-cushion: #eadfcf;
+  --cat-print: var(--color-ink-subtle);
+
+  /* coat, ginger until data-coat says otherwise */
+  --cat-fur: #e0914f;
+  --cat-fur-2: var(--cat-fur);
+  --cat-tail: var(--cat-fur-2);
+  --cat-paw: var(--cat-fur);
+  --cat-light: var(--cat-fur);
+  --cat-mark: var(--cat-fur);
+  --cat-mark-2: var(--cat-mark);
+  --cat-lid-fill: var(--cat-fur);
+
+  /* props */
+  --cat-paper: var(--color-surface);
+  --cat-steel: #c9cdd1;
+  --cat-steel-dark: #9ea4aa;
+  --cat-screen: #262a2e;
+  --cat-term: #d5dadf;
+  --cat-term-accent: #7fbf8e;
+  --cat-soft: #b9bdc1;
+  --cat-mid: var(--color-ink-subtle);
+  --cat-wood: #c89f73;
+  --cat-brass: #c9a55a;
+  --cat-lens: #e3edf2;
+  --cat-shield: #7f9db6;
+  --cat-check: #3f8f5a;
+  --cat-paint-1: #3f7cac;
+  --cat-paint-2: #e07a5f;
+  --cat-paint-3: #5f9e6e;
+
+  /* motion: one beat, scaled by mood; a seeded phase per cat */
+  --cat-beat: var(--loop-pulse);
+  --cat-tempo: 1;
+  --cat-phase: 0ms;
+  --cat-quirk: 1800ms;
+
+  /* expression inputs (numbers), set by mood, status and pose */
+  --cat-lid-mood: 0;
+  --cat-lid-pose: 0;
+  --cat-lid-tilt: 0;
+  --cat-alert: 0;
+  --cat-ear-mood: 0;
+  --cat-ear-status: 0;
+}
+
+.cat[data-coat="ginger"] {
+  --cat-fur: #e0914f;
+  --cat-paw: #f4dcc2;
+  --cat-light: #f4dcc2;
+  --cat-mark: #b9672f;
+  --cat-eye: #9dbb54;
+}
+.cat[data-coat="cream"] {
+  --cat-fur: #efdcbc;
+  --cat-paw: #fbf3e6;
+  --cat-light: #fbf3e6;
+  --cat-mark: #d6b98c;
+  --cat-eye: #6fa0c0;
+}
+.cat[data-coat="gray"] {
+  --cat-fur: #8f959c;
+  --cat-paw: #dfe2e5;
+  --cat-light: #dfe2e5;
+  --cat-mark: #6f757c;
+  --cat-eye: #d4b04a;
+}
+.cat[data-coat="black"] {
+  --cat-fur: #2d2b2b;
+  --cat-eye: #d8c24c;
+  --cat-inner: #7a5e5a;
+  --cat-nose: #6e5654;
+}
+.cat[data-coat="tuxedo"] {
+  --cat-fur: #2d2b2b;
+  --cat-paw: #f6f3ee;
+  --cat-light: #f6f3ee;
+  --cat-eye: #9fc05a;
+  --cat-inner: #8a6a66;
+  --cat-nose: #e0a3a0;
+}
+.cat[data-coat="calico"] {
+  --cat-fur: #f7f2ea;
+  --cat-mark: #e08a4c;
+  --cat-mark-2: #3d3634;
+  --cat-tail: var(--cat-mark);
+  --cat-ear-l: var(--cat-mark-2);
+  --cat-ear-r: var(--cat-mark);
+  --cat-eye: #c9a646;
+}
+.cat[data-coat="tabby"] {
+  --cat-fur: #a8876a;
+  --cat-paw: #eadfd2;
+  --cat-light: #eadfd2;
+  --cat-mark: #76593f;
+  --cat-eye: #a9c05e;
+}
+.cat[data-coat="siamese"] {
+  --cat-fur: #f1e6d4;
+  --cat-fur-2: #6b5446;
+  --cat-paw: #6b5446;
+  --cat-light: #f8f1e6;
+  --cat-lid-fill: var(--cat-fur-2);
+  --cat-eye: #5f9fcf;
+  --cat-inner: #9a7a6a;
+}
+
+/* Markings per coat. */
+.cat-stripes,
+.cat-patches,
+.cat-mask,
+.cat-muzzle,
+.cat-chest {
+  display: none;
+}
+.cat:is([data-coat="ginger"], [data-coat="cream"], [data-coat="gray"], [data-coat="tabby"]) .cat-stripes,
+.cat[data-coat="calico"] .cat-patches,
+.cat[data-coat="siamese"] .cat-mask,
+.cat:is([data-coat="tuxedo"], [data-coat="ginger"], [data-coat="gray"], [data-coat="tabby"]) .cat-muzzle,
+.cat:is([data-coat="ginger"], [data-coat="cream"], [data-coat="gray"], [data-coat="tuxedo"], [data-coat="tabby"], [data-coat="siamese"]) .cat-chest {
+  display: inline;
+}
+
+/* ---------------------------------------------------------------------
+ * The box: a square stage of the requested size, nothing outside it
+ * ------------------------------------------------------------------- */
+.cat {
+  --cat-size: var(--space-96px);
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4px);
+  inline-size: var(--cat-size);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  vertical-align: top;
+}
+.cat[data-size="48"] {
+  --cat-size: var(--space-48px);
+}
+.cat[data-size="64"] {
+  --cat-size: var(--space-64px);
+}
+.cat[data-size="96"] {
+  --cat-size: var(--space-96px);
+}
+.cat[data-size="160"] {
+  --cat-size: calc(var(--space-80px) * 2);
+}
+
+.cat-stage {
+  position: relative;
+  display: block;
+  flex: none;
+  inline-size: var(--cat-size);
+  block-size: var(--cat-size);
+}
+
+.cat-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cat-caption {
+  display: block;
+  max-inline-size: 100%;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+/* The cat as its own hit target (onSelect): eight states, no chrome at rest.
+   Selectors out-rank the base button treatment in ui.css. */
+button.cat {
+  block-size: auto;
+  min-block-size: var(--control-h);
+  max-inline-size: none;
+  justify-content: flex-start;
+  white-space: normal;
+  font-weight: inherit;
+  border-radius: var(--radius-16);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur-100) var(--ease-standard),
+    transform var(--dur-100) var(--ease-standard);
+}
+@media (hover: hover) {
+  button.cat:enabled:hover {
+    background-color: var(--state-hover);
+  }
+}
+button.cat:enabled:active {
+  background-color: var(--state-pressed);
+  transform: scale(0.98);
+}
+button.cat:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  --cat-alert: 1;
+}
+
+/* ---------------------------------------------------------------------
+ * Parts: flat fills and the one line
+ * ------------------------------------------------------------------- */
+.c-fur {
+  fill: var(--cat-fur);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.cat-ear-l {
+  --cat-ear-fill: var(--cat-ear-l, var(--cat-fur-2));
+}
+.cat-ear-r {
+  --cat-ear-fill: var(--cat-ear-r, var(--cat-fur-2));
+}
+.c-ear {
+  fill: var(--cat-ear-fill);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.c-inner {
+  fill: var(--cat-inner);
+}
+.c-light {
+  fill: var(--cat-light);
+}
+.c-mark {
+  fill: var(--cat-mark);
+}
+.c-mark2 {
+  fill: var(--cat-mark-2);
+}
+.c-point {
+  fill: var(--cat-fur-2);
+}
+.c-stripe {
+  fill: none;
+  stroke: var(--cat-mark);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.c-iris {
+  fill: var(--cat-eye);
+}
+.c-eye-line {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: 2;
+}
+.c-pupil {
+  fill: var(--cat-line);
+}
+.c-glint {
+  fill: var(--color-surface);
+}
+.c-lid {
+  fill: var(--cat-lid-fill);
+  stroke: var(--cat-line);
+  stroke-width: 2;
+}
+.c-eye-closed {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.c-nose {
+  fill: var(--cat-nose);
+  stroke: var(--cat-line);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.c-mouth {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.c-mouth-open {
+  fill: var(--cat-mouth);
+  stroke: var(--cat-line);
+  stroke-width: 2;
+}
+.c-paw {
+  fill: var(--cat-paw);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+}
+.c-tube-line {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.c-tube-tail {
+  fill: none;
+  stroke: var(--cat-tail);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.c-tube-fur {
+  fill: none;
+  stroke: var(--cat-fur);
+  stroke-linecap: round;
+}
+.c-cushion {
+  fill: var(--cat-cushion);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.cat-print {
+  fill: var(--cat-print);
+}
+
+/* Props. */
+.p-steel {
+  fill: var(--cat-steel);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+}
+.p-steel-dark {
+  fill: var(--cat-steel-dark);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.p-paper {
+  fill: var(--cat-paper);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.p-paper-flat {
+  fill: var(--cat-paper);
+}
+.p-screen {
+  fill: var(--cat-screen);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+}
+.p-term {
+  fill: var(--cat-term);
+}
+.p-term-accent {
+  fill: var(--cat-term-accent);
+}
+.p-soft {
+  fill: var(--cat-soft);
+}
+.p-mid {
+  fill: var(--cat-mid);
+}
+.p-soft-line {
+  fill: none;
+  stroke: var(--cat-soft);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.p-tube-wood,
+.p-tube-brass,
+.p-tube-steel {
+  fill: none;
+  stroke-linecap: round;
+}
+.p-tube-wood {
+  stroke: var(--cat-wood);
+}
+.p-tube-brass {
+  stroke: var(--cat-brass);
+}
+.p-tube-steel {
+  stroke: var(--cat-steel);
+}
+.p-tube-line {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-linecap: round;
+}
+.p-lens {
+  fill: var(--cat-lens);
+  stroke: var(--cat-line);
+  stroke-width: 3.5;
+}
+.p-leg {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.p-paint {
+  fill: none;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.p-paint-1 {
+  stroke: var(--cat-paint-1);
+}
+.p-paint-2 {
+  stroke: var(--cat-paint-2);
+}
+.p-paint-3 {
+  stroke: var(--cat-paint-3);
+}
+.p-shield {
+  fill: var(--cat-shield);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.p-check-light {
+  fill: none;
+  stroke: var(--cat-paper);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.p-ink-line {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.p-wood {
+  fill: var(--cat-wood);
+  stroke: var(--cat-line);
+  stroke-width: 3;
+}
+.p-box {
+  fill: var(--cat-paper);
+  stroke: var(--cat-mid);
+  stroke-width: 1.5;
+}
+.p-check {
+  fill: none;
+  stroke: var(--cat-check);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------------------------------------------------------------------
+ * Pivots (user units on the viewBox, or the part's own box)
+ * ------------------------------------------------------------------- */
+.cat-q-head,
+.cat-react-head,
+.cat-head-loop {
+  transform-origin: 80px 86px;
+}
+.cat-q-body,
+.cat-body-loop,
+.cat-walk {
+  transform-origin: 80px 147px;
+}
+.cat-tail-cel,
+.cat-tail-loop {
+  transform-origin: 100px 140px;
+}
+.cat-sit .cat-tail-tip {
+  transform-origin: 58px 145px;
+}
+.cat-lie .cat-tail-tip {
+  transform-origin: 90px 148px;
+}
+.cat-lie-body {
+  transform-origin: 86px 148px;
+}
+.cat-ear-l .cat-ear-state,
+.cat-ear-l .cat-ear-loop {
+  transform-origin: 62px 44px;
+}
+.cat-ear-r .cat-ear-state,
+.cat-ear-r .cat-ear-loop {
+  transform-origin: 98px 44px;
+}
+.cat-lid,
+.cat-lid-q,
+.cat-mouth-open {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+.cat-lid-tilt,
+.cat-check,
+.cat-print,
+.cat-q-card {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.cat-stroke {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+}
+.cat-q-paw-l,
+.cat-q-paw-r,
+.cat-paw-l-loop,
+.cat-paw-r-loop {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+/* ---------------------------------------------------------------------
+ * Expression: mood, status and pose inputs (static, both modes)
+ * ------------------------------------------------------------------- */
+.cat-lid {
+  --cat-lid: calc(max(var(--cat-lid-mood), var(--cat-lid-pose)) * (1 - var(--cat-alert) * 0.7));
+  transform: scaleY(var(--cat-lid));
+}
+.cat-lid-q {
+  transform: scaleY(0);
+}
+.cat-eye-l .cat-lid-tilt {
+  transform: rotate(calc(var(--cat-lid-tilt) * 1deg));
+}
+.cat-eye-r .cat-lid-tilt {
+  transform: rotate(calc(var(--cat-lid-tilt) * -1deg));
+}
+.cat-ear-state {
+  --cat-ear: calc(var(--cat-ear-mood) + var(--cat-ear-status) - var(--cat-alert) * 6);
+}
+.cat-ear-l .cat-ear-state {
+  transform: translateY(calc(max(var(--cat-ear), 0) * 0.1px)) rotate(calc(var(--cat-ear) * -1deg));
+}
+.cat-ear-r .cat-ear-state {
+  transform: translateY(calc(max(var(--cat-ear), 0) * 0.1px)) rotate(calc(var(--cat-ear) * 1deg));
+}
+.cat-look {
+  transform: translate(calc(var(--cat-look-x, 0) * 3px), calc(var(--cat-look-y, 0) * 2px));
+}
+.cat-pupil-look {
+  transform: translate(calc(var(--cat-look-x, 0) * 1.5px), calc(var(--cat-look-y, 0) * 1.5px));
+}
+.cat-mouth-open {
+  transform: scale(0);
+}
+.cat-mouth-s,
+.cat-mouth-f {
+  display: none;
+}
+.cat-q-card {
+  opacity: 0;
+}
+
+.cat[data-mood="focused"] {
+  --cat-tempo: 0.85;
+  --cat-lid-mood: 0.24;
+}
+.cat[data-mood="proud"] {
+  --cat-lid-mood: 0.34;
+}
+.cat[data-mood="proud"] .cat-mouth-n,
+.cat[data-mood="frustrated"] .cat-mouth-n {
+  display: none;
+}
+.cat[data-mood="proud"] .cat-mouth-s,
+.cat[data-mood="frustrated"] .cat-mouth-f {
+  display: inline;
+}
+.cat[data-mood="frustrated"] {
+  --cat-tempo: 0.8;
+  --cat-lid-mood: 0.34;
+  --cat-lid-tilt: 14;
+  --cat-ear-mood: 12;
+}
+.cat[data-mood="tired"] {
+  --cat-tempo: 1.35;
+  --cat-lid-mood: 0.58;
+  --cat-ear-mood: 10;
+}
+
+.cat[data-status="approval"] {
+  --cat-alert: 1;
+}
+.cat[data-status="error"] {
+  --cat-ear-status: 30;
+}
+.cat-card:focus-visible .cat {
+  --cat-alert: 1;
+}
+
+.cat-rig[data-pose="ask"] {
+  --cat-alert: 1;
+}
+.cat-rig[data-pose="ask"] .cat-mouth-open {
+  transform: scale(0.75);
+}
+.cat-rig[data-pose="wait"] {
+  --cat-lid-pose: 0.45;
+}
+.cat-rig[data-pose="research"] .cat-eye-r {
+  --cat-lid-pose: 1;
+}
+.cat-rig[data-pose="stopped"] {
+  --cat-ear-status: 14;
+}
+.cat-rig[data-pose="stopped"] .cat-lie {
+  opacity: 0.6;
+}
+/* Still frame for typing: one paw down on the keys. */
+.cat-rig[data-pose="code"] .cat-paw-l-loop {
+  transform: translateY(4px);
+}
+/* The stretch layer of celebrate only shows while it plays. */
+.cat-rig[data-pose="celebrate"] .cat-sit {
+  opacity: 0;
+}
+
+/* ---------------------------------------------------------------------
+ * Live loops (motion allowed, on screen)
+ * ------------------------------------------------------------------- */
+.cat--live .cat-look,
+.cat--live .cat-pupil-look,
+.cat--live .cat-ear-state {
+  transition: transform var(--dur-200) var(--ease-standard);
+}
+
+.cat--live .cat-body-loop {
+  animation: cat-breathe calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-tail-loop {
+  animation: cat-sway calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-lid {
+  animation: cat-blink calc(var(--cat-beat) * 3 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* code: typing, paws alternate on the keys */
+.cat--live .cat-rig[data-pose="code"] .cat-paw-l-loop,
+.cat--live .cat-rig[data-pose="code"] .cat-paw-r-loop {
+  animation: cat-type calc(var(--cat-beat) * 0.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="code"] .cat-paw-r-loop {
+  animation-delay: calc(var(--cat-phase) - var(--cat-beat) * 0.25 * var(--cat-tempo));
+}
+
+/* run: terminal lines scroll one line per step, the head nods with them */
+.cat--live .cat-rig[data-pose="run"] .cat-term-lines {
+  animation: cat-scroll calc(var(--cat-beat) * 2 * var(--cat-tempo)) steps(4, end) var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="run"] .cat-head-loop {
+  animation: cat-nod calc(var(--cat-beat) * 0.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* read: the head follows the lines down the page */
+.cat--live .cat-rig[data-pose="read"] .cat-head-loop {
+  animation: cat-read calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="read"] .cat-pupil-loop {
+  animation: cat-read-eyes calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* review: the magnifier sweeps the page, the eyes follow it */
+.cat--live .cat-rig[data-pose="review"] .cat-mag,
+.cat--live .cat-rig[data-pose="review"] .cat-paw-r-loop {
+  animation: cat-sweep calc(var(--cat-beat) * 1.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="review"] .cat-pupil-loop {
+  animation: cat-sweep-eyes calc(var(--cat-beat) * 1.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* design: brush strokes appear one by one */
+.cat--live .cat-rig[data-pose="design"] .cat-stroke-1 {
+  animation: cat-draw-1 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="design"] .cat-stroke-2 {
+  animation: cat-draw-2 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="design"] .cat-stroke-3 {
+  animation: cat-draw-3 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="design"] .cat-paw-r-loop {
+  animation: cat-paint calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* research: a slow spyglass scan */
+.cat--live .cat-rig[data-pose="research"] .cat-head-loop {
+  animation: cat-scan-turn calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* scan: a sentinel look around, ears turning with it */
+.cat--live .cat-rig[data-pose="scan"] .cat-head-loop {
+  animation: cat-look-around calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="scan"] .cat-pupil-loop {
+  animation: cat-look-around-eyes calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="scan"] .cat-ear-loop {
+  animation: cat-ear-turn calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* automate: the paw moves the mouse */
+.cat--live .cat-rig[data-pose="automate"] .cat-mouse,
+.cat--live .cat-rig[data-pose="automate"] .cat-paw-r-loop {
+  animation: cat-mouse-move calc(var(--cat-beat) * 1.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* plan: items get checked off, the paw works down the list */
+.cat--live .cat-rig[data-pose="plan"] .cat-check-1 {
+  animation: cat-check-1 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="plan"] .cat-check-2 {
+  animation: cat-check-2 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="plan"] .cat-check-3 {
+  animation: cat-check-3 calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="plan"] .cat-paw-r-loop {
+  animation: cat-plan-paw calc(var(--cat-beat) * 2.25 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* handoff: carrying the task card, a waddle in place */
+.cat--live .cat-rig[data-pose="handoff"] .cat-walk {
+  animation: cat-walk calc(var(--cat-beat) * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="handoff"] .cat-tail-loop {
+  animation-duration: calc(var(--cat-beat) * var(--cat-tempo));
+}
+
+/* ask: the paw raised and waving */
+.cat--live .cat-rig[data-pose="ask"] .cat-paw-r-loop {
+  animation: cat-wave calc(var(--cat-beat) * 0.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* wait: tail wrapped, the tip flicks now and then, slower breath */
+.cat--live .cat-rig[data-pose="wait"] .cat-tail-tip {
+  animation: cat-flick calc(var(--cat-beat) * 1.5 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+.cat--live .cat-rig[data-pose="wait"] .cat-body-loop {
+  animation-duration: calc(var(--cat-beat) * 2.5 * var(--cat-tempo));
+}
+
+/* think: a slow head tilt */
+.cat--live .cat-rig[data-pose="think"] .cat-head-loop {
+  animation: cat-ponder calc(var(--cat-beat) * 2 * var(--cat-tempo)) linear var(--cat-phase) infinite;
+}
+
+/* celebrate: stretch, then curl up content */
+.cat--live .cat-rig[data-pose="celebrate"] .cat-sit {
+  animation: cat-stretch-out calc(var(--cat-beat) * 0.9375) var(--ease-standard) both;
+}
+.cat--live .cat-rig[data-pose="celebrate"] .cat-sit .cat-q-body {
+  animation: cat-stretch-body calc(var(--cat-beat) * 0.75) var(--ease-standard) both;
+}
+.cat--live .cat-rig[data-pose="celebrate"] .cat-sit .cat-q-head {
+  animation: cat-stretch-head calc(var(--cat-beat) * 0.75) var(--ease-standard) both;
+}
+.cat--live .cat-rig[data-pose="celebrate"] .cat-lie {
+  animation: cat-curl-in calc(var(--cat-beat) * 0.9375) var(--ease-standard) both;
+}
+.cat--live .cat-rig[data-pose="celebrate"] .cat-lie .cat-tail-tip {
+  animation: cat-flick calc(var(--cat-beat) * 1.5 * var(--cat-tempo)) linear calc(var(--cat-beat) * 0.9375) infinite;
+}
+.cat--live .cat-rig[data-pose="celebrate"] .cat-lie-body {
+  animation: cat-breathe calc(var(--cat-beat) * 2.5 * var(--cat-tempo)) linear calc(var(--cat-beat) * 0.9375) infinite;
+}
+
+/* Activity crossfade: the new pose in over --dur-300, the old out over its exit. */
+.cat--live .cat-rig[data-fade="in"] {
+  animation: cat-fade-in var(--dur-300) var(--ease-standard) both;
+}
+.cat--live .cat-rig[data-fade="out"] {
+  animation: cat-fade-out var(--dur-300-exit) var(--ease-standard) both;
+}
+
+/* Status: error flattens the ears and shakes once. */
+.cat--live[data-status="error"] .cat-shake {
+  animation: cat-shake var(--dur-300) var(--ease-standard) 1 both;
+}
+
+/* Quirks: one-shots while idle or waiting, on a seeded schedule (motion.ts). */
+.cat-quirk-groom .cat-q-paw-r {
+  animation: cat-groom-paw var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-groom .cat-q-head {
+  animation: cat-groom-head var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-groom .cat-lid-q {
+  animation: cat-q-lid-half var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-yawn .cat-q-head {
+  animation: cat-yawn-head var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-yawn .cat-mouth-open {
+  animation: cat-yawn-mouth var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-yawn .cat-lid-q {
+  animation: cat-q-lid-shut var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-stretch .cat-q-body {
+  animation: cat-stretch-body var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-stretch .cat-q-head {
+  animation: cat-stretch-head var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-knead .cat-q-paw-l {
+  animation: cat-knead-l var(--cat-quirk) linear both;
+}
+.cat-quirk-knead .cat-q-paw-r {
+  animation: cat-knead-r var(--cat-quirk) linear both;
+}
+.cat-quirk-knead .cat-lid-q {
+  animation: cat-q-lid-half var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-bat .cat-q-card {
+  animation: cat-bat-card var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-bat .cat-q-paw-r {
+  animation: cat-bat-paw var(--cat-quirk) var(--ease-standard) both;
+}
+.cat-quirk-blink .cat-lid-q {
+  animation: cat-q-lid-shut var(--cat-quirk) var(--ease-standard) both;
+}
+
+/* Tap, click, or keyboard activation: a short head bob. */
+.cat-react-tap .cat-react-head {
+  animation: cat-tap var(--dur-300) var(--ease-standard) both;
+}
+
+/* celebrateKey: tail up, a small hop, paw prints pop and fade (all under 900ms). */
+.cat-celebrate .cat-hop {
+  animation: cat-hop var(--dur-600) var(--ease-standard) both;
+}
+.cat-celebrate .cat-tail-cel {
+  animation: cat-tail-up var(--dur-600) var(--ease-standard) both;
+}
+.cat-print {
+  opacity: 0;
+}
+.cat-celebrate .cat-print {
+  animation: cat-print var(--dur-600) var(--ease-standard) both;
+  animation-delay: calc(var(--cat-i, 0) * var(--stagger-item));
+}
+
+/* Offscreen cats hold still (IntersectionObserver, motion.ts). */
+.cat[data-offscreen],
+.cat[data-offscreen] * {
+  animation-play-state: paused !important;
+}
+
+/* A safety net if a script could not read the preference: no motion at all. */
+@media (prefers-reduced-motion: reduce) {
+  .cat,
+  .cat *,
+  .cat-card,
+  .cat-card * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Keyframes: transform and opacity only
+ * ------------------------------------------------------------------- */
+@keyframes cat-breathe {
+  0% { transform: scaleY(1.015); }
+  12.5% { transform: scaleY(1.0256); }
+  25% { transform: scaleY(1.03); }
+  37.5% { transform: scaleY(1.0256); }
+  50% { transform: scaleY(1.015); }
+  62.5% { transform: scaleY(1.0044); }
+  75% { transform: scaleY(1); }
+  87.5% { transform: scaleY(1.0044); }
+  100% { transform: scaleY(1.015); }
+}
+@keyframes cat-sway {
+  0% { transform: rotate(0deg); }
+  12.5% { transform: rotate(2.83deg); }
+  25% { transform: rotate(4deg); }
+  37.5% { transform: rotate(2.83deg); }
+  50% { transform: rotate(0deg); }
+  62.5% { transform: rotate(-2.83deg); }
+  75% { transform: rotate(-4deg); }
+  87.5% { transform: rotate(-2.83deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes cat-blink {
+  0%,
+  93%,
+  100% { transform: scaleY(var(--cat-lid)); }
+  96% { transform: scaleY(1); }
+}
+@keyframes cat-type {
+  0% { transform: translateY(0); }
+  20% { transform: translateY(4px); }
+  40%,
+  100% { transform: translateY(0); }
+}
+@keyframes cat-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-32px); }
+}
+@keyframes cat-nod {
+  0%,
+  100% { transform: translateY(0); }
+  50% { transform: translateY(1.5px); }
+}
+@keyframes cat-read {
+  0% { transform: translate(-1.5px, 0); }
+  21% { transform: translate(1.5px, 0); }
+  25% { transform: translate(-1.5px, 1.2px); }
+  46% { transform: translate(1.5px, 1.2px); }
+  50% { transform: translate(-1.5px, 2.4px); }
+  71% { transform: translate(1.5px, 2.4px); }
+  75% { transform: translate(-1.5px, 3.6px); }
+  96% { transform: translate(1.5px, 3.6px); }
+  100% { transform: translate(-1.5px, 0); }
+}
+@keyframes cat-read-eyes {
+  0%,
+  25%,
+  50%,
+  75%,
+  100% { transform: translateX(-1.8px); }
+  21%,
+  46%,
+  71%,
+  96% { transform: translateX(1.8px); }
+}
+@keyframes cat-sweep {
+  0% { transform: translateX(0); }
+  12.5% { transform: translateX(-2.6px); }
+  25% { transform: translateX(-9px); }
+  37.5% { transform: translateX(-15.4px); }
+  50% { transform: translateX(-18px); }
+  62.5% { transform: translateX(-15.4px); }
+  75% { transform: translateX(-9px); }
+  87.5% { transform: translateX(-2.6px); }
+  100% { transform: translateX(0); }
+}
+@keyframes cat-sweep-eyes {
+  0% { transform: translateX(0.8px); }
+  25% { transform: translateX(-0.6px); }
+  50% { transform: translateX(-2px); }
+  75% { transform: translateX(-0.6px); }
+  100% { transform: translateX(0.8px); }
+}
+@keyframes cat-draw-1 {
+  0% { opacity: 0; transform: scaleX(0); }
+  2% { opacity: 1; transform: scaleX(0.05); }
+  14%,
+  88% { opacity: 1; transform: scaleX(1); }
+  96%,
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-draw-2 {
+  0%,
+  30% { opacity: 0; transform: scaleX(0); }
+  32% { opacity: 1; transform: scaleX(0.05); }
+  44%,
+  88% { opacity: 1; transform: scaleX(1); }
+  96%,
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-draw-3 {
+  0%,
+  58% { opacity: 0; transform: scaleX(0); }
+  60% { opacity: 1; transform: scaleX(0.05); }
+  70%,
+  88% { opacity: 1; transform: scaleX(1); }
+  96%,
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes cat-paint {
+  0%,
+  100% { transform: translate(0, 0); }
+  7% { transform: translate(5px, -3px); }
+  14% { transform: translate(9px, 0); }
+  22%,
+  30% { transform: translate(0, 0); }
+  37% { transform: translate(6px, 4px); }
+  44% { transform: translate(11px, 2px); }
+  52%,
+  58% { transform: translate(2px, 6px); }
+  64% { transform: translate(7px, 10px); }
+  70% { transform: translate(10px, 10px); }
+  80% { transform: translate(0, 0); }
+}
+@keyframes cat-scan-turn {
+  0% { transform: rotate(0deg); }
+  12.5% { transform: rotate(3.5deg); }
+  25% { transform: rotate(5deg); }
+  37.5% { transform: rotate(3.5deg); }
+  50% { transform: rotate(0deg); }
+  62.5% { transform: rotate(-3.5deg); }
+  75% { transform: rotate(-5deg); }
+  87.5% { transform: rotate(-3.5deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes cat-look-around {
+  0%,
+  30%,
+  100% { transform: translateX(-4px); }
+  50%,
+  80% { transform: translateX(4px); }
+}
+@keyframes cat-look-around-eyes {
+  0%,
+  30%,
+  100% { transform: translateX(-2.5px); }
+  50%,
+  80% { transform: translateX(2.5px); }
+}
+@keyframes cat-ear-turn {
+  0%,
+  30%,
+  100% { transform: rotate(-5deg); }
+  50%,
+  80% { transform: rotate(5deg); }
+}
+@keyframes cat-mouse-move {
+  0%,
+  100% { transform: translate(0, 0); }
+  25% { transform: translate(4px, -2px); }
+  50% { transform: translate(7px, 1px); }
+  75% { transform: translate(3px, 3px); }
+}
+@keyframes cat-check-1 {
+  0%,
+  8% { opacity: 0; transform: scale(0.4); }
+  14%,
+  88% { opacity: 1; transform: scale(1); }
+  96%,
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-check-2 {
+  0%,
+  33% { opacity: 0; transform: scale(0.4); }
+  39%,
+  88% { opacity: 1; transform: scale(1); }
+  96%,
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-check-3 {
+  0%,
+  58% { opacity: 0; transform: scale(0.4); }
+  64%,
+  88% { opacity: 1; transform: scale(1); }
+  96%,
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes cat-plan-paw {
+  0%,
+  8%,
+  14% { transform: translate(0, 0); }
+  11% { transform: translate(-2px, 2px); }
+  30%,
+  33%,
+  39% { transform: translate(0, 11px); }
+  36% { transform: translate(-2px, 13px); }
+  55%,
+  58%,
+  64%,
+  88% { transform: translate(0, 22px); }
+  61% { transform: translate(-2px, 24px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes cat-walk {
+  0%,
+  50%,
+  100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-3px) rotate(-1.5deg); }
+  75% { transform: translateY(-3px) rotate(1.5deg); }
+}
+@keyframes cat-wave {
+  0% { transform: rotate(0deg); }
+  12.5% { transform: rotate(9.9deg); }
+  25% { transform: rotate(14deg); }
+  37.5% { transform: rotate(9.9deg); }
+  50% { transform: rotate(0deg); }
+  62.5% { transform: rotate(-9.9deg); }
+  75% { transform: rotate(-14deg); }
+  87.5% { transform: rotate(-9.9deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes cat-flick {
+  0%,
+  64%,
+  88%,
+  100% { transform: rotate(0deg); }
+  72% { transform: rotate(-18deg); }
+  80% { transform: rotate(4deg); }
+}
+@keyframes cat-ponder {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(2deg); }
+  50% { transform: rotate(3deg); }
+  75% { transform: rotate(2deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes cat-stretch-out {
+  0%,
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes cat-curl-in {
+  0%,
+  70% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes cat-stretch-body {
+  0%,
+  100% { transform: scale(1, 1); }
+  30%,
+  70% { transform: scale(0.97, 1.07); }
+}
+@keyframes cat-stretch-head {
+  0%,
+  100% { transform: translateY(0) rotate(0deg); }
+  30%,
+  70% { transform: translateY(-7px) rotate(-4deg); }
+}
+@keyframes cat-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes cat-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes cat-shake {
+  0%,
+  100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+@keyframes cat-groom-paw {
+  0%,
+  100% { transform: translate(0, 0); }
+  18%,
+  42%,
+  66% { transform: translate(-6px, -56px); }
+  30%,
+  54% { transform: translate(-6px, -60px); }
+  82% { transform: translate(0, 0); }
+}
+@keyframes cat-groom-head {
+  0%,
+  100% { transform: rotate(0deg); }
+  18%,
+  82% { transform: rotate(8deg); }
+}
+@keyframes cat-yawn-head {
+  0%,
+  100% { transform: translateY(0) rotate(0deg); }
+  25%,
+  70% { transform: translateY(-3px) rotate(-4deg); }
+}
+@keyframes cat-yawn-mouth {
+  0%,
+  85%,
+  100% { transform: scale(0); }
+  25%,
+  65% { transform: scale(1); }
+}
+@keyframes cat-q-lid-shut {
+  0%,
+  100% { transform: scaleY(0); }
+  30%,
+  60% { transform: scaleY(1); }
+  90% { transform: scaleY(0); }
+}
+@keyframes cat-q-lid-half {
+  0%,
+  100% { transform: scaleY(0); }
+  20%,
+  80% { transform: scaleY(0.55); }
+}
+@keyframes cat-knead-l {
+  0%,
+  16%,
+  33%,
+  50%,
+  66%,
+  83%,
+  100% { transform: translateY(0); }
+  8%,
+  41%,
+  74% { transform: translateY(-5px); }
+}
+@keyframes cat-knead-r {
+  0%,
+  16%,
+  33%,
+  50%,
+  66%,
+  83%,
+  100% { transform: translateY(0); }
+  25%,
+  58%,
+  91% { transform: translateY(-5px); }
+}
+@keyframes cat-bat-card {
+  0% { opacity: 0; transform: translate(0, 0) rotate(0deg); }
+  10%,
+  35% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  42%,
+  68% { opacity: 1; transform: translate(4px, 0) rotate(8deg); }
+  76% { opacity: 1; transform: translate(9px, 0) rotate(-4deg); }
+  90% { opacity: 1; transform: translate(9px, 0) rotate(-4deg); }
+  100% { opacity: 0; transform: translate(9px, 0) rotate(-4deg); }
+}
+@keyframes cat-bat-paw {
+  0%,
+  88%,
+  100% { transform: translate(0, 0); }
+  25% { transform: translate(10px, -10px); }
+  35% { transform: translate(16px, -4px); }
+  47% { transform: translate(6px, -9px); }
+  60% { transform: translate(12px, -10px); }
+  70% { transform: translate(20px, -4px); }
+}
+@keyframes cat-tap {
+  0%,
+  100% { transform: translateY(0); }
+  35% { transform: translateY(-3px); }
+}
+@keyframes cat-hop {
+  0%,
+  100% { transform: translateY(0); }
+  40% { transform: translateY(-8px); }
+  70% { transform: translateY(0); }
+  85% { transform: translateY(-2px); }
+}
+@keyframes cat-tail-up {
+  0%,
+  100% { transform: rotate(0deg); }
+  30%,
+  75% { transform: rotate(-22deg); }
+}
+@keyframes cat-print {
+  0% { opacity: 0; transform: scale(0.5); }
+  25%,
+  60% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}

@@ -1,16 +1,9 @@
-// Placeholder until the cats workstream lands. Keeps apps/web building.
-import type { CatCardProps, CatProps } from "./contract";
+// @mengai/cats: the living cat character system. The contract (props and
+// handoffLayoutId) is frozen in ./contract; this package owns the rendering:
+// a flat SVG rig, CSS keyframe loops on transform and opacity, and a static
+// pose per activity under reduced motion or `still`.
+import "./cats.css";
+
 export * from "./contract";
-
-export function Cat(props: CatProps) {
-  return <span role="img" aria-label={props.label} data-cat-status={props.status} />;
-}
-
-export function CatCard(props: CatCardProps) {
-  return (
-    <div data-cat-card={props.name}>
-      <Cat {...props} />
-      <span>{props.name}</span>
-    </div>
-  );
-}
+export { Cat } from "./cat";
+export { CatCard } from "./card";

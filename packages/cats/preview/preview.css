@@ -1,0 +1,135 @@
+/* Cats preview only: the board grid, the pose index, the rows, the sizes.
+   Tokens only, same law as cats.css. */
+html,
+body {
+  overflow-x: clip;
+}
+
+.pv-coats {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: var(--space-8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.pv-crew {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-16px);
+  min-width: 0;
+}
+
+.pv-poses {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-24px) var(--space-16px);
+  min-width: 0;
+}
+
+.pv-pose {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--space-8px);
+  min-width: 0;
+  margin: 0;
+}
+
+.pv-pose-text,
+.pv-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2px);
+  min-width: 0;
+}
+
+.pv-name {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.pv-lists {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-32px);
+  min-width: 0;
+}
+
+.pv-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12px);
+  min-width: 0;
+}
+
+.pv-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.pv-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16px);
+  min-width: 0;
+}
+
+.pv-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-24px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.pv-size {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+
+.pv-num {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 640px) {
+  .pv-coats {
+    grid-template-columns: repeat(8, max-content);
+  }
+  .pv-crew {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pv-poses {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .pv-lists {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .pv-crew {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .pv-poses {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
