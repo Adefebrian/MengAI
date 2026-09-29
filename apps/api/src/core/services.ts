@@ -6,32 +6,46 @@
 // built in parallel: the orchestrator never imports memory internals, the
 // tools never import automation internals, and so on.
 import type {
+  AgentDTO,
   AgentRole,
   AssetDTO,
+  BudgetBody,
   AuditEntryDTO,
   AutomationStatus,
   CallPurpose,
   Capability,
   ContextXrayDTO,
   CreateAssetBody,
+  CreateProjectBody,
+  CreateRunBody,
   DecisionDTO,
+  EstimateRunBody,
   FileNodeDTO,
   FindingDTO,
   HandsMethod,
   HandsParams,
   HandsResults,
+  HumanMessageBody,
   KillSwitchResult,
   LessonDTO,
   LessonScope,
   LlmCallDTO,
   ModelPrice,
+  OwnerSettings,
+  ProjectDTO,
   ProviderDTO,
   Risk,
+  RunDTO,
+  RunEstimate,
+  RunSnapshotDTO,
   ScanDTO,
   ScanKind,
   Severity,
   SkillDTO,
+  TaskDTO,
+  TaskPatchBody,
   Tier,
+  ToolCallDetail,
 } from "@mengai/shared";
 import type { ChatMessage, Judge, LlmRouter, MediaRouter, ToolCall, ToolSpec, Usage } from "./ports";
 
@@ -306,4 +320,76 @@ export interface ContextService {
 export interface KillSwitch {
   register(name: string, hook: () => Promise<number>): void;
   trigger(by: "user" | "shortcut" | "tray" | "system"): Promise<KillSwitchResult>;
+}
+
+// ----------------------------------------------------------------- settings
+/** settings module: owner preferences with defaults; every module reads through this. */
+export interface SettingsService {
+  get(): Promise<OwnerSettings>;
+  patch(patch: Partial<OwnerSettings>): Promise<OwnerSettings>;
+}
+
+// ----------------------------------------------------------------- projects
+/** projects module: project records and their jailed workspace roots. */
+export interface ProjectsService {
+  list(): Promise<ProjectDTO[]>;
+  get(id: string): Promise<ProjectDTO>;
+  create(input: CreateProjectBody): Promise<ProjectDTO>;
+  remove(id: string): Promise<void>;
+  /** absolute, realpath-resolved workspace root; throws notFound */
+  root(id: string): Promise<string>;
+  touchRun(id: string, runId: string): Promise<void>;
+}
+
+// -------------------------------------------------------------------- tools
+export interface ToolContext {
+  runId: string;
+  agentId: string;
+  taskId: string | null;
+  projectId: string;
+  /** absolute workspace root of the project */
+  root: string;
+  role: AgentRole;
+  signal?: AbortSignal;
+}
+
+export interface ToolResult {
+  output: string;
+  ok: boolean;
+  durationMs: number;
+}
+
+/**
+ * tools module: one registry of tool specs per role (ROLE_TOOLS) and the
+ * execution of every non-control tool. Control tools (finish, note,
+ * ask_human, handoff, create_tasks, update_task, list_tasks, crew_status,
+ * submit_review, report_issue) have their schemas here but are executed by
+ * the runs module, which checks isControl() first.
+ */
+export interface ToolsService {
+  specsFor(role: AgentRole): ToolSpec[];
+  isControl(tool: string): boolean;
+  /** tools that only read (safe to run in parallel within one step) */
+  isReadOnly(tool: string): boolean;
+  execute(call: ToolCall, ctx: ToolContext): Promise<ToolResult>;
+}
+
+// --------------------------------------------------------------------- runs
+/** runs module: the orchestrator. Routes in @mengai/shared Routes under /api/runs. */
+export interface RunsService {
+  create(input: CreateRunBody): Promise<RunDTO>;
+  estimate(input: EstimateRunBody): Promise<RunEstimate>;
+  list(): Promise<RunDTO[]>;
+  snapshot(runId: string): Promise<RunSnapshotDTO>;
+  pause(runId: string): Promise<RunDTO>;
+  resume(runId: string): Promise<RunDTO>;
+  stop(runId: string, reason?: string): Promise<RunDTO>;
+  message(runId: string, input: HumanMessageBody): Promise<void>;
+  setBudget(runId: string, input: BudgetBody): Promise<RunDTO>;
+  patchTask(runId: string, taskId: string, patch: TaskPatchBody): Promise<TaskDTO>;
+  stopAgent(runId: string, agentId: string): Promise<AgentDTO>;
+  xray(runId: string, agentId: string): Promise<ContextXrayDTO>;
+  toolCall(runId: string, callId: string): Promise<ToolCallDetail>;
+  /** stops every live run; registered on the kill switch. Returns how many. */
+  stopAll(reason: string): Promise<number>;
 }

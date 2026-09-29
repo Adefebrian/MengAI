@@ -126,3 +126,64 @@ Routes: `/` landing; `/app` home (runs, new run); `/app/runs/:id` crew board (ca
 
 ## 16. Security baseline
 Secure headers (strict CSP, frame-ancestors none, nosniff, referrer no-referrer, HSTS in server mode), Kv-backed rate limits, same-origin CORS allowlist, zod validation on every route, 1 MB body cap (upload routes excepted), request ids, structured logs through redact(), no stack traces to clients, dependency audit in CI.
+
+## 17. Module factories, dependencies and file ownership (W1 contract)
+
+Every module: `apps/api/src/modules/<name>/index.ts` exports
+`create<Name>Module(ctx: ModuleContext, deps): MountedModule & { service }`.
+`core/container.ts` (written in the integration wave) builds ports for the
+mode, then creates modules in this order and passes services down:
+
+| Module | deps it receives | service it exports |
+|---|---|---|
+| settings | none | SettingsService |
+| events | none (implements EventSink; placed into ctx.events for everyone else) | EventSink |
+| auth | none | session middleware helpers (core/auth.ts uses them) |
+| health | { llmConfigured(), jevConfigured(), automationStatus() } callbacks | none |
+| usage | { settings } | UsageService |
+| providers | { usage } (vault via ctx) | ProvidersService (llm, media, judge, list) |
+| jev | { judge: providers.service.judge } | DecisionService |
+| projects | { workspace } | ProjectsService |
+| workspace | { runner } | WorkspaceService |
+| context | none | ContextService |
+| memory | { llm: providers.service.llm, decisions: DecisionService, usage } | MemoryService |
+| automation | { hands, killswitch } | AutomationService |
+| assets | { media: providers.service.media, workspace, usage, settings } | AssetsService |
+| security | { workspace, decisions, settings } | SecurityService |
+| tools | { workspace, runner, memory, assets, security, automation, settings, projects } | ToolsService |
+| runs | { projects, llm, usage, context, memory, tools, decisions, settings, killswitch, automation } | RunsService |
+| evals | { context } (W1); { runs factory + mock llm } (W2) | eval harness |
+
+Route mount paths follow `packages/shared/src/api.ts` (`/api/<segment>`).
+Routes never contain business logic; services never import Hono.
+
+### Local sidecar contract (apps/api/src/local.ts <-> apps/desktop)
+- The desktop shell spawns the compiled sidecar with env `MENGAI_MODE=local`,
+  `MENGAI_DATA_DIR`, `MENGAI_WEB_DIR` (bundled SPA), `MENGAI_HANDS_BIN`
+  (bundled helper), optional `MENGAI_PORT` (default: random free port on 127.0.0.1).
+- When listening, the sidecar prints exactly one NDJSON line to stdout:
+  `{"event":"ready","port":<n>,"launchToken":"<one-time>","controlToken":"<per-launch>"}`.
+- The shell opens `http://127.0.0.1:<port>/#launch=<launchToken>`; the web app
+  posts it to `POST /api/auth/launch` once and gets the session cookie.
+- Tray and global shortcut call `POST /api/killswitch` with header
+  `x-mengai-control: <controlToken>` (see CONTROL_TOKEN_HEADER in shared).
+- The sidecar exits on SIGTERM or when stdin closes; the shell always sends
+  SIGTERM on quit and kills the process group after 3 s.
+
+### File ownership in W1 (one owner per path, no exceptions)
+| Workstream | Owns |
+|---|---|
+| platform | apps/api/src/core/{app,config,hardening,auth,killswitch,logger}.ts, core/adapters/{kv-*,blob-*,vault-*,logger}.ts, modules/{auth,settings,health,events}, apps/api/src/{index,local,index.test}.ts, packages/config/src, .env.example, infra/ |
+| providers | modules/{providers,usage}, core/adapters/{llm-*,media-*,judge-jev}.ts |
+| workspace | modules/{projects,workspace,tools}, core/adapters/runner-*.ts |
+| context | modules/{context,memory} |
+| runs | modules/runs |
+| jev | modules/{jev,evals} |
+| security | modules/{security,assets} |
+| automation | modules/automation, core/adapters/hands-stdio.ts |
+| hands | services/hands |
+| cats | packages/cats |
+| web | apps/web (except src/landing), packages/ui/src/product |
+| landing | apps/web/src/landing |
+| desktop | apps/desktop |
+| direction | docs/design |
