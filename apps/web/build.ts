@@ -75,8 +75,19 @@ async function runBuild() {
 
   await Bun.write(join(outdir, "index.html"), await Bun.file(join(here, "src/index.html")).text());
   await copyFonts();
+  await copyBrand();
 
   console.log("web build ok");
+}
+
+// The MengAI paw logo (packages/ui/src/brand): favicon, touch icon, header mark.
+async function copyBrand() {
+  const from = join(here, "../../packages/ui/src/brand");
+  const out = join(outdir, "brand");
+  await mkdir(out, { recursive: true });
+  for (const file of await readdir(from)) {
+    if (file.endsWith(".png")) await copyFile(join(from, file), join(out, file));
+  }
 }
 
 async function copyFonts() {
