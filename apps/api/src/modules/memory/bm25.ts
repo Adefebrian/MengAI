@@ -80,8 +80,9 @@ export function shingles(text: string, k = 3): Set<string> {
   return out;
 }
 
+/** 0 when either side has no words: wordless text is never a near duplicate of anything. */
 export function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 1;
+  if (a.size === 0 || b.size === 0) return 0;
   let inter = 0;
   for (const s of a) if (b.has(s)) inter++;
   const union = a.size + b.size - inter;

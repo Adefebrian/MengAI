@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { ROLE_TOOLS } from "@mengai/shared";
+import { CSRF_HEADER, ROLE_TOOLS, type DecisionListQuery, type EvalListQuery, type RouteQuery } from "@mengai/shared";
 import { Hono } from "hono";
+import { createApp } from "../../core/app";
+import { createKillSwitch } from "../../core/killswitch";
 import type { ModuleContext } from "../../core/module";
 import { LlmError, type ChatRequest } from "../../core/ports/llm";
 import { HttpError, errorBody } from "../../lib/http";
@@ -234,6 +236,20 @@ describe("service and routes", () => {
     expect(((await last!.json()) as { error: { code: string } }).error.code).toBe("rate_limited");
   });
 
+  test("every field of the shared EvalListQuery is accepted by GET /api/evals", async () => {
+    const ctx = await makeCtx();
+    const mod = createEvalsModule(ctx, { context: referenceContext() });
+    await mod.service.run({ suite: "core" });
+    const q: Required<RouteQuery<"GET /api/evals">> = { suite: "core", limit: 1 };
+    const typed: EvalListQuery = q;
+    const res = await app(mod).request(`/api/evals?${new URLSearchParams({ suite: typed.suite!, limit: String(typed.limit) })}`);
+    expect(res.status).toBe(200);
+    expect((await res.json()) as unknown[]).toHaveLength(1);
+    // the decisions query type names the same fields the jev route validates
+    const d: Required<DecisionListQuery> = { runId: "r1", limit: 10 };
+    expect(Object.keys(d).sort()).toEqual(["limit", "runId"]);
+  });
+
   test("run limiter keys on clientIp: spoofed X-Forwarded-For cannot mint fresh buckets", async () => {
     const ctx = await makeCtx();
     const mod = createEvalsModule(ctx, { context: referenceContext() });
@@ -324,5 +340,59 @@ describe("ScriptedProvider and MockLlmRouter", () => {
     const off = new MockLlmRouter({ configured: false });
     expect(await off.configured()).toBe(false);
     await expect(off.resolve({ tier: "fast" })).rejects.toMatchObject({ kind: "auth" });
+  });
+});
+
+// The root bunfig preloads happy-dom for web tests; its global Request drops
+// headers hono needs, so the createApp test runs on Bun's native fetch classes.
+const native = (await import(String("undici"))) as { Request: typeof Request; Response: typeof Response; Headers: typeof Headers };
+
+describe("run limiter mounted through core/app createApp", () => {
+  async function mounted(trustProxy: number) {
+    const ctx = await makeCtx();
+    const config = { ...ctx.config, mode: "server" as const };
+    const mod = createEvalsModule({ ...ctx, config }, { context: referenceContext() });
+    const app = createApp({
+      config,
+      modules: [mod],
+      auth: { authenticate: async () => ({ sessionId: "s", userId: "owner", email: null }), session: async () => ({ authenticated: true, mode: "server", needsSetup: false }) },
+      killswitch: createKillSwitch({ events: captureEvents(), logger: silentLogger }),
+      kv: ctx.kv,
+      logger: silentLogger,
+      trustProxy,
+    });
+    return async (headers: Record<string, string>, peer: string) => {
+      const saved = { Request: globalThis.Request, Response: globalThis.Response, Headers: globalThis.Headers };
+      Object.assign(globalThis, { Request: native.Request, Response: native.Response, Headers: native.Headers });
+      try {
+        const req = new native.Request("http://mengai.test/api/evals/run", {
+          method: "POST",
+          headers: { origin: "http://mengai.test", [CSRF_HEADER]: "1", "content-type": "application/json", ...headers },
+          body: "not json",
+        });
+        // the Bun server hands hono the socket peer through env.requestIP
+        return (await app.fetch(req, { requestIP: () => ({ address: peer }) })).status;
+      } finally {
+        Object.assign(globalThis, saved);
+      }
+    };
+  }
+
+  test("without a trusted proxy the socket peer is the key; X-Forwarded-For is ignored", async () => {
+    const call = await mounted(0);
+    const statuses: number[] = [];
+    for (let i = 0; i <= RUN_LIMIT_PER_WINDOW; i++) statuses.push(await call({ "x-forwarded-for": `10.0.0.${i}` }, "203.0.113.7"));
+    expect(statuses).toEqual([...Array(RUN_LIMIT_PER_WINDOW).fill(400), 429]);
+    expect(await call({}, "198.51.100.9")).toBe(400);
+  });
+
+  test("behind one trusted proxy the right-most hop is the key; a spoofed left-most value is not", async () => {
+    const call = await mounted(1);
+    const statuses: number[] = [];
+    // the client spoofs a fresh left-most value every time; the proxy appends the real address
+    for (let i = 0; i <= RUN_LIMIT_PER_WINDOW; i++) statuses.push(await call({ "x-forwarded-for": `10.0.0.${i}, 203.0.113.7` }, "172.16.0.2"));
+    expect(statuses).toEqual([...Array(RUN_LIMIT_PER_WINDOW).fill(400), 429]);
+    // another client behind the same proxy has its own bucket
+    expect(await call({ "x-forwarded-for": "10.0.0.1, 198.51.100.9" }, "172.16.0.2")).toBe(400);
   });
 });

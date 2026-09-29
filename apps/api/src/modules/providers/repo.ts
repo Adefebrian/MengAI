@@ -64,7 +64,7 @@ export function createProvidersRepo(db: Db) {
     },
 
     async update(p: ProviderRow): Promise<void> {
-      await db.query`update providers set label = ${p.label}, base_url = ${p.baseUrl}, key_ref = ${p.keyRef}, key_hint = ${p.keyHint}, models = ${toJson(p.models)}, updated_at = ${p.updatedAt} where id = ${p.id}`;
+      await db.query`update providers set label = ${p.label}, base_url = ${p.baseUrl}, key_ref = ${p.keyRef}, key_hint = ${p.keyHint}, models = ${toJson(p.models)}, last_test_at = ${p.lastTestAt}, last_test_ok = ${p.lastTestOk === null ? null : p.lastTestOk ? 1 : 0}, last_test_error = ${p.lastTestError}, updated_at = ${p.updatedAt} where id = ${p.id}`;
     },
 
     async setTest(id: string, at: number, ok: boolean, error: string | null): Promise<void> {

@@ -256,14 +256,19 @@ export function createMemoryService(ctx: ModuleContext, deps: MemoryDeps): Memor
 
     // near-duplicate merge against the lessons the recorder can see that
     // reach at least as far as the requested scope: a narrower copy never
-    // swallows an explicit wider scope (widening it would skip mem.promote)
+    // swallows an explicit wider scope (widening it would skip mem.promote).
+    // A live copy wins over a retired one (retired lessons are never
+    // retrieved); a retired copy only absorbs a restatement when it is the
+    // only match, so a lesson retired for doing badly is not re-learned.
     const visible = await repo.scopedLessons(db, { role: input.role, projectId: input.projectId, includeRetired: true });
     const sh = shingles(text);
-    let best: { lesson: LessonDTO; sim: number } | null = null;
+    let best: { lesson: LessonDTO; sim: number; live: boolean } | null = null;
     for (const l of visible) {
       if (SCOPE_RANK[l.scope] < SCOPE_RANK[scope]) continue;
       const sim = jaccard(sh, shingles(l.text));
-      if (sim >= NEAR_DUPLICATE && (!best || sim > best.sim)) best = { lesson: l, sim };
+      if (sim < NEAR_DUPLICATE) continue;
+      const live = l.status !== "retired";
+      if (!best || (live && !best.live) || (live === best.live && sim > best.sim)) best = { lesson: l, sim, live };
     }
     if (best) {
       const merged = [...best.lesson.tags];
@@ -427,6 +432,18 @@ export function createMemoryService(ctx: ModuleContext, deps: MemoryDeps): Memor
     }
   }
 
+  /**
+   * Best effort: a memo that cannot be written only means the group may be
+   * asked again next pass; it must not undo an applied answer or end the pass.
+   */
+  async function remember(key: string, value: string, ttlSec: number): Promise<void> {
+    try {
+      await kv.set(key, value, ttlSec);
+    } catch (err) {
+      log.log("warn", "promotion memo write failed", { error: redact(String(err)) });
+    }
+  }
+
   async function promotePass(): Promise<PromotionResult[]> {
     const lessons = await repo.nonGlobalLessons(db);
     if (lessons.length === 0) return [];
@@ -499,7 +516,16 @@ export function createMemoryService(ctx: ModuleContext, deps: MemoryDeps): Memor
         });
       } catch (err) {
         log.log("warn", "promoteLesson failed", { lessonId: rep.id, error: redact(String(err)) });
-        await kv.set(memo, "error", LIMITS.promoteRetrySec);
+        await remember(memo, "error", LIMITS.promoteRetrySec);
+        continue;
+      }
+      // JEV be.promote_unverified_policy: defer_like_failure. A heuristic
+      // fallback (stamped UNVERIFIED BY JEV) never merges or retires lessons;
+      // the group backs off and JEV is asked again after the retry window.
+      // Prechecks (verified false, no stamp) are rules, and are applied.
+      if (answer.decision.stamp !== null) {
+        log.log("info", "promotion deferred: unverified decision", { lessonId: rep.id, stamp: answer.decision.stamp });
+        await remember(memo, "error", LIMITS.promoteRetrySec);
         continue;
       }
 
@@ -538,7 +564,7 @@ export function createMemoryService(ctx: ModuleContext, deps: MemoryDeps): Memor
         log.log("warn", "lesson promotion apply failed", { lessonId: rep.id, error: redact(String(err)) });
         continue;
       }
-      await kv.set(memo, answer.scope, LIMITS.promoteMemoTtlSec);
+      await remember(memo, answer.scope, LIMITS.promoteMemoTtlSec);
       results.push({ lessonId: rep.id, scope: answer.scope, projects: projects.size, merged });
     }
     return results;

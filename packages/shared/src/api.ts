@@ -34,6 +34,7 @@ import type {
   AssetKind,
   Capability,
   FindingStatus,
+  LessonScope,
   LessonStatus,
   PermissionMode,
   ScanKind,
@@ -94,6 +95,32 @@ export interface UsageReport {
 
 // memory
 export interface LessonPatchBody { status?: LessonStatus; text?: string }
+/** GET /api/memory/lessons query (all optional); newest first, 422 invalid_query on a bad value */
+export interface LessonListQuery {
+  status?: LessonStatus;
+  scope?: LessonScope;
+  projectId?: string;
+  role?: AgentRole;
+  /** keyset cursor "<createdAt>,<id>" taken from the last row of the previous page */
+  before?: string;
+  /** 1 to 500, default 200 */
+  limit?: number;
+}
+
+// decisions and evals
+/** GET /api/decisions query (all optional); the latest `limit` rows, oldest first */
+export interface DecisionListQuery {
+  runId?: string;
+  /** 1 to 500, default 200 */
+  limit?: number;
+}
+/** GET /api/evals query (all optional); newest first */
+export interface EvalListQuery {
+  /** suite id, for example "core" */
+  suite?: string;
+  /** 1 to 200, default 50 */
+  limit?: number;
+}
 
 // assets
 export interface CreateAssetBody {
@@ -224,6 +251,17 @@ export interface Routes {
 export type RouteKey = keyof Routes;
 export type RouteBody<K extends RouteKey> = Routes[K][0];
 export type RouteResponse<K extends RouteKey> = Routes[K][1];
+
+/**
+ * Optional query strings per route key, a companion to Routes (whose
+ * [body, response] tuples stay as they are). Every field is optional.
+ */
+export interface RouteQueries {
+  "GET /api/memory/lessons": LessonListQuery;
+  "GET /api/decisions": DecisionListQuery;
+  "GET /api/evals": EvalListQuery;
+}
+export type RouteQuery<K extends RouteKey> = K extends keyof RouteQueries ? RouteQueries[K] : never;
 
 /** Header the Tauri shell uses for tray and global-shortcut calls (kill switch). */
 export const CONTROL_TOKEN_HEADER = "x-mengai-control";

@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { DecisionDTO, LessonDTO, LlmCallDTO } from "@mengai/shared";
+import type { DecisionDTO, LessonDTO, LessonListQuery, LlmCallDTO, RouteQuery } from "@mengai/shared";
 import { Hono } from "hono";
 import type { ModuleContext } from "../../core/module";
 import type { BlobStore } from "../../core/ports/blob";
 import type { Db } from "../../core/ports/db";
+import type { Kv } from "../../core/ports/kv";
 import type { ChatRequest, ChatResult, LlmProvider, LlmRouter } from "../../core/ports/llm";
 import type { DecisionService, RecordCallInput, UsageService } from "../../core/services";
 import { HttpError, errorBody } from "../../lib/http";
@@ -43,7 +44,7 @@ function fakeDecision(action: string): DecisionDTO {
   };
 }
 
-function fakeDecisions(scope: "global" | "project" | "discard" | "throw") {
+function fakeDecisions(scope: "global" | "project" | "discard" | "throw", verdict: { verified: boolean; stamp: string | null } = { verified: true, stamp: null }) {
   const calls: PromoteInput[] = [];
   const unused = async (): Promise<never> => {
     throw new Error("not used by memory");
@@ -58,7 +59,7 @@ function fakeDecisions(scope: "global" | "project" | "discard" | "throw") {
     async promoteLesson(input) {
       calls.push(input);
       if (scope === "throw") throw new Error("jev unreachable");
-      return { scope, durable: 0.9, decision: fakeDecision(scope) };
+      return { scope, durable: 0.9, decision: { ...fakeDecision(scope), ...verdict } };
     },
   };
   return { service, calls };
@@ -143,8 +144,35 @@ function faultyDb(inner: Db, pattern: string, fault: { armed: boolean }): Db {
   };
 }
 
+/** Db that rejects only the `fault.nth` statement (1-based) containing `pattern` while `fault.armed`. */
+function nthFaultDb(inner: Db, pattern: string, fault: { armed: boolean; nth: number; seen: number }): Db {
+  return {
+    dialect: inner.dialect,
+    query(strings, ...values) {
+      if (fault.armed && strings.join("?").includes(pattern) && ++fault.seen === fault.nth) return Promise.reject(new Error("injected db failure"));
+      return inner.query(strings, ...values);
+    },
+    tx(fn) {
+      return inner.tx((tx) => fn(nthFaultDb(tx, pattern, fault)));
+    },
+    exec: (sql) => inner.exec(sql),
+    close: () => inner.close(),
+  };
+}
+
+/** Kv whose set() rejects for keys starting with `prefix` (the promotion memos, not the lock). */
+function memoWritesFail(inner: Kv, prefix: string): Kv {
+  return { ...inner, set: (key, value, ttl) => (key.startsWith(prefix) ? Promise.reject(new Error("kv down")) : inner.set(key, value, ttl)) };
+}
+
 async function setup(
-  o: { scope?: "global" | "project" | "discard" | "throw"; llm?: ReturnType<typeof fakeLlm>; wrapDb?: (db: Db) => Db } = {},
+  o: {
+    scope?: "global" | "project" | "discard" | "throw";
+    verdict?: { verified: boolean; stamp: string | null };
+    llm?: ReturnType<typeof fakeLlm>;
+    wrapDb?: (db: Db) => Db;
+    wrapKv?: (kv: Kv) => Kv;
+  } = {},
 ) {
   const clock = fakeClock();
   const events = captureEvents(clock);
@@ -162,14 +190,14 @@ async function setup(
       controlToken: null,
     },
     db,
-    kv: memoryKv(),
+    kv: o.wrapKv ? o.wrapKv(memoryKv()) : memoryKv(),
     blob: noBlob,
     vault: memoryVault(),
     clock,
     logger: silentLogger,
     events,
   };
-  const decisions = fakeDecisions(o.scope ?? "global");
+  const decisions = fakeDecisions(o.scope ?? "global", o.verdict);
   const usage = fakeUsage();
   const llm = o.llm ?? fakeLlm({ configured: false });
   const mod = createMemoryModule(ctx, { llm: llm.router, decisions: decisions.service, usage: usage.service });
@@ -663,7 +691,194 @@ describe("memory promotion", () => {
   });
 });
 
+describe("memory write paths", () => {
+  const X = "Always pin the bun version in CI before running tests.";
+
+  async function winners(s: Awaited<ReturnType<typeof setup>>) {
+    const a = await s.memory.record({ role: "engineer", projectId: "p1", runId: "r1", text: X });
+    const b = await s.memory.record({ role: "engineer", projectId: "p2", runId: "r2", text: X.toLowerCase() });
+    for (const [l, run, task] of [[a, "r1", "t1"], [b, "r2", "t2"]] as const) {
+      await s.memory.markUsed([l.id], { runId: run, taskId: task });
+      await s.memory.recordOutcome({ runId: run, taskId: task, success: true });
+    }
+    return { a, b };
+  }
+
+  // ---------------------------------------------------------- outcome recording
+  test("an outcome closes only that run's uses", async () => {
+    const { memory, db } = await setup();
+    const l = await memory.record({ ...engineer, text: "Check the migration folder before adding a column." });
+    await memory.markUsed([l.id], { runId: "r1", taskId: "t1" });
+    await memory.recordOutcome({ runId: "r2", taskId: "t1", success: true });
+    expect(await db.query`select outcome from lesson_uses`).toEqual([{ outcome: null }]);
+    expect((await memory.listLessons({}))[0]!.uses).toBe(0);
+    await memory.recordOutcome({ runId: "r1", taskId: "t1", success: false });
+    const [row] = await memory.listLessons({});
+    expect([row!.uses, row!.wins, row!.losses]).toEqual([1, 0, 1]);
+    expect(row!.score).toBeCloseTo(1 / 3, 6);
+  });
+
+  test("a failure mid-outcome rolls back every close, so a retry counts each lesson once", async () => {
+    const fault = { armed: true, nth: 2, seen: 0 };
+    const s = await setup({ wrapDb: (db) => nthFaultDb(db, "set uses = uses + 1", fault) });
+    const a = await s.memory.record({ ...engineer, text: "Read the file before editing it with fs_edit." });
+    const b = await s.memory.record({ ...engineer, text: "Seed the fake clock in every test file." });
+    await s.memory.markUsed([a.id, b.id], { runId: "r1", taskId: "t1" });
+    await expect(s.memory.recordOutcome({ runId: "r1", taskId: "t1", success: true })).rejects.toThrow("injected db failure");
+    expect(await s.db.query`select outcome from lesson_uses order by lesson_id`).toEqual([{ outcome: null }, { outcome: null }]);
+    expect((await s.memory.listLessons({})).map((l) => l.uses)).toEqual([0, 0]);
+    fault.armed = false;
+    await s.memory.recordOutcome({ runId: "r1", taskId: "t1", success: true });
+    await s.memory.recordOutcome({ runId: "r1", taskId: "t1", success: true });
+    expect((await s.memory.listLessons({})).map((l) => [l.uses, l.wins])).toEqual([[1, 1], [1, 1]]);
+  });
+
+  test("outcomes on a retired lesson are counted but never revive it", async () => {
+    const { memory } = await setup();
+    const l = await memory.record({ ...engineer, text: "Retry flaky network calls three times." });
+    await memory.patchLesson(l.id, { status: "retired" });
+    for (const t of ["t1", "t2", "t3"]) {
+      await memory.markUsed([l.id], { runId: "r1", taskId: t });
+      await memory.recordOutcome({ runId: "r1", taskId: t, success: true });
+    }
+    const [row] = await memory.listLessons({});
+    expect([row!.uses, row!.wins, row!.status]).toEqual([3, 3, "retired"]);
+  });
+
+  test("an open use of a merged copy closes on the representative", async () => {
+    const s = await setup({ scope: "global" });
+    const { a, b } = await winners(s);
+    await s.memory.markUsed([b.id], { runId: "r3", taskId: "t3" });
+    await s.memory.saveRunDigest({ projectId: "p1", runId: "r1", text: "Run one." });
+    expect(await s.memory.promoteEligible()).toEqual([{ lessonId: a.id, scope: "global", projects: 2, merged: 1 }]);
+    await s.memory.recordOutcome({ runId: "r3", taskId: "t3", success: false });
+    const all = await s.memory.listLessons({});
+    expect(all.map((l) => [l.id, l.uses, l.wins, l.losses])).toEqual([[a.id, 3, 2, 1]]);
+    expect(all[0]!.score).toBeCloseTo(3 / 5, 6);
+  });
+
+  // ---------------------------------------------------------------- dedupe merge
+  test("text without words is never a near duplicate of other wordless text", async () => {
+    const { memory } = await setup();
+    const a = await memory.record({ ...engineer, text: "!!! ??? !!!" });
+    const b = await memory.record({ ...engineer, text: "--- ... ---" });
+    expect(b.id).not.toBe(a.id);
+    expect(await memory.listLessons({})).toHaveLength(2);
+  });
+
+  test("a duplicate merges into a live copy before a retired one", async () => {
+    const { memory } = await setup();
+    const retired = await memory.record({ ...engineer, text: X, scope: "role" });
+    await memory.patchLesson(retired.id, { status: "retired" });
+    const live = await memory.record({ ...engineer, text: X, scope: "global" });
+    expect(live.id).not.toBe(retired.id);
+    const again = await memory.record({ ...engineer, text: X, tags: ["ci"] });
+    expect(again.id).toBe(live.id);
+    expect(again.tags).toEqual(["ci"]);
+    expect((await memory.listLessons({})).find((l) => l.id === retired.id)!.tags).toEqual([]);
+  });
+
+  test("a merge keeps the existing lesson's scope, stats and text, and caps tags at 8", async () => {
+    const { memory } = await setup();
+    const first = await memory.record({ ...engineer, text: X, tags: ["a", "b", "c", "d", "e", "f", "g"] });
+    await memory.markUsed([first.id], { runId: "r1", taskId: "t1" });
+    await memory.recordOutcome({ runId: "r1", taskId: "t1", success: true });
+    const merged = await memory.record({ ...engineer, projectId: "p1", text: X.toUpperCase(), tags: ["x", "y", "a"] });
+    expect(merged.id).toBe(first.id);
+    expect(merged).toMatchObject({ scope: "project", projectId: "p1", text: X, uses: 1, wins: 1 });
+    expect(merged.tags).toEqual(["a", "b", "c", "d", "e", "f", "g", "x"]);
+  });
+
+  // ------------------------------------------------------ promotion failure handling
+  test("an UNVERIFIED BY JEV answer changes nothing and is asked again after the retry window", async () => {
+    const s = await setup({ scope: "global", verdict: { verified: false, stamp: "UNVERIFIED BY JEV" } });
+    const { a, b } = await winners(s);
+    expect(await s.memory.promoteEligible()).toEqual([]);
+    expect(s.decisions.calls).toHaveLength(1);
+    const all = await s.memory.listLessons({});
+    expect(all.map((l) => [l.id, l.scope]).sort()).toEqual([[a.id, "project"], [b.id, "project"]].sort());
+    expect(await s.ctx.kv.get(`mem:promote:${a.id}:2`)).toBe("error");
+    // backs off like a failed call, then asks again
+    expect(await s.memory.promoteEligible()).toEqual([]);
+    expect(s.decisions.calls).toHaveLength(1);
+    await s.ctx.kv.del(`mem:promote:${a.id}:2`);
+    await s.memory.promoteEligible();
+    expect(s.decisions.calls).toHaveLength(2);
+  });
+
+  test("a precheck answer (unverified but not stamped) is applied", async () => {
+    const s = await setup({ scope: "discard", verdict: { verified: false, stamp: null } });
+    const { a } = await winners(s);
+    expect(await s.memory.promoteEligible()).toEqual([{ lessonId: a.id, scope: "discard", projects: 2, merged: 0 }]);
+    expect((await s.memory.listLessons({})).every((l) => l.status === "retired")).toBe(true);
+  });
+
+  test("a discard that fails part way rolls back every retirement and is retried", async () => {
+    const fault = { armed: false, nth: 2, seen: 0 };
+    const s = await setup({ scope: "discard", wrapDb: (db) => nthFaultDb(db, "update lessons set status = ", fault) });
+    const { a } = await winners(s);
+    fault.armed = true;
+    expect(await s.memory.promoteEligible()).toEqual([]);
+    expect((await s.memory.listLessons({})).map((l) => l.status)).toEqual(["candidate", "candidate"]);
+    expect(await s.ctx.kv.get(`mem:promote:${a.id}:2`)).toBeNull();
+    fault.armed = false;
+    expect(await s.memory.promoteEligible()).toEqual([{ lessonId: a.id, scope: "discard", projects: 2, merged: 0 }]);
+    expect(s.decisions.calls).toHaveLength(2);
+  });
+
+  test("memo write failures never lose an applied promotion or abort the pass", async () => {
+    const s = await setup({ scope: "global", wrapKv: (kv) => memoWritesFail(kv, "mem:promote:") });
+    const { a } = await winners(s);
+    const c = await s.memory.record({ role: "qa", projectId: "p1", runId: "r1", text: "Seed the fake clock in every test file." });
+    const d = await s.memory.record({ role: "qa", projectId: "p2", runId: "r2", text: "seed the fake clock in every test file" });
+    for (const [l, run, task] of [[c, "r1", "t5"], [d, "r2", "t6"]] as const) {
+      await s.memory.markUsed([l.id], { runId: run, taskId: task });
+      await s.memory.recordOutcome({ runId: run, taskId: task, success: true });
+    }
+    const res = await s.memory.promoteEligible();
+    expect(res.map((r) => [r.lessonId, r.scope]).sort()).toEqual([[a.id, "global"], [c.id, "global"]].sort());
+    expect((await s.memory.listLessons({})).map((l) => l.scope)).toEqual(["global", "global"]);
+    expect(await s.ctx.kv.get("mem:promote:lock")).toBeNull();
+
+    // a failed JEV call whose backoff memo cannot be written still ends the pass cleanly
+    const t = await setup({ scope: "throw", wrapKv: (kv) => memoWritesFail(kv, "mem:promote:") });
+    await winners(t);
+    expect(await t.memory.promoteEligible()).toEqual([]);
+    expect(t.decisions.calls).toHaveLength(1);
+    expect(await t.ctx.kv.get("mem:promote:lock")).toBeNull();
+  });
+
+  test("a pass that fails before asking releases the lock", async () => {
+    const fault = { armed: false };
+    const s = await setup({ scope: "global", wrapDb: (db) => faultyDb(db, "scope <> 'global' and status", fault) });
+    const { a } = await winners(s);
+    fault.armed = true;
+    await expect(s.memory.promoteEligible()).rejects.toThrow("injected db failure");
+    expect(await s.ctx.kv.get("mem:promote:lock")).toBeNull();
+    fault.armed = false;
+    expect(await s.memory.promoteEligible()).toEqual([{ lessonId: a.id, scope: "global", projects: 2, merged: 1 }]);
+  });
+});
+
 describe("memory routes", () => {
+  test("every field of the shared LessonListQuery is accepted by GET /api/memory/lessons", async () => {
+    const { app, memory } = await setup();
+    const a = await memory.record({ ...engineer, text: "Lesson alpha for the query contract test." });
+    const q: Required<RouteQuery<"GET /api/memory/lessons">> = {
+      status: "candidate",
+      scope: "project",
+      projectId: "p1",
+      role: "engineer",
+      before: `${a.createdAt + 1},${a.id}`,
+      limit: 5,
+    };
+    const typed: LessonListQuery = q;
+    const qs = new URLSearchParams(Object.entries(typed).map(([k, v]) => [k, String(v)]));
+    const res = await app.request(`/api/memory/lessons?${qs}`);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as LessonDTO[]).map((l) => l.id)).toEqual([a.id]);
+  });
+
   test("list, filter, patch and delete lessons", async () => {
     const { app, memory, db } = await setup();
     const a = await memory.record({ ...engineer, text: "Lesson alpha for the routes test." });

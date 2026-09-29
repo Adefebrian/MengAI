@@ -395,6 +395,8 @@ const STICKY_DROPS: ReadonlySet<OptionalParam> = new Set(["prompt_cache_key", "s
 
 /** The vendor says a field is not accepted at all (not that its value is wrong). */
 const UNSUPPORTED_RE = /unsupported|unrecognized|unknown|not supported|not permitted|extra inputs/i;
+/** JSON mode needs the prompt to mention json: a prompt problem, never a field to drop. */
+const JSON_WORD_RE = /\bword\s+\\?['"`]?json\b/i;
 /** Text after these words lists what the vendor accepts or suggests instead, not what it rejected. */
 const ALTERNATIVES_RE = /\b(?:expected|one of|instead|use|allowed|valid|supported (?:fields|parameters|values|arguments) are)\b/i;
 
@@ -497,13 +499,19 @@ const isOptionalParam = (v: unknown): v is OptionalParam => typeof v === "string
  * error (error.param + an unsupported code or message) is trusted first;
  * otherwise a field counts only when an unsupported phrase and the field
  * name share one clause, before any "expected one of" or "use X instead" tail.
+ * Only OPTIONAL_PARAMS can ever be returned; a structured error naming any
+ * other param (for example "messages") returns nothing.
  */
 export function unsupportedParams(errText: string, sent: Json): OptionalParam[] {
   const text = errText.slice(0, 4000);
+  if (JSON_WORD_RE.test(text)) return [];
   try {
     const j = JSON.parse(text) as { error?: { param?: unknown; code?: unknown; message?: unknown } };
     const e = j && typeof j === "object" ? j.error : undefined;
-    if (e && typeof e === "object" && isOptionalParam(e.param)) {
+    // a named param outside the allowlist (messages, model, tools...) is required or not ours
+    // to drop, so the error is a real bad_request whatever the message says
+    if (e && typeof e === "object" && typeof e.param === "string" && e.param) {
+      if (!isOptionalParam(e.param)) return [];
       return e.param in sent && UNSUPPORTED_RE.test(`${String(e.code ?? "")} ${String(e.message ?? "")}`) ? [e.param] : [];
     }
   } catch {

@@ -461,35 +461,49 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
         next.baseUrl = url;
       }
       // The stored key was entered for the old endpoint and must never follow the URL to a new
-      // host (or path: gateways put tenants in the path). JEV be.base_url_key_policy: reject_any_change.
-      if (next.baseUrl !== row.baseUrl && row.keyRef && body.apiKey === undefined) {
-        throw new HttpError(
-          422,
-          "key_required",
-          "Changing the base URL needs the API key again: send apiKey with the new URL, or an empty apiKey to remove the stored key",
-        );
+      // host (or path: gateways put tenants in the path). JEV be.base_url_key_policy: clear_on_change.
+      // A changed URL without a new key deletes the stored key; the row stays unusable (routing and
+      // the connection test skip keyless rows of key-required presets) until the owner re-enters it.
+      const moved = next.baseUrl !== row.baseUrl;
+      if (moved) {
+        next.lastTestAt = null;
+        next.lastTestOk = null;
+        next.lastTestError = null;
       }
       if (body.models !== undefined) next.models = dedupeModels(body.models);
-      if (body.apiKey !== undefined) {
-        const key = body.apiKey.trim();
-        if (key) {
-          const ref = row.keyRef ?? keyRefFor(row.id);
-          registerSecret(key);
-          await ctx.vault.set(ref, key);
-          next.keyRef = ref;
-          next.keyHint = keyHint(key) || null;
-        } else {
-          if (keyRequired(row)) throw new HttpError(422, "key_required", `${row.label} needs an API key`);
-          if (row.keyRef) await ctx.vault.delete(row.keyRef);
-          next.keyRef = null;
-          next.keyHint = null;
-        }
+      const key = body.apiKey?.trim() ?? "";
+      const dropKey = !key && (moved || body.apiKey !== undefined);
+      // an explicit empty key on an unchanged URL cannot drop a required key
+      if (dropKey && !moved && keyRequired(row)) throw new HttpError(422, "key_required", `${row.label} needs an API key`);
+      const ref = row.keyRef ?? keyRefFor(row.id);
+      if (key) {
+        next.keyRef = ref;
+        next.keyHint = keyHint(key) || null;
+      } else if (dropKey) {
+        next.keyRef = null;
+        next.keyHint = null;
       }
+      const cleared = dropKey && row.keyRef !== null;
       // strictly increasing so cached adapters are rebuilt even with a frozen clock
       next.updatedAt = Math.max(ctx.clock.now(), row.updatedAt + 1);
-      await repo.update(next);
+      // vault first, then the row; a failed row write puts the vault back, so a stored
+      // row never pairs its URL with a key the owner entered for another endpoint
+      const touchesVault = key !== "" || cleared;
+      const prev = touchesVault && row.keyRef ? await ctx.vault.get(row.keyRef) : null;
+      if (key) {
+        registerSecret(key);
+        await ctx.vault.set(ref, key);
+      } else if (cleared) {
+        await ctx.vault.delete(row.keyRef!);
+      }
+      try {
+        await repo.update(next);
+      } catch (e) {
+        if (touchesVault) await (prev ? ctx.vault.set(ref, prev) : ctx.vault.delete(ref)).catch(() => {});
+        throw e;
+      }
       forget(id);
-      log.log("info", "provider updated", { providerId: id, keyChanged: body.apiKey !== undefined });
+      log.log("info", "provider updated", { providerId: id, keyChanged: key !== "" || cleared, keyCleared: cleared, baseUrlChanged: moved });
       return toDto(next);
     },
 

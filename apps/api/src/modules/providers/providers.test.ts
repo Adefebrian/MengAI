@@ -88,8 +88,9 @@ function testConfig(mode: AppConfig["mode"]): AppConfig {
   return { mode, version: "test", dataDir: "/tmp/mengai-test", workspacesDir: "/tmp/mengai-test/ws", webDir: null, allowedOrigins: [], allowedHosts: [], controlToken: null };
 }
 
-async function setup(mode: AppConfig["mode"] = "local", lookup?: LookupFn): Promise<Env> {
-  const db = await createTestDb();
+async function setup(mode: AppConfig["mode"] = "local", lookup?: LookupFn, wrapDb?: (db: Db) => Db): Promise<Env> {
+  const raw = await createTestDb();
+  const db = wrapDb ? wrapDb(raw) : raw;
   const vault = memoryVault();
   const logs: string[] = [];
   const clock = fakeClock();
@@ -110,6 +111,20 @@ async function add(env: Env, body: Record<string, unknown>): Promise<ProviderDTO
   const res = await env.req("POST", "/api/providers", body);
   expect(res.status).toBe(201);
   return (await res.json()) as ProviderDTO;
+}
+
+/** Db whose provider row updates (update providers set label ...) fail while `fault.armed`. */
+function failingUpdates(inner: Db, fault: { armed: boolean }): Db {
+  return {
+    dialect: inner.dialect,
+    query(strings, ...values) {
+      if (fault.armed && strings.join("?").includes("update providers set label")) return Promise.reject(new Error("injected db failure"));
+      return inner.query(strings, ...values);
+    },
+    tx: (fn) => inner.tx((tx) => fn(failingUpdates(tx, fault))),
+    exec: (sql) => inner.exec(sql),
+    close: () => inner.close(),
+  };
 }
 
 function expectNoKeys(text: string) {
@@ -302,23 +317,40 @@ describe("base URL change and the stored key", () => {
   const publicDns: LookupFn = async () => [{ address: "93.184.216.34", family: 4 }];
   const ok = () => json({ data: [{ id: "m" }] });
 
-  test("PATCH baseUrl without a new key is refused and the old key never reaches the new host", async () => {
+  test("PATCH baseUrl without a new key clears the stored key; the old key never reaches the new host", async () => {
     await env.db.close();
     env = await setup("server", publicDns);
     const p = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
-    const res = await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://attacker.example/v1" });
-    expect(res.status).toBe(422);
-    expect(((await res.json()) as any).error.code).toBe("key_required");
-    expect(((await (await env.req("GET", "/api/providers")).json()) as ProviderDTO[])[0]!.baseUrl).toBe("https://api.openai.com/v1");
-    expect(env.vault.dump().get(`provider:${p.id}`)).toBe(OPENAI_KEY);
+    mockFetch(ok);
+    expect((await env.req("POST", `/api/providers/${p.id}/test`)).status).toBe(200);
+    // warm the adapter cache so a stale adapter could carry the old key
+    await env.mod.service.llm.resolve({ tier: "fast" });
 
+    const res = await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://attacker.example/v1" });
+    expect(res.status).toBe(200);
+    const dto = (await res.json()) as ProviderDTO;
+    expect(dto).toMatchObject({ baseUrl: "https://attacker.example/v1", hasKey: false, keyHint: null, lastTestAt: null, lastTestOk: null, lastTestError: null });
+    expect(env.vault.dump().has(`provider:${p.id}`)).toBe(false);
+    const listed = ((await (await env.req("GET", "/api/providers")).json()) as ProviderDTO[])[0]!;
+    expect(listed).toMatchObject({ baseUrl: "https://attacker.example/v1", hasKey: false, lastTestOk: null });
+
+    // the keyless row of a key-required preset is unusable until the owner re-enters a key
+    mockFetch(ok);
+    const tested = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as { ok: boolean; error: string };
+    expect(tested.ok).toBe(false);
+    expect(tested.error).toContain("no API key");
+    expect(calls).toHaveLength(0);
+    expect(((await env.mod.service.llm.resolve({ tier: "fast" }).catch((e) => e)) as LlmError).kind).toBe("not_found");
+    expect(await env.mod.service.llm.configured()).toBe(false);
+    expectNoKeys(env.logs.join("\n"));
+
+    const fresh = "sk-proj-REENTEREDkeyabcdefghijklmnWXYZ";
+    const rekeyed = (await (await env.req("PATCH", `/api/providers/${p.id}`, { apiKey: fresh })).json()) as ProviderDTO;
+    expect(rekeyed).toMatchObject({ baseUrl: "https://attacker.example/v1", hasKey: true, keyHint: "WXYZ" });
     mockFetch(ok);
     await env.req("POST", `/api/providers/${p.id}/test`);
-    expect(calls.map((c) => new URL(c.url).host)).toEqual(["api.openai.com"]);
-    const r = await env.mod.service.llm.resolve({ tier: "fast" });
-    mockFetch(() => json({ choices: [{ message: { content: "hi" } }] }));
-    await r.provider.chat({ model: r.model, system: "", messages: [{ role: "user", content: "x" }] });
-    expect(calls.every((c) => new URL(c.url).host === "api.openai.com")).toBe(true);
+    expect(calls.map((c) => [new URL(c.url).host, c.headers.get("authorization")])).toEqual([["attacker.example", `Bearer ${fresh}`]]);
+    for (const c of calls) expect(JSON.stringify([...c.headers.entries()])).not.toContain(OPENAI_KEY);
   });
 
   test("a new key in the same PATCH moves the provider; the same URL (trailing slash) keeps the key", async () => {
@@ -327,8 +359,6 @@ describe("base URL change and the stored key", () => {
     const p = await add(env, { preset: "custom-openai", baseUrl: "https://llm.example.com/v1", apiKey: OPENAI_KEY });
     expect((await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://llm.example.com/v1/", label: "Same" })).status).toBe(200);
     expect(env.vault.dump().get(`provider:${p.id}`)).toBe(OPENAI_KEY);
-    // path-only change on the same host still needs the key again (gateways put tenants in the path)
-    expect((await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://llm.example.com/other/v1" })).status).toBe(422);
 
     const fresh = "sk-proj-NEWHOSTkeyabcdefghijklmnopQRST";
     const moved = (await (await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://new.example.com/v1", apiKey: fresh })).json()) as ProviderDTO;
@@ -338,19 +368,58 @@ describe("base URL change and the stored key", () => {
     expect(calls[0]!.url).toBe("https://new.example.com/v1/models");
     expect(calls[0]!.headers.get("authorization")).toBe(`Bearer ${fresh}`);
 
+    // path-only change on the same host clears the key too (gateways put tenants in the path)
+    const pathMove = (await (await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://new.example.com/other/v1" })).json()) as ProviderDTO;
+    expect(pathMove).toMatchObject({ baseUrl: "https://new.example.com/other/v1", hasKey: false, keyHint: null });
+    expect(env.vault.dump().has(`provider:${p.id}`)).toBe(false);
+    // keyless custom endpoints are allowed: calls go out without any authorization header
+    mockFetch(ok);
+    await env.req("POST", `/api/providers/${p.id}/test`);
+    expect(calls.map((c) => c.headers.get("authorization"))).toEqual([null]);
+
     const dropped = (await (await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://third.example.com/v1", apiKey: "" })).json()) as ProviderDTO;
     expect(dropped).toMatchObject({ baseUrl: "https://third.example.com/v1", hasKey: false, keyHint: null });
-    expect(env.vault.dump().has(`provider:${p.id}`)).toBe(false);
     // no stored key: nothing to leak, the URL moves freely
     expect((await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://fourth.example.com/v1" })).status).toBe(200);
   });
 
-  test("a required key cannot be dropped by moving the URL", async () => {
+  test("a required key cannot be dropped on the same URL; moving the URL clears it", async () => {
     const p = await add(env, { preset: "anthropic", apiKey: ANTHROPIC_KEY });
-    const res = await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://proxy.example.com/v1", apiKey: "" });
-    expect(res.status).toBe(422);
-    expect(((await res.json()) as any).error.code).toBe("key_required");
+    const same = await env.req("PATCH", `/api/providers/${p.id}`, { apiKey: "" });
+    expect(same.status).toBe(422);
+    expect(((await same.json()) as any).error.code).toBe("key_required");
     expect(env.vault.dump().get(`provider:${p.id}`)).toBe(ANTHROPIC_KEY);
+
+    const res = await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://proxy.example.com/v1", apiKey: "" });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as ProviderDTO).toMatchObject({ baseUrl: "https://proxy.example.com/v1", hasKey: false });
+    expect(env.vault.dump().has(`provider:${p.id}`)).toBe(false);
+  });
+
+  test("a failed row write puts the vault back, so no key is paired with another endpoint", async () => {
+    const fault = { armed: false };
+    await env.db.close();
+    env = await setup("server", publicDns, (db) => failingUpdates(db, fault));
+    const p = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
+    fault.armed = true;
+    const fresh = "sk-proj-NEWHOSTkeyabcdefghijklmnopQRST";
+    expect((await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://new.example.com/v1", apiKey: fresh })).status).toBe(500);
+    expect(env.vault.dump().get(`provider:${p.id}`)).toBe(OPENAI_KEY);
+    expect((await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://new.example.com/v1" })).status).toBe(500);
+    expect(env.vault.dump().get(`provider:${p.id}`)).toBe(OPENAI_KEY);
+    fault.armed = false;
+
+    const keyless = await add(env, { preset: "custom-openai", baseUrl: "https://llm.example.com/v1" });
+    fault.armed = true;
+    expect((await env.req("PATCH", `/api/providers/${keyless.id}`, { apiKey: fresh })).status).toBe(500);
+    expect(env.vault.dump().has(`provider:${keyless.id}`)).toBe(false);
+    fault.armed = false;
+
+    const [row] = ((await (await env.req("GET", "/api/providers")).json()) as ProviderDTO[]).filter((x) => x.id === p.id);
+    expect(row).toMatchObject({ baseUrl: "https://api.openai.com/v1", hasKey: true });
+    mockFetch(ok);
+    await env.req("POST", `/api/providers/${p.id}/test`);
+    expect(calls.map((c) => [new URL(c.url).host, c.headers.get("authorization")])).toEqual([["api.openai.com", `Bearer ${OPENAI_KEY}`]]);
   });
 });
 
