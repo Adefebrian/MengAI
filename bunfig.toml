@@ -24,4 +24,4 @@ linker = "hoisted"
 
 [test]
 preload = ["./apps/web/src/happydom.ts"]
-pathIgnorePatterns = ["legacy/**", "**/node_modules/**"]
+pathIgnorePatterns = ["**/node_modules/**"]
