@@ -1,4 +1,5 @@
 // @mengai/cats: the living cat character system. The contract (props and
+export * from "./office-contract";
 // handoffLayoutId) is frozen in ./contract; this package owns the rendering:
 // a flat SVG rig, CSS keyframe loops on transform and opacity, and a static
 // pose per activity under reduced motion or `still`.

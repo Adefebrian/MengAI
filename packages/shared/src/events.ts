@@ -56,10 +56,19 @@ export interface EventMap {
   "lesson.recorded": { lesson: LessonDTO };
   "memory.compacted": { agentId: string; tokensBefore: number; tokensAfter: number };
   killswitch: { by: "user" | "shortcut" | "tray" | "system"; stoppedRuns: number; killedProcesses: number };
+  /** the crew gathers: kickoff after the plan, sync after a failed review, wrap-up before the report */
+  "meeting.started": { meetingId: string; kind: MeetingKind; title: string; agentIds: string[]; agenda: string[] };
+  "meeting.ended": { meetingId: string; kind: MeetingKind; notes: string[]; decisions: string[] };
+  /** a crew member asked something; the lead (the CEO cat) decides unless it must go to the owner */
+  "request.raised": { requestId: string; fromAgentId: string; toAgentId: string | null; question: string; toOwner: boolean };
+  "request.decided": { requestId: string; byAgentId: string | null; byOwner: boolean; answer: string; approved: boolean };
   error: { message: string; code: string | null };
 }
 
 export type EventType = keyof EventMap;
+
+export const MEETING_KINDS = ["kickoff", "sync", "review", "wrapup"] as const;
+export type MeetingKind = (typeof MEETING_KINDS)[number];
 
 export interface MengaiEvent<T extends EventType = EventType> {
   /** global monotonic sequence, also the SSE id */
@@ -100,6 +109,10 @@ export const EVENT_TYPES = [
   "lesson.recorded",
   "memory.compacted",
   "killswitch",
+  "meeting.started",
+  "meeting.ended",
+  "request.raised",
+  "request.decided",
   "error",
 ] as const satisfies readonly EventType[];
 
