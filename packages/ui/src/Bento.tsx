@@ -39,7 +39,7 @@ export function BentoItem({ span = "sm", children, className }: BentoItemProps) 
  * so consuming apps get a working grid without having to hand-copy CSS.
  * Import once (e.g. from the app's root styles.css):
  *
- *   @import "@crew/ui/src/Bento.css";
+ *   @import "@mengai/ui/src/Bento.css";
  */
 export const bentoStyles = `
 .bento {

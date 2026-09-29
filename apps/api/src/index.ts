@@ -1,4 +1,4 @@
-import { loadEnv } from "@crew/config";
+import { loadEnv } from "@mengai/config";
 import { app } from "./core/app";
 
 export { app };

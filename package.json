@@ -1,5 +1,5 @@
 {
-  "name": "crew",
+  "name": "mengai",
   "version": "0.1.0",
   "private": true,
   "packageManager": "bun@1.3.14",
@@ -14,13 +14,11 @@
     "lint": "turbo run lint",
     "dev": "turbo run dev --parallel",
     "check:boundaries": "bun tools/check-boundaries.ts",
-    "migrate": "bun tools/migrate.ts"
-  },
-  "dependencies": {
-    "pg": "^8.13.0"
+    "migrate": "bun tools/migrate.ts",
+    "bench:tokens": "bun tools/bench-tokens.ts",
+    "build:desktop": "bun run --cwd apps/desktop build"
   },
   "devDependencies": {
-    "@types/pg": "^8.11.0",
     "turbo": "^2.5.0",
     "typescript": "^5.7.0"
   }

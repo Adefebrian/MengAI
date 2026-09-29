@@ -8,7 +8,7 @@
 // Redis, S3, OpenAI clients) never ships to the browser, only the type
 // information tsc needs is pulled in, and only at typecheck time.
 import { hc } from "hono/client";
-import type { AppType } from "@crew/api/src/core/app";
+import type { AppType } from "@mengai/api/src/core/app";
 
 // `import.meta.env` is a Vite convention, not a Bun one; this repo has no
 // Vite dev server (see README "Stack"), so nothing defines `env` on

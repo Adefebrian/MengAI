@@ -1,0 +1,232 @@
+// REST contract: request bodies and response shapes per route. The API
+// validates every body with zod against these shapes; the web client is a
+// thin typed fetch wrapper over the same types. Errors are always
+// `{ error: { code, message } }` with a matching HTTP status.
+import type {
+  AgentDTO,
+  ApprovalDTO,
+  AssetDTO,
+  AuditEntryDTO,
+  ContextXrayDTO,
+  DecisionDTO,
+  EvalRunDTO,
+  FileNodeDTO,
+  FindingDTO,
+  HealthDTO,
+  LessonDTO,
+  LlmCallDTO,
+  ModelRouting,
+  PermissionDTO,
+  ProjectDTO,
+  ProviderDTO,
+  ProviderModel,
+  RunDTO,
+  RunSnapshotDTO,
+  ScanDTO,
+  SessionDTO,
+  SkillDTO,
+  TaskDTO,
+  UsageTotals,
+} from "./dto";
+import type {
+  AgentRole,
+  ApprovalScope,
+  AssetKind,
+  Capability,
+  FindingStatus,
+  LessonStatus,
+  PermissionMode,
+  ScanKind,
+  TaskStatus,
+} from "./enums";
+import type { ModelPrice } from "./pricing";
+import type { ProviderPreset } from "./providers";
+
+export interface ApiError {
+  error: { code: string; message: string };
+}
+
+// auth
+export interface SetupBody { email: string; password: string; setupCode: string }
+export interface LoginBody { email: string; password: string }
+export interface LaunchBody { token: string }
+
+// providers
+export interface CreateProviderBody {
+  preset: string;
+  label?: string;
+  baseUrl?: string;
+  /** sent once, stored in the vault, never returned */
+  apiKey?: string;
+  models?: ProviderModel[];
+}
+export interface UpdateProviderBody {
+  label?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  models?: ProviderModel[];
+}
+export interface ProviderTestResult {
+  ok: boolean;
+  latencyMs: number;
+  error: string | null;
+  models: ProviderModel[];
+}
+
+// projects and runs
+export interface CreateProjectBody { name: string; workspacePath?: string }
+export interface CreateRunBody { projectId: string; goal: string; budgetTokens?: number; budgetUsd?: number }
+export interface EstimateRunBody { projectId: string; goal: string }
+export interface RunEstimate { tasks: number; tokens: number; costUsd: number; basis: "history" | "heuristic" }
+export interface HumanMessageBody { text: string; agentId?: string }
+export interface BudgetBody { budgetTokens?: number; budgetUsd?: number }
+export interface TaskPatchBody { status?: Extract<TaskStatus, "queued" | "cancelled">; assigneeId?: string | null; priority?: number }
+export interface FileContent { path: string; content: string; truncated: boolean; size: number; binary: boolean }
+export interface ToolCallDetail { id: string; tool: string; args: unknown; output: string; ok: boolean; durationMs: number; createdAt: number }
+
+// usage
+export interface UsageReport {
+  totals: UsageTotals;
+  cacheHitRate: number;
+  byModel: Array<{ model: string } & UsageTotals>;
+  byRole: Array<{ role: AgentRole } & UsageTotals>;
+}
+
+// memory
+export interface LessonPatchBody { status?: LessonStatus; text?: string }
+
+// assets
+export interface CreateAssetBody {
+  kind: AssetKind;
+  prompt: string;
+  providerId?: string;
+  model?: string;
+  size?: "1024x1024" | "1536x1024" | "1024x1536";
+  durationSec?: number;
+  runId?: string;
+}
+
+// security
+export interface CreateScanBody { projectId: string; kinds: ScanKind[] }
+export interface FindingPatchBody { status: FindingStatus }
+
+// automation
+export interface GrantBody { mode: PermissionMode; scope?: string[]; expiresAt?: number | null }
+export interface ApprovalDecisionBody { decision: "approve" | "deny"; scope?: ApprovalScope }
+export interface AutomationStatus {
+  available: boolean;
+  reason: string | null;
+  permissions: { accessibility: boolean; screen: boolean };
+  active: boolean;
+}
+export interface AuditVerify { ok: boolean; count: number; brokenAt: number | null }
+export interface KillSwitchBody { by?: "user" | "shortcut" | "tray" }
+export interface KillSwitchResult { stoppedRuns: number; killedProcesses: number }
+
+// settings
+export interface OwnerSettings {
+  defaultBudgetTokens: number;
+  defaultBudgetUsd: number;
+  maxConcurrentAgents: number;
+  /** network consent for dependency audits (OSV) and web research */
+  allowNetworkTools: boolean;
+  /** celebration and quirk animations can be turned down here as well as by the OS */
+  motion: "full" | "calm" | "off";
+  prices: Record<string, ModelPrice>;
+}
+
+/**
+ * Route table: METHOD path -> [request body, response]. `never` body means
+ * no JSON body. Path params use :name.
+ */
+export interface Routes {
+  "GET /api/health": [never, HealthDTO];
+  "GET /api/session": [never, SessionDTO];
+  "POST /api/auth/setup": [SetupBody, SessionDTO];
+  "POST /api/auth/login": [LoginBody, SessionDTO];
+  "POST /api/auth/logout": [never, { ok: true }];
+  "POST /api/auth/launch": [LaunchBody, SessionDTO];
+
+  "GET /api/providers": [never, ProviderDTO[]];
+  "GET /api/providers/presets": [never, ProviderPreset[]];
+  "POST /api/providers": [CreateProviderBody, ProviderDTO];
+  "PATCH /api/providers/:id": [UpdateProviderBody, ProviderDTO];
+  "DELETE /api/providers/:id": [never, { ok: true }];
+  "POST /api/providers/:id/test": [never, ProviderTestResult];
+  "GET /api/routing": [never, ModelRouting];
+  "PUT /api/routing": [ModelRouting, ModelRouting];
+
+  "GET /api/projects": [never, ProjectDTO[]];
+  "POST /api/projects": [CreateProjectBody, ProjectDTO];
+  "GET /api/projects/:id": [never, ProjectDTO];
+  "DELETE /api/projects/:id": [never, { ok: true }];
+  "GET /api/projects/:id/files": [never, FileNodeDTO[]];
+  "GET /api/projects/:id/file": [never, FileContent];
+
+  "GET /api/runs": [never, RunDTO[]];
+  "POST /api/runs": [CreateRunBody, RunDTO];
+  "POST /api/runs/estimate": [EstimateRunBody, RunEstimate];
+  "GET /api/runs/:id": [never, RunSnapshotDTO];
+  "POST /api/runs/:id/pause": [never, RunDTO];
+  "POST /api/runs/:id/resume": [never, RunDTO];
+  "POST /api/runs/:id/stop": [never, RunDTO];
+  "POST /api/runs/:id/message": [HumanMessageBody, { ok: true }];
+  "PATCH /api/runs/:id/budget": [BudgetBody, RunDTO];
+  "PATCH /api/runs/:id/tasks/:taskId": [TaskPatchBody, TaskDTO];
+  "POST /api/runs/:id/agents/:agentId/stop": [never, AgentDTO];
+  "GET /api/runs/:id/calls": [never, LlmCallDTO[]];
+  "GET /api/runs/:id/tools/:callId": [never, ToolCallDetail];
+  "GET /api/runs/:id/xray/:agentId": [never, ContextXrayDTO];
+  /** SSE stream: query runId (optional) and after (seq); honors Last-Event-ID */
+  "GET /api/events": [never, never];
+
+  "GET /api/usage": [never, UsageReport];
+  "GET /api/decisions": [never, DecisionDTO[]];
+
+  "GET /api/memory/lessons": [never, LessonDTO[]];
+  "PATCH /api/memory/lessons/:id": [LessonPatchBody, LessonDTO];
+  "DELETE /api/memory/lessons/:id": [never, { ok: true }];
+  "GET /api/memory/skills": [never, SkillDTO[]];
+  "DELETE /api/memory/skills/:id": [never, { ok: true }];
+
+  "GET /api/evals": [never, EvalRunDTO[]];
+  "POST /api/evals/run": [{ suite?: string }, { legacy: EvalRunDTO; v2: EvalRunDTO; savingsPct: number }];
+
+  "GET /api/assets": [never, AssetDTO[]];
+  "POST /api/assets": [CreateAssetBody, AssetDTO];
+  "GET /api/assets/:id/file": [never, never];
+  "DELETE /api/assets/:id": [never, { ok: true }];
+
+  "POST /api/security/scans": [CreateScanBody, ScanDTO];
+  "GET /api/security/scans": [never, ScanDTO[]];
+  "GET /api/security/scans/:id/findings": [never, FindingDTO[]];
+  "PATCH /api/security/findings/:id": [FindingPatchBody, FindingDTO];
+
+  "GET /api/automation/status": [never, AutomationStatus];
+  "POST /api/automation/permissions/request": [{ kind: "accessibility" | "screen" }, AutomationStatus];
+  "GET /api/automation/grants": [never, PermissionDTO[]];
+  "PUT /api/automation/grants/:capability": [GrantBody, PermissionDTO];
+  "GET /api/automation/approvals": [never, ApprovalDTO[]];
+  "POST /api/automation/approvals/:id": [ApprovalDecisionBody, ApprovalDTO];
+  "GET /api/automation/audit": [never, AuditEntryDTO[]];
+  "GET /api/automation/audit/verify": [never, AuditVerify];
+  "GET /api/automation/frames/:id": [never, never];
+
+  /** always mounted in both modes; stops every run, and in local mode all automation */
+  "POST /api/killswitch": [KillSwitchBody, KillSwitchResult];
+
+  "GET /api/settings": [never, OwnerSettings];
+  "PATCH /api/settings": [Partial<OwnerSettings>, OwnerSettings];
+  /** local mode only: native folder picker */
+  "POST /api/local/pick-folder": [never, { path: string | null }];
+}
+
+export type RouteKey = keyof Routes;
+export type RouteBody<K extends RouteKey> = Routes[K][0];
+export type RouteResponse<K extends RouteKey> = Routes[K][1];
+
+/** Header the Tauri shell uses for tray and global-shortcut calls (kill switch). */
+export const CONTROL_TOKEN_HEADER = "x-mengai-control";
+/** Header every mutating browser request must carry (CSRF defense with Origin check). */
+export const CSRF_HEADER = "x-mengai-csrf";
+export const SESSION_COOKIE = "mengai_session";

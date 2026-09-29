@@ -1,21 +1,27 @@
 {
-  "name": "@mengai/ui",
+  "name": "@mengai/cats",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "sideEffects": ["./src/cats.css"],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "lint": "echo 'no lint configured for packages/ui' && exit 0"
+    "lint": "echo 'no lint configured for packages/cats' && exit 0"
+  },
+  "dependencies": {
+    "@mengai/shared": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=19 <19.4"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^15.11.0",
     "@types/bun": "^1.1.0",
     "@types/react": "~19.3.0",
+    "@types/react-dom": "~19.3.0",
     "react": "~19.3.0",
     "react-dom": "~19.3.0",
     "typescript": "^5.7.0"

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppShell, Bento, BentoItem } from "@crew/ui";
+import { AppShell, Bento, BentoItem } from "@mengai/ui";
 import { api } from "./client";
 
 // Every screen lives inside the JAL Core app-shell: bottom tab bar below

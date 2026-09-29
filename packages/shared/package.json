@@ -1,5 +1,5 @@
 {
-  "name": "@mengai/ui",
+  "name": "@mengai/shared",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,16 +8,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "lint": "echo 'no lint configured for packages/ui' && exit 0"
-  },
-  "peerDependencies": {
-    "react": ">=19 <19.4"
+    "lint": "echo 'no lint configured for packages/shared' && exit 0"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
-    "@types/react": "~19.3.0",
-    "react": "~19.3.0",
-    "react-dom": "~19.3.0",
     "typescript": "^5.7.0"
   }
 }

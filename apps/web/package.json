@@ -1,5 +1,5 @@
 {
-  "name": "@crew/web",
+  "name": "@mengai/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,13 +12,16 @@
     "lint": "echo 'no lint configured for apps/web' && exit 0"
   },
   "dependencies": {
-    "@crew/ui": "workspace:*",
+    "@mengai/ui": "workspace:*",
     "hono": "^4.6.0",
     "react": "~19.3.0",
-    "react-dom": "~19.3.0"
+    "react-dom": "~19.3.0",
+    "@mengai/shared": "workspace:*",
+    "@mengai/cats": "workspace:*",
+    "motion": "^12.23.0"
   },
   "devDependencies": {
-    "@crew/api": "workspace:*",
+    "@mengai/api": "workspace:*",
     "@happy-dom/global-registrator": "^15.11.0",
     "@types/bun": "^1.1.0",
     "@types/react": "~19.3.0",
