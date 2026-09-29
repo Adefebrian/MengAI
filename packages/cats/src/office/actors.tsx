@@ -20,6 +20,7 @@ import { QUIRK_POSES, beatFor, coatOf, isLowEnergy, phaseMs, poseFor, type Pose 
 import { CatchCard, Warning } from "../props";
 import { Head, PawPrints, Rig, rigKind } from "../rig";
 import type { ActorView, Carry, Reaction } from "./director";
+import { sceneClip, useSceneUid } from "./uid";
 
 /** How long each one-shot reaction class stays on (ms), matching office.css. */
 export const REACTION_MS: Record<Reaction, number> = {
@@ -30,6 +31,7 @@ export const REACTION_MS: Record<Reaction, number> = {
   "stamp-pass": 900,
   "stamp-return": 900,
   look: 3000,
+  approve: 1400,
 };
 
 /** The latest one-shot while it plays, null otherwise. */
@@ -90,6 +92,10 @@ export interface SeatedCatProps {
   talking?: boolean;
   /** a mug held between the paws (coffee break) */
   mug?: boolean;
+  /** curled up asleep in the cat bed: the stopped pose, not dimmed, no desk object */
+  nap?: boolean;
+  /** the fund's trader standing up at its desk to execute */
+  lift?: boolean;
   offscreen: RefObject<boolean>;
 }
 
@@ -111,18 +117,22 @@ export function SeatedCat(p: SeatedCatProps) {
     quirk && !react ? `cat-quirk-${quirk}` : null,
     react === "catch" ? "cat-catch" : null,
     react === "celebrate" ? "cat-celebrate" : null,
-    react === "nod" ? "of-nod" : null,
+    react === "nod" || react === "approve" ? "of-nod" : null,
     react === "shake" || react === "stamp-return" ? "of-shake" : null,
     react === "stamp-pass" ? "cat-react-tap" : null,
     react === "look" ? "of-look" : null,
     p.talking ? "of-talking" : null,
+    p.nap ? "of-nap" : null,
+    p.lift ? "of-lifted" : null,
   ]
     .filter(Boolean)
     .join(" ");
   const s = p.size / 160;
-  const style = { "--cat-phase": `${phaseMs(agent.look.seed)}ms`, "--cat-sw": String(1.5 / s) } as CSSProperties;
+  const style = { "--cat-phase": `${phaseMs(agent.look.seed)}ms`, "--cat-sw": String(1.5 / s), "--of-lift": `${-Math.round(p.size * 0.16)}px` } as CSSProperties;
   return (
     <g className={className} {...catAttrs(agent, { "data-activity": agent.activity, "data-pose": pose, "data-beat": beat, "data-motion": p.live ? "live" : "still" })} style={style}>
+      <g className="of-lift">
+      <g className="of-lean">
       <svg className="of-rig" x={p.x} y={p.y} width={p.size} height={p.size} viewBox="0 0 160 160" overflow="hidden">
         {leaving && !sameKind ? <Rig key={`o-${rigKind(leaving)}`} pose={leaving} beat={leavingBeat!} role={agent.role} clipBase={`${p.clip}-o`} live={p.live} fade="out" /> : null}
         <Rig
@@ -140,6 +150,8 @@ export function SeatedCat(p: SeatedCatProps) {
         {react === "celebrate" ? <PawPrints /> : null}
         {p.mug ? <HeldMug /> : null}
       </svg>
+      </g>
+      </g>
     </g>
   );
 }
@@ -161,7 +173,21 @@ function HeldMug() {
  * Carried things, in walker units (the mouth sits near 98, 48)
  * ------------------------------------------------------------------- */
 
+/** The moving box, carried on the back: a new hire's things, or a leaver's desk with its plant peeking out. */
+function BackBox({ x, y }: { x: number; y: number }) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <path className="of-leaf" d="M6 -22 C 2 -30 6 -36 12 -38 C 14 -30 12 -26 6 -22 Z" />
+      <path className="of-leaf-2" d="M8 -22 C 12 -28 18 -30 22 -28 C 20 -22 14 -21 8 -22 Z" />
+      <rect className="of-box of-thick" x={-17} y={-22} width={34} height={24} rx={2} />
+      <rect className="of-box-tape" x={-4} y={-22} width={8} height={11} />
+      <rect className="of-box-label" x={6} y={-9} width={8} height={5} rx={1} />
+    </g>
+  );
+}
+
 function CarryArt({ carry, x, y }: { carry: Carry; x: number; y: number }) {
+  if (carry === "box") return null;
   if (carry === "mug") {
     return (
       <g transform={`translate(${x} ${y})`}>
@@ -223,6 +249,7 @@ function SideWalker({ clip, carry }: { clip: string; carry: Carry | null }) {
         <Leg x={78} cls="of-leg-ff" />
         <g className="of-bob">
           <path className="c-fur" d={W_BODY} />
+          {carry === "box" ? <BackBox x={54} y={36} /> : null}
           <ellipse className="c-light cat-chest" cx={62} cy={60} rx={20} ry={4.5} />
           <path className="c-stripe cat-stripes" d="M48 36.5 Q50 42 48 46 M58 35 Q60 41 58 45 M68 36 Q70 42 68 46" />
           <path className="c-mark cat-patches" d="M40 38 C 48 34 58 36 60 44 C 56 52 44 52 38 46 Z" />
@@ -231,7 +258,7 @@ function SideWalker({ clip, carry }: { clip: string; carry: Carry | null }) {
         <Leg x={47} cls="of-leg-bn" />
         <Leg x={85} cls="of-leg-fn" />
         <g className="of-bob">
-          <g transform="translate(56 7) scale(0.5)" style={{ "--cat-sw": "calc(var(--of-sw) * 2)" } as CSSProperties}>
+          <g transform="translate(49 2) scale(0.6)" style={{ "--cat-sw": "calc(var(--of-sw) * 1.667)" } as CSSProperties}>
             <Head pupils={[2.5, 0.5]} eyes="open" clipBase={`${clip}-h`} />
           </g>
           {carry ? <CarryArt carry={carry} x={101} y={50} /> : null}
@@ -279,6 +306,7 @@ function UpWalker({ carry }: { carry: Carry | null }) {
         <path className="c-stripe cat-stripes" d="M50 52 Q54 54 55 58 M70 52 Q66 54 65 58 M48 64 Q52 66 53 70 M72 64 Q68 66 67 70" />
         <path className="c-mark cat-patches" d="M62 42 C 72 44 78 52 78 60 C 70 60 64 52 62 42 Z" />
         <HeadBack dx={0} dy={0} />
+        {carry === "box" ? <BackBox x={60} y={70} /> : null}
         {carry ? <CarryArt carry={carry} x={84} y={58} /> : null}
       </g>
     </g>
@@ -292,6 +320,7 @@ function DownWalker({ clip, carry }: { clip: string; carry: Carry | null }) {
         <Tube d="M72 70 C 84 64 90 52 86 40" width={7} tail />
       </g>
       <g className="of-bob">
+        {carry === "box" ? <BackBox x={60} y={30} /> : null}
         <path className="c-fur" d={BACK_BODY} />
         <ellipse className="c-light cat-chest" cx={60} cy={66} rx={10} ry={13} />
         <path className="c-mark2 cat-patches" d="M44 66 C 48 60 56 62 56 70 C 56 76 48 78 44 74 Z" />
@@ -303,7 +332,7 @@ function DownWalker({ clip, carry }: { clip: string; carry: Carry | null }) {
         <ellipse className="c-paw" cx={68} cy={84} rx={6} ry={3.8} />
       </g>
       <g className="of-bob">
-        <g transform="translate(20 3) scale(0.5)" style={{ "--cat-sw": "calc(var(--of-sw) * 2)" } as CSSProperties}>
+        <g transform="translate(12 -3) scale(0.6)" style={{ "--cat-sw": "calc(var(--of-sw) * 1.667)" } as CSSProperties}>
           <Head pupils={[0, 2]} eyes="open" clipBase={`${clip}-d`} />
         </g>
         {carry ? <CarryArt carry={carry} x={80} y={60} /> : null}
@@ -352,7 +381,7 @@ export interface FloorActorProps {
 export function FloorActor({ agent, view, live, scale, floorCat, register, offscreen }: FloorActorProps) {
   const ref = useRef<SVGGElement | null>(null);
   const react = useOneShot(view.react, live);
-  const clip = `of-${agent.id.replace(/[^A-Za-z0-9_-]/g, "")}`;
+  const clip = sceneClip(useSceneUid(), agent.id);
   const setRef = (el: SVGGElement | null) => {
     ref.current = el;
     register(el);

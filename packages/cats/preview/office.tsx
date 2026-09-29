@@ -1,4 +1,5 @@
-// /office: the living cat company on a scripted loop, three ways. The full
+// /office: the living cat company on a scripted loop, three ways, in two
+// companies (a software studio and a hedge fund trading floor). The full
 // scene as the run page shows it (crew of 4, 8 or 12), the compact hero the
 // landing shows, and the still scene reduced motion gets (still poses,
 // instant moves, every beat as a note). One story clock drives all three;
@@ -10,7 +11,7 @@ import { ACTIVITY_LABEL, ROLE_LABEL } from "@mengai/shared";
 import type { OfficeAgent, OfficeBeat, OfficeMeeting } from "../src/office-contract";
 import { OfficeScene } from "../src/office/office";
 import type { Director } from "../src/office/director";
-import { CREW_SIZES, LOOP_S, agentsAt, eventsBetween, meetingFrom, planAt, type CrewSize, type StoryEvent } from "./office-story";
+import { CREW_SIZES, LOOP_S, agentsAt, eventsBetween, meetingFrom, planAt, type CrewSize, type StoryEvent, type Theme } from "./office-story";
 
 const TICK_MS = 250;
 
@@ -36,8 +37,13 @@ function clock(t: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function useStory(playing: boolean) {
-  const [state, setState] = useState({ t: 0, loop: 0 });
+const THEMES: Array<{ id: Theme; label: string }> = [
+  { id: "studio", label: "Studio" },
+  { id: "fund", label: "Fund" },
+];
+
+function useStory(playing: boolean, theme: Theme, at = 0) {
+  const [state, setState] = useState({ t: at, loop: 0 });
   const [fired, setFired] = useState<Fired[]>([]);
   const [meetings, setMeetings] = useState<OfficeMeeting[]>([]);
   const last = useRef(state);
@@ -51,7 +57,7 @@ function useStory(playing: boolean) {
     setMeetings([]);
   };
   const advance = (from: number, to: number, loop: number) => {
-    const evs = eventsBetween(from, to);
+    const evs = eventsBetween(from, to, theme);
     if (!evs.length) return;
     setFired((f) => [...f, ...evs.map((ev) => ({ id: `${loop}-${ev.key}`, ev }))].slice(-40));
     setMeetings((ms) => {
@@ -64,8 +70,14 @@ function useStory(playing: boolean) {
     });
   };
   useEffect(() => {
+    // a capture that starts later in the day: the meeting already in session is running
+    if (at > 0) {
+      const before = eventsBetween(-1, Math.max(0, at - 1.5), theme);
+      const open = before.filter((e) => e.meetingStart && !before.some((x) => x.meetingEnd?.id === e.meetingStart!.id));
+      if (open.length) setMeetings(open.map((e) => meetingFrom(e.meetingStart!, 0)));
+    }
     // the first beat plays at once, so the scene opens mid-story
-    advance(-1, 0.5, 0);
+    advance(at > 0 ? at - 1.5 : -1, at + 0.5, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -96,11 +108,12 @@ function StoryOffice(props: {
   meetings: OfficeMeeting[];
   plan: ReturnType<typeof planAt>;
   variant: "full" | "hero";
+  theme: Theme;
   still?: boolean;
   selectable?: boolean;
 }) {
   const [beats, setBeats] = useState<OfficeBeat[]>([]);
-  const [selected, setSelected] = useState<string | null>("mochi");
+  const [selected, setSelected] = useState<string | null>("belang");
   const director = useRef<Director | null>(null);
   // a scene mounted mid-loop (a new crew size) starts from now, not from the loop's first beat
   const [handledSet] = useState(() => new Set(props.fired.map((f) => f.id)));
@@ -113,6 +126,7 @@ function StoryOffice(props: {
     for (const f of fresh) {
       if (f.ev.beat) add.push({ ...f.ev.beat, id: f.id } as OfficeBeat);
       if (f.ev.coffee) director.current?.coffeeNow(f.ev.coffee);
+      if (f.ev.nap) director.current?.napNow(f.ev.nap);
     }
     if (add.length) setBeats((b) => [...b, ...add]);
   }, [props.fired]);
@@ -125,6 +139,7 @@ function StoryOffice(props: {
       onBeatDone={onBeatDone}
       plan={props.plan}
       variant={props.variant}
+      theme={props.theme}
       still={props.still}
       selectedId={props.selectable ? selected : undefined}
       onSelect={props.selectable ? setSelected : undefined}
@@ -136,41 +151,48 @@ function StoryOffice(props: {
   );
 }
 
-/** ?only=full|hero|still renders one bare scene, for time-lapse captures. */
-function captureMode(): { only: "full" | "hero" | "still" | null; size: CrewSize } {
+/** ?only=full|hero|still renders one bare scene, for time-lapse captures; ?theme=fund and ?crew=4|8|12 pick the company, ?at=seconds starts the day later. */
+function captureMode(): { only: "full" | "hero" | "still" | null; size: CrewSize; theme: Theme; at: number } {
   const q = new URLSearchParams(location.search);
   const only = q.get("only");
   const n = Number(q.get("crew"));
   return {
     only: only === "full" || only === "hero" || only === "still" ? only : null,
     size: (CREW_SIZES as readonly number[]).includes(n) ? (n as CrewSize) : 8,
+    theme: q.get("theme") === "fund" ? "fund" : "studio",
+    at: Math.max(0, Math.min(LOOP_S - 1, Number(q.get("at")) || 0)),
   };
 }
 
-function Capture({ only, size }: { only: "full" | "hero" | "still"; size: CrewSize }) {
-  const story = useStory(true);
-  const agents = useStableAgents(useMemo(() => agentsAt(story.t, size), [story.t, size]));
-  const plan = useStablePlan(useMemo(() => planAt(story.t), [story.t]));
+function Capture({ only, size, theme, at }: { only: "full" | "hero" | "still"; size: CrewSize; theme: Theme; at: number }) {
+  const story = useStory(true, theme, at);
+  const agents = useStableAgents(useMemo(() => agentsAt(story.t, size, theme), [story.t, size, theme]));
+  const plan = useStablePlan(useMemo(() => planAt(story.t, theme), [story.t, theme]));
   return (
     <main className={`pv-capture${only === "hero" ? " pv-hero" : ""}`}>
-      <StoryOffice key={story.loop} fired={story.fired} agents={agents} meetings={story.meetings} plan={plan} variant={only === "hero" ? "hero" : "full"} still={only === "still"} selectable={only === "full"} />
+      <StoryOffice key={story.loop} fired={story.fired} agents={agents} meetings={story.meetings} plan={plan} variant={only === "hero" ? "hero" : "full"} theme={theme} still={only === "still"} selectable={only === "full"} />
     </main>
   );
 }
 
 function OfficePreview() {
   const mode = captureMode();
-  if (mode.only) return <Capture only={mode.only} size={mode.size} />;
-  return <OfficeStory />;
+  if (mode.only) return <Capture only={mode.only} size={mode.size} theme={mode.theme} at={mode.at} />;
+  return <OfficeStory initialTheme={mode.theme} initialSize={mode.size} />;
 }
 
-function OfficeStory() {
+function OfficeStory({ initialTheme, initialSize }: { initialTheme: Theme; initialSize: CrewSize }) {
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+  return <OfficeDay key={theme} theme={theme} setTheme={setTheme} initialSize={initialSize} />;
+}
+
+function OfficeDay({ theme, setTheme, initialSize }: { theme: Theme; setTheme: (t: Theme) => void; initialSize: CrewSize }) {
   const [playing, setPlaying] = useState(true);
-  const [size, setSize] = useState<CrewSize>(8);
-  const story = useStory(playing);
-  const agents = useMemo(() => agentsAt(story.t, size), [story.t, size]);
-  const heroAgents = useMemo(() => agentsAt(story.t, 8), [story.t]);
-  const plan = useMemo(() => planAt(story.t), [story.t]);
+  const [size, setSize] = useState<CrewSize>(initialSize);
+  const story = useStory(playing, theme);
+  const agents = useMemo(() => agentsAt(story.t, size, theme), [story.t, size, theme]);
+  const heroAgents = useMemo(() => agentsAt(story.t, 8, theme), [story.t, theme]);
+  const plan = useMemo(() => planAt(story.t, theme), [story.t, theme]);
   const stable = useStableAgents(agents);
   const heroStable = useStableAgents(heroAgents);
   const stablePlan = useStablePlan(plan);
@@ -181,13 +203,17 @@ function OfficeStory() {
           id="top"
           variant="left"
           title="A cat company at work."
-          lead="Every agent is a cat with its own desk. They code at their monitors, walk work over to each other, meet at the table, and ask the CEO cat when they need a yes."
+          lead="Every agent is a cat with its own desk. They work at their monitors, walk work over to each other, meet at the table, ask Oyen, the CEO cat, when they need a yes, and walk in and out of the door when they join or leave."
         />
         <Section id="office" tone="base" labelledBy="office-title" composition="custom" variant="office-live">
           <SectionHead
             id="office-title"
             title="One company day, on a loop"
-            lead="Kopi hands out the form, Tempe gets a yes, Onde sends the form back, the crew meets about it, the fix passes and goes on the board, then everyone wraps up."
+            lead={
+              theme === "fund"
+                ? "Oyen hands out the backtest, Tompel gets a higher limit, Cemong finds a lookahead bias, Belo joins the desk, the risk committee meets, Moci walks out, the fix passes, the target rings the bell, then everyone closes the book."
+                : "Oyen hands out the form, Tompel gets a yes, Cemong sends the form back, Belo is hired, the crew meets, Moci walks out, the fix passes and goes on the board, Gembul naps, then everyone wraps up."
+            }
             action={
               <div className="pv-office-controls">
                 <button type="button" className="btn btn-secondary" aria-pressed={!playing} onClick={() => setPlaying((p) => !p)}>
@@ -200,6 +226,13 @@ function OfficeStory() {
             }
           />
           <div className="pv-office-bar kit-full">
+            <div className="pv-sizes-toggle" role="group" aria-label="Company">
+              {THEMES.map((th) => (
+                <button key={th.id} type="button" className="btn btn-secondary" aria-pressed={theme === th.id} onClick={() => setTheme(th.id)}>
+                  {th.label}
+                </button>
+              ))}
+            </div>
             <div className="pv-sizes-toggle" role="group" aria-label="Crew size">
               {CREW_SIZES.map((n) => (
                 <button key={n} type="button" className="btn btn-secondary" aria-pressed={size === n} onClick={() => setSize(n)}>
@@ -212,20 +245,20 @@ function OfficeStory() {
             </p>
           </div>
           <div className="kit-full pv-office">
-            <StoryOffice key={`full-${size}-${story.loop}`} fired={story.fired} agents={stable} meetings={story.meetings} plan={stablePlan} variant="full" selectable />
+            <StoryOffice key={`full-${size}-${story.loop}`} fired={story.fired} agents={stable} meetings={story.meetings} plan={stablePlan} variant="full" theme={theme} selectable />
           </div>
         </Section>
         <Section id="hero" tone="layer" labelledBy="hero-title" composition="custom" variant="office-hero">
           <SectionHead id="hero-title" title="The landing hero" lead="The same day in the compact scene the landing shows beside its headline." />
           <figure className="kit-full pv-hero pv-figure">
-            <StoryOffice key={`hero-${story.loop}`} fired={story.fired} agents={heroStable} meetings={story.meetings} plan={stablePlan} variant="hero" />
-            <figcaption className="kit-meta">A sample crew on a scripted loop. The hero has no meeting room or pantry: the crew huddles at the easel.</figcaption>
+            <StoryOffice key={`hero-${story.loop}`} fired={story.fired} agents={heroStable} meetings={story.meetings} plan={stablePlan} variant="hero" theme={theme} />
+            <figcaption className="kit-meta">A sample crew on a scripted loop. The hero has no meeting room or pantry: the crew huddles at the plan board.</figcaption>
           </figure>
         </Section>
         <Section id="still" tone="base" labelledBy="still-title" composition="custom" variant="office-still">
           <SectionHead id="still-title" title="Still, for reduced motion" lead="Every cat keeps the still pose of its activity, moves are instant, and each beat is written out under the scene." />
           <div className="kit-full pv-office">
-            <StoryOffice key={`still-${story.loop}`} fired={story.fired} agents={heroStable} meetings={story.meetings} plan={stablePlan} variant="full" still />
+            <StoryOffice key={`still-${story.loop}`} fired={story.fired} agents={heroStable} meetings={story.meetings} plan={stablePlan} variant="full" theme={theme} still />
           </div>
         </Section>
       </AppShell>

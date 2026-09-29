@@ -1,15 +1,14 @@
-// The office furniture: flat fills, tonal steps and hairlines only (no
-// gradient, no shadow, no glow). Every colour is a class in office.css on
-// JAL Core tokens or the scene's small flat palette. Coordinates are world
-// pixels from the plan (geometry.ts).
-import type { ReactNode } from "react";
+// The office furniture, drawn as a three-quarter cutaway: every block has
+// a top face seen from above and a front face seen face on. Flat fills,
+// tonal steps and hairlines only (no gradient, no shadow, no glow). Every
+// colour is a class in office.css on JAL Core tokens or the scene's small
+// flat palette. Coordinates are world pixels from the plan (geometry.ts).
+import type { CSSProperties, ReactNode } from "react";
 import type { AgentStatus } from "@mengai/shared";
-import type { OfficeMeeting, OfficeProps } from "../office-contract";
+import type { OfficeAgent } from "../office-contract";
 import type { Desk, OfficePlan, Rect } from "./geometry";
 import { GLYPHS, type GlyphId } from "./glyphs";
 import { fit, measure as measureWidth, type TextStyle } from "./text";
-
-type PlanCard = NonNullable<OfficeProps["plan"]>[number];
 
 export function textStyle(plan: OfficePlan, weight: 400 | 500 = 400, mono = false): TextStyle {
   return { size: plan.m.text === "n1" ? 13 : 11, weight, mono };
@@ -25,7 +24,7 @@ export function Glyph({ name, x, y, size, className }: { name: GlyphId; x: numbe
   );
 }
 
-/** The status a desk card names beside the cat, when it is one to notice. */
+/** The status a name plate names beside the cat, when it is one to notice. */
 export function statusMark(status: AgentStatus): { word: string; glyph: GlyphId; tone: string } | null {
   switch (status) {
     case "approval":
@@ -43,114 +42,70 @@ export function statusMark(status: AgentStatus): { word: string; glyph: GlyphId;
   }
 }
 
+export function rnd(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a * 1664525 + 1013904223) >>> 0;
+    return a / 4294967296;
+  };
+}
+
 /* ---------------------------------------------------------------------
- * Structure: the slab, rooms, walls, doors
+ * Blocks: a top face and a front face
  * ------------------------------------------------------------------- */
 
-export function Structure({ plan }: { plan: OfficePlan }) {
-  const { ceo, meeting } = plan;
-  const wideRooms = meeting !== null && meeting.rect.y === ceo.rect.y;
-  return (
-    <g className="of-structure">
-      <rect className="of-slab" x={0.5} y={0.5} width={plan.width - 1} height={plan.height - 1} rx={16} />
-      {ceo.kind === "room" ? (
-        <>
-          <Room rect={ceo.rect} floorTop={ceo.floorTop} doorX={ceo.door} />
-          <FloorPlant x={ceo.rect.x + 22} y={ceo.rect.y + ceo.rect.h - 10} />
-          {ceo.lounge ? <Lounge r={ceo.lounge} /> : null}
-        </>
-      ) : (
-        <CeoCorner plan={plan} />
-      )}
-      {meeting ? <Room rect={meeting.rect} floorTop={meeting.floorTop} doorX={meeting.door.inWall ? null : meeting.door.x} /> : null}
-      {meeting && meeting.window ? <Window r={meeting.window} /> : null}
-      {plan.zones.map((z, i) => (
-        <rect key={`z${i}`} className="of-zone" x={z.x} y={z.y} width={z.w} height={z.h} rx={12} />
-      ))}
-      {meeting && wideRooms ? <rect className="of-partition" x={meeting.rect.x - 3} y={meeting.rect.y} width={6} height={meeting.rect.h} /> : null}
-      {meeting && meeting.door.inWall ? <Doorway x={meeting.door.x} y={meeting.floorTop} /> : null}
-      {plan.nooks.map((r, i) => (
-        <Nook key={i} r={r} top={r.y + plan.m.deskTop} seed={i} />
-      ))}
-    </g>
-  );
-}
-
-/** The hero's open CEO corner: a rug under the lead's desk and the easel, and the easel's legs. */
-function CeoCorner({ plan }: { plan: OfficePlan }) {
-  const { rect, whiteboard: wb } = plan.ceo;
-  const floor = rect.y + rect.h;
-  const rugTop = rect.y + plan.m.deskTop + 18;
-  const legY = wb.y + wb.h;
+/** A furniture block: the top face from `top` to `face`, the front face from `face` to `bottom`. */
+export function Block({ x, w, top, face, bottom, tone = "desk", r = 3 }: { x: number; w: number; top: number; face: number; bottom: number; tone?: string; r?: number }) {
   return (
     <g>
-      <rect className="of-rug" x={rect.x - 4} y={rugTop} width={rect.w + 8} height={floor + plan.m.aisle - 10 - rugTop} rx={10} />
-      <path className="of-easel-leg" d={`M${wb.x + 14} ${legY} L${wb.x + 6} ${floor} M${wb.x + wb.w - 14} ${legY} L${wb.x + wb.w - 6} ${floor} M${wb.x + wb.w / 2} ${legY} L${wb.x + wb.w / 2} ${floor - 6}`} />
+      <rect className={`of-${tone}-front`} x={x} y={face - 1} width={w} height={bottom - face + 1} rx={Math.min(r, 2)} />
+      <rect className={`of-${tone}-top`} x={x} y={top} width={w} height={face - top} rx={r} />
     </g>
   );
 }
 
-/** The visitor sofa of a stacked CEO office, with a side table and a floor plant. */
-function Lounge({ r }: { r: Rect }) {
-  const bottom = r.y + r.h;
-  const w = Math.min(120, r.w - 44);
-  const x = r.x;
-  const seatTop = bottom - 26;
+export function Chair({ r }: { r: Rect }) {
+  const w = r.w;
   return (
     <g>
-      <rect className="of-sofa-back" x={x} y={seatTop - 22} width={w} height={34} rx={10} />
-      <rect className="of-sofa-seat" x={x + 6} y={seatTop} width={w - 12} height={22} rx={7} />
-      <rect className="of-sofa-arm" x={x - 4} y={seatTop - 8} width={15} height={30} rx={7} />
-      <rect className="of-sofa-arm" x={x + w - 11} y={seatTop - 8} width={15} height={30} rx={7} />
-      <rect className="of-desk-front" x={x + w + 12} y={bottom - 20} width={26} height={20} rx={3} />
-      <rect className="of-desk-top" x={x + w + 9} y={bottom - 24} width={32} height={5} rx={2} />
-      <DeskMug x={x + w + 25} y={bottom - 24} fresh={false} />
+      <rect className="of-chair" x={r.x} y={r.y} width={w} height={r.h + 6} rx={Math.min(12, w / 3)} />
+      <rect className="of-chair-seam" x={r.x + w * 0.2} y={r.y + 7} width={w * 0.6} height={2} rx={1} />
     </g>
   );
 }
 
-/** A spare hero cell: a low shelf of binders and a floor plant. */
-function Nook({ r, top, seed }: { r: Rect; top: number; seed: number }) {
-  const bottom = r.y + r.h;
-  const w = Math.min(120, r.w * 0.56);
-  const x = r.x + 12;
-  const shelfTop = top - 26;
-  const books = [10, 7, 12, 8, 11, 9, 7];
-  let bx = x + 6;
-  return (
-    <g>
-      <rect className="of-shelf-body" x={x} y={shelfTop} width={w} height={bottom - shelfTop} rx={4} />
-      <rect className="of-shelf-board" x={x} y={top + 14} width={w} height={3} />
-      {books.map((bw, i) => {
-        if (bx + bw > x + w - 6) return null;
-        const h = 18 + ((i * 7 + seed * 3) % 8);
-        const el = <rect key={i} className={`of-book of-book-${(i + seed) % 3}`} x={bx} y={top + 14 - h} width={bw} height={h} rx={1.5} />;
-        bx += bw + 2;
-        return el;
-      })}
-      <FloorPlant x={x + w + Math.min(40, (r.w - w - 12) / 2)} y={bottom - 2} />
-    </g>
-  );
-}
-
-/** A window in a back wall: a flat pale sky in a frame with one mullion. */
-function Window({ r }: { r: Rect }) {
-  return (
-    <g>
-      <rect className="of-window-frame" x={r.x} y={r.y} width={r.w} height={r.h} rx={4} />
-      <rect className="of-sky" x={r.x + 4} y={r.y + 4} width={r.w - 8} height={r.h - 8} rx={2} />
-      <ellipse className="of-cloud" cx={r.x + r.w * 0.3} cy={r.y + r.h * 0.42} rx={r.w * 0.12} ry={4} />
-      <ellipse className="of-cloud" cx={r.x + r.w * 0.36} cy={r.y + r.h * 0.36} rx={r.w * 0.08} ry={4.5} />
-      <ellipse className="of-cloud" cx={r.x + r.w * 0.74} cy={r.y + r.h * 0.66} rx={r.w * 0.1} ry={3.5} />
-      <rect className="of-window-frame" x={r.x + r.w / 2 - 1.5} y={r.y} width={3} height={r.h} />
-    </g>
-  );
-}
-
-/** A tall floor plant in a room corner, clear of every walk. */
-function FloorPlant({ x, y }: { x: number; y: number }) {
+export function Plant({ x, y, seed }: { x: number; y: number; seed: number }) {
+  const kind = seed % 3;
   return (
     <g transform={`translate(${x} ${y})`}>
+      {kind === 0 ? (
+        <>
+          <path className="of-leaf" d="M0 -14 C -8 -22 -6 -32 0 -36 C 6 -32 8 -22 0 -14 Z" />
+          <path className="of-leaf-2" d="M0 -12 C 8 -16 14 -24 10 -30 C 4 -26 0 -20 0 -12 Z" />
+        </>
+      ) : kind === 1 ? (
+        <>
+          <path className="of-leaf" d="M0 -12 C -10 -16 -12 -24 -6 -28 C -2 -22 0 -18 0 -12 Z" />
+          <path className="of-leaf-2" d="M0 -12 C 10 -16 12 -24 6 -28 C 2 -22 0 -18 0 -12 Z" />
+          <path className="of-leaf" d="M0 -12 C -2 -20 0 -28 3 -32 C 4 -24 2 -18 0 -12 Z" />
+        </>
+      ) : (
+        <>
+          <rect className="of-cactus" x={-4} y={-30} width={8} height={20} rx={4} />
+          <rect className="of-cactus" x={-10} y={-24} width={6} height={10} rx={3} />
+          <rect className="of-cactus" x={4} y={-22} width={5} height={8} rx={2.5} />
+        </>
+      )}
+      <path className="of-pot" d="M-8 -12 L8 -12 L6 0 L-6 0 Z" />
+    </g>
+  );
+}
+
+/** A tall floor plant in a corner, clear of every walk. */
+export function FloorPlant({ x, y, big = false }: { x: number; y: number; big?: boolean }) {
+  const k = big ? 1.25 : 1;
+  return (
+    <g transform={`translate(${x} ${y}) scale(${k})`}>
       <path className="of-leaf" d="M0 -26 C -14 -34 -16 -52 -6 -62 C 0 -50 2 -40 0 -26 Z" />
       <path className="of-leaf-2" d="M0 -24 C 12 -30 18 -46 10 -58 C 2 -48 -2 -38 0 -24 Z" />
       <path className="of-leaf" d="M0 -22 C -4 -40 2 -60 8 -70 C 10 -54 6 -38 0 -22 Z" />
@@ -159,63 +114,7 @@ function FloorPlant({ x, y }: { x: number; y: number }) {
   );
 }
 
-function Room({ rect, floorTop, doorX }: { rect: Rect; floorTop: number; doorX: number | null }) {
-  const bottom = rect.y + rect.h;
-  const gap = 46;
-  return (
-    <g>
-      <rect className="of-room-floor" x={rect.x} y={floorTop} width={rect.w} height={bottom - floorTop} />
-      <rect className="of-wall" x={rect.x} y={rect.y} width={rect.w} height={floorTop - rect.y} />
-      <rect className="of-skirting" x={rect.x} y={floorTop - 4} width={rect.w} height={4} />
-      {doorX !== null ? (
-        <path className="of-glass" d={`M${rect.x} ${bottom} L${doorX - gap / 2} ${bottom} M${doorX + gap / 2} ${bottom} L${rect.x + rect.w} ${bottom}`} />
-      ) : (
-        <path className="of-glass" d={`M${rect.x} ${bottom} L${rect.x + rect.w} ${bottom}`} />
-      )}
-    </g>
-  );
-}
-
-function Doorway({ x, y }: { x: number; y: number }) {
-  return (
-    <g>
-      <rect className="of-door-frame" x={x - 25} y={y - 70} width={50} height={70} rx={3} />
-      <rect className="of-doorway" x={x - 21} y={y - 66} width={42} height={66} rx={2} />
-    </g>
-  );
-}
-
-/* ---------------------------------------------------------------------
- * Desk pieces
- * ------------------------------------------------------------------- */
-
-export function Chair({ r }: { r: Rect }) {
-  return <rect className="of-chair" x={r.x} y={r.y} width={r.w} height={r.h + 6} rx={Math.min(10, r.w / 3)} />;
-}
-
-export function DeskBody({ desk }: { desk: Desk }) {
-  const { rect, top } = desk;
-  const band = 8;
-  return (
-    <g>
-      <rect className="of-desk-front" x={rect.x + 6} y={top + band - 1} width={rect.w - 12} height={rect.y + rect.h - top - band + 1} rx={3} />
-      <rect className="of-desk-top" x={rect.x + 2} y={top} width={rect.w - 4} height={band} rx={2} />
-    </g>
-  );
-}
-
-export function Plant({ x, y, seed }: { x: number; y: number; seed: number }) {
-  const tall = seed % 2 === 0;
-  return (
-    <g transform={`translate(${x} ${y})`}>
-      <path className="of-leaf" d={tall ? "M0 -14 C -8 -22 -6 -32 0 -36 C 6 -32 8 -22 0 -14 Z" : "M0 -12 C -10 -16 -12 -24 -6 -28 C -2 -22 0 -18 0 -12 Z"} />
-      <path className="of-leaf-2" d={tall ? "M0 -12 C 8 -16 14 -24 10 -30 C 4 -26 0 -20 0 -12 Z" : "M0 -12 C 10 -16 12 -24 6 -28 C 2 -22 0 -18 0 -12 Z"} />
-      <path className="of-pot" d="M-8 -12 L8 -12 L6 0 L-6 0 Z" />
-    </g>
-  );
-}
-
-export function DeskMug({ x, y, fresh }: { x: number; y: number; fresh: boolean }) {
+export function DeskMug({ x, y, fresh, tone = 0 }: { x: number; y: number; fresh: boolean; tone?: number }) {
   return (
     <g transform={`translate(${x} ${y})`}>
       {fresh ? (
@@ -225,11 +124,46 @@ export function DeskMug({ x, y, fresh }: { x: number; y: number; fresh: boolean 
         </>
       ) : null}
       <path className="of-mug-handle of-thin" d="M6 -9 C 10 -9 10 -3 6 -3" />
-      <rect className="of-mug of-thin" x={-6} y={-12} width={12} height={12} rx={2} />
+      <rect className={`of-mug of-thin of-mug-${tone % 3}`} x={-6} y={-12} width={12} height={12} rx={2} />
       <rect className="of-coffee" x={-4.5} y={-10.5} width={9} height={2.2} rx={1.1} />
     </g>
   );
 }
+
+/** A sticky note on a monitor bezel, a tone per cat. */
+export function StickyNote({ x, y, seed }: { x: number; y: number; seed: number }) {
+  return (
+    <g transform={`translate(${x} ${y}) rotate(${(seed % 5) - 2})`}>
+      <rect className={`of-sticky of-sticky-${seed % 3}`} x={0} y={0} width={13} height={13} rx={1} />
+      <rect className="of-sticky-line" x={2.5} y={4} width={8} height={1.4} rx={0.7} />
+      <rect className="of-sticky-line" x={2.5} y={7.5} width={5.5} height={1.4} rx={0.7} />
+    </g>
+  );
+}
+
+/** A cardboard box: the flaps open on a new hire's desk, closed with a plant peeking out when a cat leaves. */
+export function BoxArt({ x, y, w, open }: { x: number; y: number; w: number; open: boolean }) {
+  const h = Math.round(w * 0.72);
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      {open ? (
+        <>
+          <path className="of-box-flap" d={`M${-w / 2} ${-h} L${-w / 2 - w * 0.22} ${-h - w * 0.2} L${-w * 0.08} ${-h - w * 0.2} L0 ${-h} Z`} />
+          <path className="of-box-flap" d={`M${w / 2} ${-h} L${w / 2 + w * 0.22} ${-h - w * 0.2} L${w * 0.08} ${-h - w * 0.2} L0 ${-h} Z`} />
+          <rect className="of-mug of-thin of-mug-1" x={-w * 0.3} y={-h - 6} width={w * 0.22} height={w * 0.22} rx={1.5} />
+          <path className="of-leaf" d={`M${w * 0.14} ${-h + 2} C ${w * 0.06} ${-h - 8} ${w * 0.12} ${-h - 14} ${w * 0.2} ${-h - 16} C ${w * 0.24} ${-h - 8} ${w * 0.2} ${-h - 2} ${w * 0.14} ${-h + 2} Z`} />
+        </>
+      ) : null}
+      <rect className="of-box" x={-w / 2} y={-h} width={w} height={h} rx={1.5} />
+      <rect className="of-box-tape" x={-w * 0.12} y={-h} width={w * 0.24} height={h * 0.45} />
+      <rect className="of-box-label" x={w * 0.1} y={-h * 0.4} width={w * 0.28} height={h * 0.22} rx={1} />
+    </g>
+  );
+}
+
+/* ---------------------------------------------------------------------
+ * Speech bubbles
+ * ------------------------------------------------------------------- */
 
 /** Speech bubble path: a rounded box with a tail on its bottom edge at tailX. */
 function bubblePath(x: number, y: number, w: number, h: number, tailX: number): string {
@@ -271,10 +205,10 @@ export function Bubble({ text, lane, anchor, plan, on }: { text: string; lane: R
 }
 
 /* ---------------------------------------------------------------------
- * The monitor: the file tab and the screen for the activity
+ * Monitors: the screen for the activity, the fund's market screens
  * ------------------------------------------------------------------- */
 
-export type ScreenMode = "code" | "run" | "doc" | "review" | "web" | "design" | "scan" | "board" | "idle";
+export type ScreenMode = "code" | "run" | "doc" | "review" | "web" | "design" | "scan" | "board" | "idle" | "chart" | "book" | "risk";
 
 const SCREEN_LABEL: Record<ScreenMode, string> = {
   code: "editor",
@@ -286,18 +220,59 @@ const SCREEN_LABEL: Record<ScreenMode, string> = {
   scan: "scanner",
   board: "plan",
   idle: "",
+  chart: "price",
+  book: "order book",
+  risk: "risk",
 };
 
 export function screenLabel(mode: ScreenMode): string {
   return SCREEN_LABEL[mode];
 }
 
-function rnd(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a * 1664525 + 1013904223) >>> 0;
-    return a / 4294967296;
-  };
+export function screenFor(activity: string, role: string): ScreenMode {
+  switch (activity) {
+    case "code":
+      return role === "designer" ? "design" : "code";
+    case "run":
+    case "automate":
+      return "run";
+    case "read":
+      return "doc";
+    case "review":
+      return "review";
+    case "research":
+      return "web";
+    case "design":
+      return "design";
+    case "scan":
+      return "scan";
+    case "plan":
+      return "board";
+    default:
+      return "idle";
+  }
+}
+
+/** The fund's second screen: the order book while a trader executes, a backtest's output on a run, risk while it reviews or scans. */
+export function fundScreenFor(activity: string): ScreenMode {
+  switch (activity) {
+    case "automate":
+      return "book";
+    case "run":
+      return "run";
+    case "review":
+    case "scan":
+      return "risk";
+    case "code":
+      return "code";
+    case "read":
+    case "research":
+      return "doc";
+    case "plan":
+      return "board";
+    default:
+      return "idle";
+  }
 }
 
 const TOKENS = ["of-code-a", "of-code-b", "of-code-c", "of-code-d"];
@@ -322,8 +297,8 @@ function codeLines(seed: number, count: number, width: number): Array<{ indent: 
   return out;
 }
 
-function Lines({ x, y, w, rows, pitch, seed, from = 0 }: { x: number; y: number; w: number; rows: number; pitch: number; seed: number; from?: number }) {
-  const lines = codeLines(seed, rows + from, w).slice(from);
+function Lines({ x, y, w, rows, pitch, seed }: { x: number; y: number; w: number; rows: number; pitch: number; seed: number }) {
+  const lines = codeLines(seed, rows, w);
   return (
     <>
       {lines.map((l, i) => {
@@ -342,6 +317,78 @@ function Lines({ x, y, w, rows, pitch, seed, from = 0 }: { x: number; y: number;
   );
 }
 
+/** A price line over a few candles; the strip is twice as wide and scrolls left in a loop. */
+function Chart({ x, y, w, h, seed }: { x: number; y: number; w: number; h: number; seed: number }) {
+  const r = rnd(seed);
+  const n = 16;
+  const step = w / n;
+  const pts: number[] = [];
+  let v = 0.5;
+  for (let i = 0; i < n; i++) {
+    v = Math.max(0.12, Math.min(0.88, v + (r() - 0.46) * 0.28));
+    pts.push(v);
+  }
+  // the loop: the second half repeats the first so the scroll has no seam
+  const all = [...pts, ...pts, pts[0]!];
+  const line = all.map((p, i) => `${i === 0 ? "M" : "L"}${(x + i * step).toFixed(1)} ${(y + h - p * h).toFixed(1)}`).join(" ");
+  return (
+    <g className="of-scroll-x" style={{ ["--of-scroll-x" as string]: `${-w}px` } as CSSProperties}>
+      {all.slice(0, -1).map((p, i) => {
+        const q = all[i + 1]!;
+        const up = q >= p;
+        const top = y + h - Math.max(p, q) * h;
+        const bh = Math.max(2, Math.abs(q - p) * h);
+        return <rect key={i} className={up ? "of-bull" : "of-bear"} x={x + i * step + step * 0.3} y={top} width={Math.max(1.5, step * 0.4)} height={bh} rx={0.6} />;
+      })}
+      <path className="of-price" d={line} />
+    </g>
+  );
+}
+
+/** Bids and asks: two stacks of bars, each bar breathing on its own beat. */
+function OrderBook({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+  const rows = Math.max(2, Math.floor((h - 4) / 6));
+  const half = Math.floor(rows / 2);
+  const mid = w / 2;
+  return (
+    <>
+      {Array.from({ length: rows }, (_, i) => {
+        const ask = i < half;
+        const depth = ask ? half - i : i - half + 1;
+        const bw = Math.max(4, (mid - 3) * (0.28 + ((depth * 37) % 60) / 100));
+        const yy = y + 2 + i * 6 + (ask ? 0 : 2);
+        return (
+          <g key={i}>
+            <rect className="of-code-d" x={x + 2} y={yy} width={mid * 0.5} height={3} rx={1.5} />
+            <rect className={`${ask ? "of-bear" : "of-bull"} of-depth of-depth-${i % 3}`} x={x + w - 2 - bw} y={yy} width={bw} height={3} rx={1.5} />
+          </g>
+        );
+      })}
+      <rect className="of-spread" x={x + 2} y={y + 2 + half * 6 - 1} width={w - 4} height={1} />
+    </>
+  );
+}
+
+/** Exposure against its limit, a bar per book, one of them creeping. */
+function Risk({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+  const rows = Math.max(2, Math.min(5, Math.floor((h - 4) / 8)));
+  return (
+    <>
+      {Array.from({ length: rows }, (_, i) => {
+        const f = 0.3 + ((i * 29) % 55) / 100;
+        const yy = y + 2 + i * 8;
+        return (
+          <g key={i}>
+            <rect className="of-mini-card" x={x} y={yy} width={w} height={4} rx={2} />
+            <rect className={`${f > 0.7 ? "of-bear" : "of-code-a"}${i === 1 ? " of-creep" : ""}`} x={x} y={yy} width={w * f} height={4} rx={2} />
+          </g>
+        );
+      })}
+      <rect className="of-limit" x={x + w * 0.86} y={y} width={1.5} height={rows * 8} />
+    </>
+  );
+}
+
 export interface MonitorProps {
   r: Rect;
   mode: ScreenMode;
@@ -350,11 +397,15 @@ export interface MonitorProps {
   dim: boolean;
   clip: string;
   seed: number;
+  /** a sticky note on the bezel */
+  note?: boolean;
+  /** the stand under the screen (a monitor arm pair shares one) */
+  stand?: boolean;
 }
 
-export function Monitor({ r, mode, label, animate, dim, clip, seed }: MonitorProps) {
+export function Monitor({ r, mode, label, animate, dim, clip, seed, note = false, stand = true }: MonitorProps) {
   const bezel = 3;
-  const bar = 15;
+  const bar = r.h >= 44 ? 15 : 11;
   const sx = r.x + bezel;
   const sy = r.y + bezel;
   const sw = r.w - 2 * bezel;
@@ -362,7 +413,9 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed }: MonitorPro
   const body = { x: sx, y: sy + bar, w: sw, h: sh - bar };
   const pitch = 7;
   const rows = Math.max(2, Math.floor((body.h - 6) / pitch));
-  const tab = fit(label, sw - 10, { size: 11, mono: true });
+  // a tab too narrow for a few letters of its name stays plain rather than showing a stub
+  const fitted = fit(label, sw - 10, { size: 11, mono: true });
+  const tab = fitted === label || fitted.length >= Math.min(label.length, 5) ? fitted : "";
   const cx = r.x + r.w / 2;
   let content: ReactNode;
   const inner = { x: body.x + 5, y: body.y + 5, w: body.w - 10 };
@@ -370,7 +423,7 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed }: MonitorPro
     case "code":
       content = (
         <>
-          <g className="of-scroll" style={{ ["--of-scroll" as string]: `${-pitch * 8}px` }}>
+          <g className="of-scroll" style={{ ["--of-scroll" as string]: `${-pitch * 8}px` } as CSSProperties}>
             <Lines x={inner.x} y={inner.y} w={inner.w} rows={rows - 1 + 16} pitch={pitch} seed={seed} />
           </g>
           <rect className="of-screen" x={body.x} y={inner.y + (rows - 1) * pitch - 2} width={body.w} height={body.h} />
@@ -381,7 +434,7 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed }: MonitorPro
       break;
     case "run":
       content = (
-        <g className="of-scroll of-scroll-fast" style={{ ["--of-scroll" as string]: `${-pitch * 8}px` }}>
+        <g className="of-scroll of-scroll-fast" style={{ ["--of-scroll" as string]: `${-pitch * 8}px` } as CSSProperties}>
           {Array.from({ length: rows + 8 }, (_, i) => (
             <g key={i}>
               {i % 3 === 2 ? <path className="of-run-check" d={`M${inner.x} ${inner.y + i * pitch + 1.5} l2 2 l3.5 -3.5`} /> : null}
@@ -395,7 +448,7 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed }: MonitorPro
     case "review":
       content = (
         <>
-          {mode === "review" ? <rect className="of-highlight of-sweep" x={body.x + 2} y={inner.y - 2} width={body.w - 4} height={7} rx={1.5} style={{ ["--of-sweep" as string]: `${(rows - 2) * pitch}px` }} /> : null}
+          {mode === "review" ? <rect className="of-highlight of-sweep" x={body.x + 2} y={inner.y - 2} width={body.w - 4} height={7} rx={1.5} style={{ ["--of-sweep" as string]: `${(rows - 2) * pitch}px` } as CSSProperties} /> : null}
           {Array.from({ length: rows }, (_, i) => (
             <rect key={i} className={mode === "review" && i % 4 === 1 ? "of-code-c" : mode === "review" && i % 5 === 3 ? "of-code-b" : "of-code-d"} x={inner.x} y={inner.y + i * pitch} width={inner.w * (i % 4 === 3 ? 0.6 : 0.92)} height={3} rx={1.5} />
           ))}
@@ -432,7 +485,7 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed }: MonitorPro
           {Array.from({ length: rows }, (_, i) => (
             <rect key={i} className="of-code-d" x={inner.x} y={inner.y + i * pitch} width={inner.w * (0.5 + ((i * 29) % 40) / 100)} height={3} rx={1.5} />
           ))}
-          <rect className="of-scanbar of-sweep" x={body.x + 2} y={inner.y - 2} width={body.w - 4} height={3} rx={1.5} style={{ ["--of-sweep" as string]: `${(rows - 1) * pitch}px` }} />
+          <rect className="of-scanbar of-sweep" x={body.x + 2} y={inner.y - 2} width={body.w - 4} height={3} rx={1.5} style={{ ["--of-sweep" as string]: `${(rows - 1) * pitch}px` } as CSSProperties} />
         </>
       );
       break;
@@ -448,22 +501,48 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed }: MonitorPro
               ))}
             </g>
           ))}
-          <rect className="of-mini-card of-mini-move" x={inner.x} y={inner.y + 6 + 9 * Math.min(2, rows - 3)} width={cw} height={7} rx={1.5} style={{ ["--of-move" as string]: `${cw + 3}px` }} />
+          <rect className="of-mini-card of-mini-move" x={inner.x} y={inner.y + 6 + 9 * Math.max(0, Math.min(2, rows - 3))} width={cw} height={7} rx={1.5} style={{ ["--of-move" as string]: `${cw + 3}px` } as CSSProperties} />
         </>
       );
       break;
     }
-    default:
-      content = Array.from({ length: Math.min(rows, 3) }, (_, i) => <rect key={i} className="of-code-d" x={inner.x} y={inner.y + i * pitch} width={inner.w * (0.7 - i * 0.15)} height={3} rx={1.5} />);
+    case "chart":
+      content = <Chart x={body.x + 3} y={body.y + 4} w={body.w - 6} h={body.h - 8} seed={seed} />;
+      break;
+    case "book":
+      content = <OrderBook x={body.x + 2} y={body.y + 2} w={body.w - 4} h={body.h - 4} />;
+      break;
+    case "risk":
+      content = <Risk x={inner.x} y={inner.y - 2} w={inner.w} h={body.h - 6} />;
+      break;
+    default: {
+      // idle: a paw print resting on the lock screen
+      const px = body.x + body.w / 2;
+      const py = body.y + body.h / 2 + 2;
+      const k = Math.min(1, body.h / 34);
+      content = (
+        <g className="of-idle-paw" transform={`translate(${px} ${py}) scale(${k})`}>
+          <ellipse cx={0} cy={3} rx={6} ry={5} />
+          <circle cx={-6} cy={-4} r={2.4} />
+          <circle cx={-2} cy={-8} r={2.4} />
+          <circle cx={2} cy={-8} r={2.4} />
+          <circle cx={6} cy={-4} r={2.4} />
+        </g>
+      );
+    }
   }
   return (
     <g className="of-monitor" data-mode={mode} data-anim={animate ? "" : undefined} data-dim={dim ? "" : undefined}>
-      <rect className="of-stand" x={cx - 3.5} y={r.y + r.h} width={7} height={9} />
-      <rect className="of-stand-base" x={cx - 15} y={r.y + r.h + 8} width={30} height={4} rx={2} />
+      {stand ? (
+        <>
+          <rect className="of-stand" x={cx - 3.5} y={r.y + r.h} width={7} height={9} />
+          <rect className="of-stand-base" x={cx - 15} y={r.y + r.h + 7} width={30} height={4} rx={2} />
+        </>
+      ) : null}
       <rect className="of-bezel" x={r.x} y={r.y} width={r.w} height={r.h} rx={4} />
       <rect className="of-screen" x={sx} y={sy} width={sw} height={sh} rx={2} />
       <rect className="of-tabbar" x={sx} y={sy} width={sw} height={bar} />
-      {tab ? (
+      {tab && bar >= 15 ? (
         <text className="of-t of-t-n2 of-mono of-muted" x={sx + 5} y={sy + 11}>
           {tab}
         </text>
@@ -474,55 +553,124 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed }: MonitorPro
       <g className="of-screen-body" clipPath={`url(#${clip})`}>
         {content}
       </g>
+      {note ? <StickyNote x={r.x + r.w - 15} y={r.y - 5} seed={seed} /> : null}
     </g>
   );
 }
 
-export function screenFor(activity: string, role: string): ScreenMode {
-  switch (activity) {
-    case "code":
-      return role === "designer" ? "design" : "code";
-    case "run":
-    case "automate":
-      return "run";
-    case "read":
-      return "doc";
-    case "review":
-      return "review";
-    case "research":
-      return "web";
-    case "design":
-      return "design";
-    case "scan":
-      return "scan";
-    case "plan":
-      return "board";
-    default:
-      return "idle";
-  }
-}
-
 /* ---------------------------------------------------------------------
- * The desk card: name and role (or a status to notice), then the task
+ * The desk: the block, its keyboard, what stands on it, the name plate
  * ------------------------------------------------------------------- */
 
+/** Two paws on the keyboard, tapping while the cat types. */
+export function KeyboardPaws({ desk, agent, typing }: { desk: Desk; agent: OfficeAgent; typing: boolean }) {
+  const k = desk.keyboard;
+  const s = desk.cat / 160;
+  const rx = 9 * s;
+  const ry = 5.4 * s;
+  return (
+    <g className="cat of-paws" data-coat={agent.look.coat} data-typing={typing ? "" : undefined} style={{ "--cat-sw": "1.2" } as CSSProperties}>
+      <ellipse className="c-paw of-tap-a" cx={k.x + k.w * 0.28} cy={k.y + 0.5} rx={rx} ry={ry} />
+      <ellipse className="c-paw of-tap-b" cx={k.x + k.w * 0.72} cy={k.y + 0.5} rx={rx} ry={ry} />
+    </g>
+  );
+}
+
+export function DeskBody({ desk }: { desk: Desk }) {
+  const { rect, top, face } = desk;
+  const bottom = rect.y + rect.h;
+  const k = desk.keyboard;
+  return (
+    <g>
+      <Block x={rect.x} w={rect.w} top={top} face={face} bottom={bottom} />
+      <rect className="of-keyboard" x={k.x} y={k.y} width={k.w} height={k.h} rx={1.5} />
+      <rect className="of-keys" x={k.x + 2} y={k.y + 1} width={k.w - 4} height={Math.max(1, k.h - 2.5)} rx={1} />
+      {desk.drawer ? (
+        <g>
+          <rect className="of-drawer" x={desk.drawer.x} y={desk.drawer.y} width={desk.drawer.w} height={desk.drawer.h} rx={3} />
+          <rect className="of-handle" x={desk.drawer.x + desk.drawer.w / 2 - 9} y={desk.drawer.y + 7} width={18} height={3} rx={1.5} />
+          <rect className="of-drawer-seam" x={desk.drawer.x} y={desk.drawer.y + desk.drawer.h / 2} width={desk.drawer.w} height={1} />
+          <rect className="of-handle" x={desk.drawer.x + desk.drawer.w / 2 - 9} y={desk.drawer.y + desk.drawer.h / 2 + 6} width={18} height={3} rx={1.5} />
+        </g>
+      ) : null}
+    </g>
+  );
+}
+
+/** A desk lamp or a stack of books on a wide desk. */
+export function DeskExtra({ x, y, seed }: { x: number; y: number; seed: number }) {
+  if (seed % 2 === 0) {
+    return (
+      <g transform={`translate(${x} ${y})`}>
+        <rect className="of-book of-book-0" x={-11} y={-6} width={22} height={6} rx={1} />
+        <rect className="of-book of-book-1" x={-9} y={-11} width={19} height={5} rx={1} />
+        <rect className="of-book of-book-2" x={-10} y={-15} width={17} height={4} rx={1} />
+      </g>
+    );
+  }
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <rect className="of-lamp" x={-8} y={-3} width={16} height={3} rx={1.5} />
+      <path className="of-lamp-arm" d="M0 -3 L-5 -20 L6 -30" />
+      <path className="of-lamp" d="M2 -34 L14 -28 L8 -22 Z" />
+    </g>
+  );
+}
+
+/** The desk bell: a trader's target hit. */
+export function DeskBell({ x, y, ring }: { x: number; y: number; ring: number }) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <g key={ring} className={ring ? "of-bell of-bell-ring" : "of-bell"}>
+        <path className="of-brass" d="M-9 -3 C -9 -12 -5 -16 0 -16 C 5 -16 9 -12 9 -3 Z" />
+        <rect className="of-brass-dark" x={-1.5} y={-19.5} width={3} height={4} rx={1.5} />
+        {ring ? (
+          <g className="of-ring-marks">
+            <path className="of-ring" d="M-13 -14 Q -16 -9 -13 -4" />
+            <path className="of-ring" d="M13 -14 Q 16 -9 13 -4" />
+          </g>
+        ) : null}
+      </g>
+      <rect className="of-brass-dark" x={-12} y={-3} width={24} height={3} rx={1.5} />
+    </g>
+  );
+}
+
+/** The lead's approval stamp coming down on a sheet, then the green mark. */
+export function ApproveStamp({ x, y, n }: { x: number; y: number; n: number }) {
+  return (
+    <g key={n} transform={`translate(${x} ${y})`}>
+      <rect className="of-sheet" x={-13} y={-8} width={26} height={10} rx={1} />
+      <g className="of-stamp-mark">
+        <circle className="of-stamp-pass" cx={0} cy={-3} r={4.5} />
+        <path className="of-stamp-glyph of-glyph-sm" d="M-2.2 -2.9 L-0.6 -1.3 L2.4 -4.6" />
+      </g>
+      <g className="of-stamp-press">
+        <rect className="of-stamp-handle" x={-3} y={-30} width={6} height={12} rx={3} />
+        <rect className="of-stamp-base" x={-8} y={-19} width={16} height={6} rx={1.5} />
+      </g>
+    </g>
+  );
+}
+
+/** The name plate on the desk front: name and role (or a status to notice), then the task. */
 export function DeskCard({ desk, plan, name, role, status, task, stamp }: { desk: Desk; plan: OfficePlan; name: string; role: string; status: AgentStatus; task: string | null; stamp: "pass" | "return" | null }) {
   const r = desk.card;
   const n1 = plan.m.text === "n1";
-  const lh = n1 ? 16 : 14;
+  const lh = n1 ? 15 : 13;
   const pad = 8;
   const nameStyle = textStyle(plan, 500);
   const bodyStyle = textStyle(plan);
   const mark = statusMark(status);
   const stampRoom = stamp ? 22 : 0;
   const avail = r.w - pad * 2 - stampRoom;
-  const nameText = fit(name, avail * 0.55, nameStyle);
+  const nameText = fit(name, avail * 0.6, nameStyle);
   const nameW = measureWidth(nameText, nameStyle);
   const icon = n1 ? 12 : 11;
   const sideRoom = avail - nameW - 6 - (mark ? icon + 3 : 0);
   const side = fit(mark ? mark.word : role, sideRoom, bodyStyle);
   const taskText = fit(task ?? "No task yet", avail, bodyStyle);
-  const y1 = r.y + Math.round((r.h - lh * 2) / 2) + lh - 4;
+  const y1 = r.y + Math.round((r.h - lh * 2) / 2) + lh - 3;
   const y2 = y1 + lh;
   const sideX = r.x + pad + nameW + 6;
   return (
@@ -554,304 +702,21 @@ export function DeskCard({ desk, plan, name, role, status, task, stamp }: { desk
   );
 }
 
-/* ---------------------------------------------------------------------
- * CEO office: the plan whiteboard
- * ------------------------------------------------------------------- */
-
-const COLUMNS: Array<{ key: PlanCard["status"]; word: string }> = [
-  { key: "todo", word: "To do" },
-  { key: "doing", word: "Doing" },
-  { key: "review", word: "Review" },
-  { key: "done", word: "Done" },
-];
-
-/** Two lines of a title at most, each fitted to the width. */
-function twoLines(text: string, width: number, style: TextStyle): [string, string] {
-  const words = text.replace(/\s+/g, " ").trim().split(" ");
-  let first = "";
-  let i = 0;
-  for (; i < words.length; i++) {
-    const next = first ? `${first} ${words[i]}` : words[i]!;
-    if (measureWidth(next, style) > width) break;
-    first = next;
-  }
-  if (!first) return [fit(text, width, style), ""];
-  return [first, fit(words.slice(i).join(" "), width, style)];
-}
-
-/**
- * A small board (the hero's easel, a phone's CEO office): each column as a
- * row with its count, in two columns when there is room, then the latest move.
- */
-function BoardList({ r, cards }: { r: Rect; cards: PlanCard[] }) {
-  const pad = 9;
-  const micro: TextStyle = { size: 11 };
-  const done = cards.filter((c) => c.status === "done").length;
-  const rowH = 14;
-  const two = r.w >= 240;
-  const top = r.y + pad + 11;
-  const listTop = top + (two ? 18 : 14);
-  const perCol = two ? 2 : 4;
-  const colW = two ? (r.w - pad * 3) / 2 : r.w - pad * 2;
-  const rowsFit = Math.max(1, Math.floor((r.y + r.h - pad - listTop + 11) / rowH));
-  const latest = [...cards].reverse().find((c) => c.status !== "todo") ?? null;
-  const latestWord = latest ? COLUMNS.find((c) => c.key === latest.status)?.word ?? "" : "";
+/** A free desk after a cat left: the chair pushed in, a dark screen, a plate that says so. */
+export function VacantDesk({ desk, plan }: { desk: Desk; plan: OfficePlan }) {
+  const r = desk.card;
   return (
-    <g className="of-whiteboard">
-      <rect className="of-board" x={r.x} y={r.y} width={r.w} height={r.h} rx={6} />
-      <text className="of-t of-t-n1 of-ink of-medium" x={r.x + pad} y={top}>
-        Plan
+    <g className="of-desk" data-vacant="">
+      <Chair r={desk.chair} />
+      <rect className="of-bezel" x={desk.monitor.x} y={desk.monitor.y} width={desk.monitor.w} height={desk.monitor.h} rx={4} />
+      <rect className="of-screen-off" x={desk.monitor.x + 3} y={desk.monitor.y + 3} width={desk.monitor.w - 6} height={desk.monitor.h - 6} rx={2} />
+      <rect className="of-stand" x={desk.monitor.x + desk.monitor.w / 2 - 3.5} y={desk.monitor.y + desk.monitor.h} width={7} height={9} />
+      <rect className="of-stand-base" x={desk.monitor.x + desk.monitor.w / 2 - 15} y={desk.monitor.y + desk.monitor.h + 7} width={30} height={4} rx={2} />
+      <DeskBody desk={desk} />
+      <rect className="of-card-paper" x={r.x} y={r.y} width={r.w} height={r.h} rx={4} />
+      <text className={`of-t of-t-${plan.m.text} of-subtle`} x={r.x + 8} y={r.y + r.h / 2 + (plan.m.text === "n1" ? 4.5 : 4)}>
+        {fit("Free desk", r.w - 16, textStyle(plan))}
       </text>
-      <text className="of-t of-t-n2 of-muted of-num" x={r.x + r.w - pad} y={top} textAnchor="end">
-        {fit(`${done} of ${cards.length} done`, r.w / 2 - pad, micro)}
-      </text>
-      {COLUMNS.map((col, i) => {
-        const c = two ? Math.floor(i / perCol) : 0;
-        const row = two ? i % perCol : i;
-        if (row >= rowsFit) return null;
-        const x = r.x + pad + c * (colW + pad);
-        const y = listTop + row * rowH;
-        return (
-          <g key={col.key}>
-            <text className="of-t of-t-n2 of-muted" x={x} y={y}>
-              {col.word}
-            </text>
-            <text className="of-t of-t-n2 of-ink of-num" x={x + colW} y={y} textAnchor="end">
-              {cards.filter((k) => k.status === col.key).length}
-            </text>
-          </g>
-        );
-      })}
-      {latest && rowsFit > perCol ? (
-        <text className="of-t of-t-n2 of-subtle" x={r.x + pad} y={listTop + perCol * rowH + 2}>
-          {fit(`${latestWord}: ${latest.title}`, r.w - pad * 2, micro)}
-        </text>
-      ) : null}
-    </g>
-  );
-}
-
-export function Whiteboard({ r, cards, flash }: { r: Rect; cards: PlanCard[]; flash: number }) {
-  if (r.w < 400) return <BoardList r={r} cards={cards} />;
-  const pad = 10;
-  const gap = 8;
-  const colW = (r.w - pad * 2 - gap * 3) / 4;
-  const titled = colW >= 88;
-  const micro: TextStyle = { size: 11 };
-  const microMed: TextStyle = { size: 11, weight: 500 };
-  const headY = r.y + pad + 12;
-  const colTop = headY + 20;
-  const done = cards.filter((c) => c.status === "done").length;
-  const summary = fit(`${done} of ${cards.length} done`, r.w / 2 - pad, micro);
-  // titled cards: two lines while a column has room, one line when it fills
-  // up; narrow boards: small notes and a caption line naming the latest move
-  const perRow = titled ? 1 : Math.max(1, Math.floor((colW + 4) / 18));
-  const captionH = titled ? 0 : 16;
-  const room = r.y + r.h - pad - captionH - (colTop + 8);
-  const layoutFor = (count: number) => {
-    const tall = { h: 30, gap: 5 };
-    const short = { h: 20, gap: 4 };
-    const note = { h: 9, gap: 4 };
-    const pick = !titled ? note : Math.floor((room + tall.gap) / (tall.h + tall.gap)) >= count ? tall : short;
-    const rows = Math.max(1, Math.floor((room + pick.gap) / (pick.h + pick.gap)));
-    return { ...pick, rows, cap: rows * perRow, lines: pick === tall ? 2 : 1 };
-  };
-  const latest = [...cards].reverse().find((c) => c.status !== "todo") ?? cards[0] ?? null;
-  return (
-    <g className="of-whiteboard">
-      <rect className="of-board" x={r.x} y={r.y} width={r.w} height={r.h} rx={6} />
-      <rect className="of-tray" x={r.x + r.w * 0.3} y={r.y + r.h - 1} width={r.w * 0.4} height={5} rx={2} />
-      <text className="of-t of-t-n1 of-ink of-medium" x={r.x + pad} y={headY}>
-        Plan
-      </text>
-      <text className="of-t of-t-n2 of-muted of-num" x={r.x + r.w - pad} y={headY} textAnchor="end">
-        {summary}
-      </text>
-      {COLUMNS.map((col, ci) => {
-        const x = r.x + pad + ci * (colW + gap);
-        const list = cards.filter((c) => c.status === col.key);
-        const L = layoutFor(list.length);
-        const cardH = L.h;
-        const cardGap = L.gap;
-        const overflow = list.length > L.cap;
-        const shown = overflow ? list.slice(0, Math.max(1, L.cap - 1)) : list;
-        const head = fit(col.word, colW - 16, microMed);
-        const isDone = col.key === "done";
-        return (
-          <g key={col.key}>
-            <text className="of-t of-t-n2 of-muted of-medium" x={x} y={colTop}>
-              {head}
-            </text>
-            <text className="of-t of-t-n2 of-subtle of-num" x={x + colW} y={colTop} textAnchor="end">
-              {list.length}
-            </text>
-            {shown.map((c, i) => {
-              const row = Math.floor(i / perRow);
-              const cx = x + (i % perRow) * 18;
-              const y = colTop + 8 + row * (cardH + cardGap);
-              const pinned = isDone && flash > 0 && i === shown.length - 1;
-              if (!titled) {
-                return (
-                  <g key={`${c.id}:${c.status}`} className={`of-plan-card${pinned ? " of-pinned" : ""}`}>
-                    <rect className={isDone ? "of-note of-note-done" : "of-note"} x={cx} y={y} width={14} height={cardH} rx={2} />
-                  </g>
-                );
-              }
-              const [l1, l2] = L.lines === 2 ? twoLines(c.title, colW - 12 - (isDone ? 14 : 0), micro) : [fit(c.title, colW - 12 - (isDone ? 14 : 0), micro), ""];
-              return (
-                <g key={`${c.id}:${c.status}`} className={`of-plan-card${pinned ? " of-pinned" : ""}`}>
-                  <rect className={isDone ? "of-note of-note-done" : "of-note"} x={x} y={y} width={colW} height={cardH} rx={3} />
-                  {isDone ? <Glyph name="check" x={x + 4} y={y + (L.lines === 2 ? 4 : 4.5)} size={11} className="of-glyph of-tone-success" /> : null}
-                  <text className="of-t of-t-n2 of-ink" x={x + 6 + (isDone ? 14 : 0)} y={y + (L.lines === 2 ? 12 : 14)}>
-                    {l1}
-                  </text>
-                  {l2 ? (
-                    <text className="of-t of-t-n2 of-ink" x={x + 6 + (isDone ? 14 : 0)} y={y + 25}>
-                      {l2}
-                    </text>
-                  ) : null}
-                </g>
-              );
-            })}
-            {overflow ? (
-              <text className="of-t of-t-n2 of-subtle of-num" x={titled ? x + 2 : x + (shown.length % perRow) * 18} y={colTop + 8 + Math.floor(shown.length / perRow) * (cardH + cardGap) + (titled ? 12 : 8)}>
-                +{list.length - shown.length}
-              </text>
-            ) : null}
-            {ci === 0 && cards.length === 0 ? (
-              <text className="of-t of-t-n2 of-subtle" x={x} y={colTop + 20}>
-                {fit("No plan yet", colW * 2, micro)}
-              </text>
-            ) : null}
-          </g>
-        );
-      })}
-      {!titled && latest ? (
-        <text className="of-t of-t-n2 of-muted" x={r.x + pad} y={r.y + r.h - pad - 2}>
-          {fit(`${COLUMNS.find((c) => c.key === latest.status)?.word ?? ""}: ${latest.title}`, r.w - pad * 2, micro)}
-        </text>
-      ) : null}
-    </g>
-  );
-}
-
-/* ---------------------------------------------------------------------
- * Meeting room: agenda board, table, chairs
- * ------------------------------------------------------------------- */
-
-export function AgendaBoard({ r, meeting, running, title, agenda, notes }: { r: Rect; meeting: OfficeMeeting | null; running: boolean; title: string; agenda: string[]; notes: string[] }) {
-  const pad = 10;
-  const titleStyle: TextStyle = { size: 13, weight: 500 };
-  const micro: TextStyle = { size: 11 };
-  const status = running ? "In session" : meeting ? "Wrapped up" : "Free";
-  const statusW = measureWidth(status, micro) + 4;
-  // a small board puts the status under the heading instead of beside it
-  const stacked = r.w < 240;
-  const heading = fit(running || meeting ? title : "Meeting room", r.w - pad * 2 - (stacked ? 0 : statusW + 8), titleStyle);
-  const first = r.y + pad + 12 + (stacked ? 16 : 0);
-  const lines = (running ? agenda : notes).slice(0, Math.max(0, Math.floor((r.y + r.h - pad - (first + 20) + 15) / 15)));
-  return (
-    <g className="of-agenda">
-      <rect className="of-board" x={r.x} y={r.y} width={r.w} height={r.h} rx={6} />
-      <text className="of-t of-t-n1 of-ink of-medium" x={r.x + pad} y={r.y + pad + 12}>
-        {heading}
-      </text>
-      <text className={`of-t of-t-n2 ${running ? "of-tone-success" : "of-muted"}`} x={stacked ? r.x + pad : r.x + r.w - pad} y={stacked ? r.y + pad + 28 : r.y + pad + 12} textAnchor={stacked ? "start" : "end"}>
-        {status}
-      </text>
-      {lines.map((line, i) => (
-        <text key={i} className="of-t of-t-n2 of-muted" x={r.x + pad} y={first + 20 + i * 15}>
-          {fit(line, r.w - pad * 2, micro)}
-        </text>
-      ))}
-    </g>
-  );
-}
-
-export function MeetingTable({ r }: { r: Rect }) {
-  return (
-    <g>
-      <rect className="of-desk-front" x={r.x + 10} y={r.y + 8} width={r.w - 20} height={r.h - 8} rx={4} />
-      <rect className="of-desk-top" x={r.x} y={r.y} width={r.w} height={12} rx={6} />
-    </g>
-  );
-}
-
-export function Stool({ x, y, w }: { x: number; y: number; w: number }) {
-  return <rect className="of-stool" x={x - w / 2} y={y - 6} width={w} height={8} rx={4} />;
-}
-
-/* ---------------------------------------------------------------------
- * Pantry: counter and coffee machine, then a fridge and a sofa
- * ------------------------------------------------------------------- */
-
-export function PantryArt({ plan, brewing }: { plan: OfficePlan; brewing: number }) {
-  if (!plan.pantry) return null;
-  const { slots, top } = plan.pantry;
-  const first = slots[0]!;
-  const band = 8;
-  const bottom = first.y + first.h;
-  const n1 = plan.m.text === "n1";
-  const counter = { x: first.x + 2, w: first.w - 4 };
-  const mx = counter.x + 18;
-  const cardR = { x: counter.x + 6, y: top + band + 5, w: counter.w - 12, h: plan.m.front - 10 };
-  const label = fit("Pantry", cardR.w - 16, { size: n1 ? 13 : 11, weight: 500 });
-  const sub = fit("Coffee and water", cardR.w - 16, { size: n1 ? 13 : 11 });
-  return (
-    <g className="of-pantry">
-      {[0, 1].map((i) => (
-        <DeskMug key={i} x={mx + 58 + i * 18} y={top} fresh={false} />
-      ))}
-      {/* coffee machine */}
-      <rect className="of-machine" x={mx} y={top - 52} width={40} height={52} rx={5} />
-      <rect className="of-machine-panel" x={mx + 6} y={top - 46} width={28} height={10} rx={2} />
-      <rect className="of-machine-spout" x={mx + 16} y={top - 32} width={8} height={6} rx={1.5} />
-      <g key={brewing} className="of-brew" data-on={brewing ? "" : undefined}>
-        <rect className="of-mug of-thin" x={mx + 13} y={top - 13} width={14} height={13} rx={2} />
-        <path className="of-steam of-steam-a" d={`M${mx + 17} ${top - 16} C ${mx + 14} ${top - 20} ${mx + 20} ${top - 23} ${mx + 17} ${top - 27}`} />
-      </g>
-      <Plant x={counter.x + counter.w - 20} y={top} seed={3} />
-      <rect className="of-desk-front" x={counter.x + 4} y={top + band - 1} width={counter.w - 8} height={bottom - top - band + 1} rx={3} />
-      <rect className="of-desk-top" x={counter.x} y={top} width={counter.w} height={band} rx={2} />
-      <rect className="of-card-paper" x={cardR.x} y={cardR.y} width={cardR.w} height={cardR.h} rx={4} />
-      <text className={`of-t of-t-${plan.m.text} of-ink of-medium`} x={cardR.x + 8} y={cardR.y + (n1 ? 17 : 15)}>
-        {label}
-      </text>
-      <text className={`of-t of-t-${plan.m.text} of-muted`} x={cardR.x + 8} y={cardR.y + (n1 ? 33 : 29)}>
-        {sub}
-      </text>
-      {slots.slice(1).map((slot: Rect, i: number) => (i % 2 === 0 ? <Fridge key={i} r={slot} top={top} /> : <Sofa key={i} r={slot} top={top} />))}
-    </g>
-  );
-}
-
-function Fridge({ r, top }: { r: Rect; top: number }) {
-  const bottom = r.y + r.h;
-  const w = Math.min(64, r.w * 0.34);
-  const x = r.x + 16;
-  return (
-    <g>
-      <rect className="of-fridge" x={x} y={top - 72} width={w} height={bottom - top + 72} rx={6} />
-      <rect className="of-fridge-seam" x={x} y={top - 20} width={w} height={2} />
-      <rect className="of-handle" x={x + w - 9} y={top - 60} width={3} height={22} rx={1.5} />
-      <rect className="of-handle" x={x + w - 9} y={top - 10} width={3} height={22} rx={1.5} />
-      <Plant x={x + w + 30} y={bottom - 2} seed={2} />
-      <rect className="of-jug" x={x + w + 60} y={bottom - 40} width={22} height={38} rx={5} />
-      <rect className="of-jug-water" x={x + w + 63} y={bottom - 26} width={16} height={21} rx={3} />
-    </g>
-  );
-}
-
-function Sofa({ r, top }: { r: Rect; top: number }) {
-  const bottom = r.y + r.h;
-  const w = Math.min(r.w - 32, 150);
-  const x = r.x + (r.w - w) / 2;
-  return (
-    <g>
-      <rect className="of-sofa-back" x={x} y={top - 20} width={w} height={40} rx={10} />
-      <rect className="of-sofa-seat" x={x + 6} y={top + 12} width={w - 12} height={bottom - top - 28} rx={8} />
-      <rect className="of-sofa-arm" x={x - 4} y={top + 4} width={16} height={bottom - top - 16} rx={7} />
-      <rect className="of-sofa-arm" x={x + w - 12} y={top + 4} width={16} height={bottom - top - 16} rx={7} />
     </g>
   );
 }

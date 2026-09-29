@@ -89,11 +89,17 @@ describe("Office", () => {
     expect(html).toContain("Task number 1");
   });
 
-  test("the plan whiteboard shows its cards by column", () => {
+  test("the plan whiteboard shows its cards by column, each with its owner's coat", () => {
     const html = renderToStaticMarkup(<Office {...props(3)} />);
-    expect(html).toContain("Plan");
     expect(html).toContain("Doing");
+    expect(html).toContain("To do");
     expect(html).toContain("Build the");
+    expect(html).toContain("0 of 2");
+    expect(html).toMatch(/class="cat of-token" data-coat="[a-z]+"/);
+    // a small board names itself and the latest move
+    const hero = renderToStaticMarkup(<Office {...props(3)} variant="hero" />);
+    expect(hero).toContain("Plan");
+    expect(hero).toContain("Doing: Build the");
   });
 
   test("the hero has no meeting room and no pantry", () => {
@@ -149,5 +155,68 @@ describe("Office", () => {
     expect(html).toContain("cat-warning");
     expect(html).toContain("Stopped");
     expect(html).toContain("Error");
+  });
+
+  test("the fund dresses the floor: a ticker, a risk committee, two market screens per desk", () => {
+    const html = renderToStaticMarkup(<Office {...props(4)} theme="fund" />);
+    expect(html).toContain('data-theme-office="fund"');
+    expect(html).toContain("PAWS");
+    expect(html).toContain("Risk committee");
+    expect(html).toContain('data-mode="chart"');
+    const monitors = html.match(/class="of-monitor"/g)?.length ?? 0;
+    expect(monitors).toBe(8);
+    const studio = renderToStaticMarkup(<Office {...props(4)} />);
+    expect(studio).not.toContain("PAWS");
+    expect(studio).toContain("Test rack");
+  });
+
+  test("a trader executing an order stands at its desk with a ticket", () => {
+    const agents = [agent(0), agent(1, { activity: "automate" }), agent(2)];
+    const html = renderToStaticMarkup(<Office {...props(3)} agents={agents} theme="fund" />);
+    expect(html).toContain("of-lifted");
+    expect(html).toMatch(/>(Buy|Sell)</);
+  });
+
+  test("a hire walks in through the door carrying a box", async () => {
+    const p = props(4);
+    mounted = mount(<Office {...p} />);
+    const next = [...p.agents, agent(4, { name: "New cat" })];
+    mounted.render(<Office {...p} agents={next} />);
+    await wait(40);
+    const actor = mounted.host.querySelector('.of-actor[data-agent="c4"]');
+    expect(actor?.getAttribute("data-where")).toBe("floor");
+    expect(actor?.querySelector(".of-box")).not.toBeNull();
+    expect(mounted.host.querySelector(".of-door")?.hasAttribute("data-open")).toBe(true);
+    expect(mounted.host.querySelector('[aria-live="polite"]')?.textContent).toBe("New cat joins the crew");
+  });
+
+  test("a leaver packs a box, walks out, and leaves a free desk", async () => {
+    const p = props(5, { still: true });
+    mounted = mount(<Office {...p} />);
+    mounted.render(<Office {...p} agents={p.agents.filter((a) => a.id !== "c3")} />);
+    await wait(60);
+    expect(mounted.host.querySelector(".office-notes")?.textContent).toContain("Cat 3 packs a box and leaves the office");
+    expect(mounted.host.querySelector('[data-vacant]')?.textContent).toContain("Free desk");
+    expect(mounted.host.querySelector('.of-desk[data-agent="c3"]')).toBeNull();
+  });
+
+  test("windows show the local hour, the rack shows the tests", () => {
+    const html = renderToStaticMarkup(<Office {...props(4)} />);
+    expect(html).toMatch(/class="of-window" data-day="(dawn|day|dusk|night)"/);
+    mounted = mount(<Office {...props(4)} agents={[agent(0), agent(1, { activity: "run" }), agent(2), agent(3)]} />);
+    expect(mounted.host.querySelector("[data-rack]")?.getAttribute("data-rack")).toBe("testing");
+    expect(mounted.host.textContent).toContain("Tests running");
+  });
+
+  test("two scenes on one page never share a clip path id", () => {
+    const html = renderToStaticMarkup(
+      <>
+        <Office {...props(4)} />
+        <Office {...props(4)} variant="hero" theme="fund" />
+      </>,
+    );
+    const ids = [...html.matchAll(/<clipPath id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids.length).toBeGreaterThan(8);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

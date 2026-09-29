@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentRole } from "@mengai/shared";
 import type { OfficeAgent, OfficeBeat, OfficeMeeting } from "../office-contract";
-import { Director, TIMING, type TimerHost } from "./director";
+import { Director, TIMING, daypartOf, samePlaces, type TimerHost } from "./director";
 import { deskOf, planOffice, type OfficeVariant } from "./geometry";
 
 class FakeTimers implements TimerHost {
@@ -123,7 +123,7 @@ describe("beats", () => {
     expect(plan.ceo.visitors.map((s) => s.p)).toContainEqual(d.position("a3")!);
     d.setBeats([{ id: "r", kind: "decided", byId: "a0", toId: "a3", approved: true, answer: "Yes" }]);
     await timers.advance(1);
-    expect(d.actor("a0").react?.kind).toBe("nod");
+    expect(d.actor("a0").react?.kind).toBe("approve");
     await timers.advance(TIMING.nod + 10);
     expect(d.actor("a3").carry).toBe("card-pass");
     await timers.advance(LONG);
@@ -276,9 +276,197 @@ describe("the clock", () => {
     d.attach();
     d.setAgents(agents);
     d.setPlan(planOffice(agents, 1280));
-    await timers.advance(TIMING.idleMax + LONG);
+    expect(d.coffeeNow("a1")).toBe(true);
+    await timers.advance(TIMING.stand + 5);
+    expect(d.actor("a1").where).toBe("floor");
+    let t = 0;
+    while (d.actor("a1").where !== "desk" && t < LONG) {
+      await timers.advance(500);
+      t += 500;
+    }
+    await timers.advance(TIMING.sit + 10);
     expect(d.actor("a1").where).toBe("desk");
     expect(d.actor("a1").mug).toBe(true);
     expect(d.brewing()).toBeGreaterThan(0);
+    await timers.advance(TIMING.mug + 10);
+    expect(d.actor("a1").mug).toBe(false);
+  });
+
+  test("idle life: left alone, an idle cat takes trips (coffee or a nap) and always comes back", async () => {
+    const timers = new FakeTimers();
+    const d = new Director({ timers });
+    const agents = [agent(0), agent(1, { status: "idle", activity: "rest", mood: "tired" }), agent(2, { status: "idle", activity: "rest" })];
+    d.attach();
+    d.setAgents(agents);
+    d.setPlan(planOffice(agents, 375));
+    const seen = new Set<string>();
+    for (let t = 0; t < 400_000; t += 1000) {
+      await timers.advance(1000);
+      for (const id of ["a1", "a2"]) seen.add(d.actor(id).where);
+    }
+    expect(seen.has("floor")).toBe(true);
+    expect(seen.has("nap") || d.brewing() > 0).toBe(true);
+    await timers.advance(LONG);
+    d.setAgents(agents.map((a) => ({ ...a, status: "working" as const, activity: "code" as const })));
+    await timers.advance(LONG);
+    for (const id of ["a1", "a2"]) expect(d.actor(id).where).toBe("desk");
+  });
+
+  test("a nap: into the cat bed, then back to the desk", async () => {
+    const timers = new FakeTimers();
+    const d = new Director({ timers });
+    const agents = [agent(0), agent(1, { status: "idle", activity: "rest" }), agent(2), agent(3)];
+    const plan = planOffice(agents, 375);
+    expect(plan.nap).not.toBeNull();
+    d.attach();
+    d.setAgents(agents);
+    d.setPlan(plan);
+    expect(d.napNow("a1")).toBe(true);
+    await timers.advance(20_000);
+    expect(d.actor("a1").where).toBe("nap");
+    await timers.advance(TIMING.nap + LONG);
+    expect(d.actor("a1").where).toBe("desk");
+  });
+
+  test("with no free cat bed, a nap is a doze on its own desk, and work wakes it", async () => {
+    const timers = new FakeTimers();
+    const d = new Director({ timers });
+    const agents = [agent(0), agent(1, { status: "idle", activity: "rest" }), agent(2), agent(3)];
+    const plan = planOffice(agents, 1280);
+    expect(plan.nap).toBeNull();
+    d.attach();
+    d.setAgents(agents);
+    d.setPlan(plan);
+    expect(d.napNow("a1")).toBe(true);
+    await timers.advance(10);
+    expect(d.actor("a1").where).toBe("desk");
+    expect(d.actor("a1").dozing).toBe(true);
+    d.setAgents(agents.map((a) => (a.id === "a1" ? { ...a, status: "working" as const, activity: "code" as const } : a)));
+    await timers.advance(1500);
+    expect(d.actor("a1").dozing).toBe(false);
+  });
+
+  test("the windows follow the local hour in flat steps", () => {
+    expect(daypartOf(6)).toBe("dawn");
+    expect(daypartOf(12)).toBe("day");
+    expect(daypartOf(18)).toBe("dusk");
+    expect(daypartOf(23)).toBe("night");
+    expect(daypartOf(2)).toBe("night");
+    let hour = 12;
+    const timers = new FakeTimers();
+    const d = new Director({ timers, hour: () => hour });
+    d.attach();
+    expect(d.daypart()).toBe("day");
+    hour = 21;
+    return timers.advance(TIMING.day + 10).then(() => expect(d.daypart()).toBe("night"));
+  });
+});
+
+describe("the company", () => {
+  test("a hire steps in at the door carrying a box, walks to its desk and unpacks", async () => {
+    const { d, timers, agents, done } = setup(4);
+    const hire = agent(4, { name: "New" });
+    const next = [...agents, hire];
+    const plan = planOffice(next, 1280, "full", { keepOrder: true });
+    d.setScene(next, plan, { arriving: ["a4"] });
+    await timers.advance(1);
+    expect(d.actor("a4").where).toBe("floor");
+    expect(d.actor("a4").carry).toBe("box");
+    expect(d.position("a4")).toEqual(plan.door!.spot.p);
+    expect(d.doorOpen()).toBe(true);
+    let t = 0;
+    while (d.actor("a4").where !== "desk" && t < LONG) {
+      await timers.advance(500);
+      t += 500;
+    }
+    await timers.advance(TIMING.sit + 10);
+    expect(d.actor("a4").where).toBe("desk");
+    expect(d.actor("a4").unpack).toBe(true);
+    expect(d.doorOpen()).toBe(false);
+    expect(d.noteList().some((n) => n.text === "New joins the crew")).toBe(true);
+    await timers.advance(TIMING.unpack + 10);
+    expect(d.actor("a4").unpack).toBe(false);
+    // the scene's own beats never reach onBeatDone
+    expect(done).toEqual([]);
+  });
+
+  test("a hire walks in once, however often the same change comes again", async () => {
+    const { d, timers, agents } = setup(4);
+    const next = [...agents, agent(4)];
+    const plan = planOffice(next, 1280, "full", { keepOrder: true });
+    d.setScene(next, plan, { arriving: ["a4"] });
+    await timers.advance(LONG);
+    expect(d.actor("a4").where).toBe("desk");
+    d.setScene(next, plan, { arriving: ["a4"] });
+    await timers.advance(1);
+    expect(d.actor("a4").where).toBe("desk");
+    expect(d.noteList().filter((n) => n.text.includes("joins the crew")).length).toBe(1);
+  });
+
+  test("two hires take turns at the door", async () => {
+    const { d, timers, agents } = setup(3);
+    const next = [...agents, agent(3), agent(4)];
+    d.setScene(next, planOffice(next, 1280, "full", { keepOrder: true }), { arriving: ["a3", "a4"] });
+    await timers.advance(1);
+    expect(d.actor("a3").where).toBe("floor");
+    expect(d.actor("a4").where).toBe("out");
+    await timers.advance(LONG);
+    expect(d.actor("a3").where).toBe("desk");
+    expect(d.actor("a4").where).toBe("desk");
+  });
+
+  test("a leaver packs a box, walks out of the door, then the scene hears it is gone", async () => {
+    const { d, timers, agents, plan } = setup(5);
+    const gone: string[] = [];
+    d.onGone = (id) => gone.push(id);
+    d.setScene(agents, plan, { leaving: ["a2"] });
+    await timers.advance(TIMING.stand + 5);
+    expect(d.actor("a2").where).toBe("floor");
+    expect(d.actor("a2").carry).toBe("box");
+    expect(d.actor("a2").packed).toBe(true);
+    await timers.advance(LONG);
+    expect(d.actor("a2").where).toBe("out");
+    expect(gone).toEqual(["a2"]);
+    expect(d.noteList()[0]!.text).toContain("leaves the office");
+  });
+
+  test("a hire into the same places keeps everyone else walking", async () => {
+    const { d, timers, agents } = setup(5);
+    const before = planOffice(agents, 1280, "full", { keepOrder: true });
+    d.setPlan(before);
+    d.setBeats([{ id: "w", kind: "deliver", fromId: "a1", taskTitle: "x" }]);
+    await timers.advance(1500);
+    expect(d.actor("a1").where).toBe("floor");
+    const next = [...agents, agent(5)];
+    const after = planOffice(next, 1280, "full", { keepOrder: true });
+    expect(samePlaces(before, after)).toBe(true);
+    d.setScene(next, after, { arriving: ["a5"] });
+    // no reset: the walker is still on its way
+    expect(d.actor("a1").where).toBe("floor");
+    expect(d.actor("a1").carry).toBe("card");
+  });
+
+  test("the rack blinks while tests run, then shows pass or fail", async () => {
+    const { d, timers, agents } = setup(4);
+    d.setAgents(agents.map((a, i) => (i === 1 ? { ...a, activity: "run" as const } : a)));
+    expect(d.rackView().mode).toBe("testing");
+    d.setAgents(agents);
+    expect(d.rackView().mode).toBe("pass");
+    await timers.advance(TIMING.rackHold + 10);
+    expect(d.rackView().mode).toBe("idle");
+    d.setAgents(agents.map((a, i) => (i === 2 ? { ...a, activity: "run" as const } : a)));
+    d.setAgents(agents.map((a, i) => (i === 2 ? { ...a, status: "error" as const } : a)));
+    expect(d.rackView().mode).toBe("fail");
+  });
+
+  test("the lead approves with a stamp, a delivered target rings the bell", async () => {
+    const { d, timers } = setup(4);
+    d.setBeats([{ id: "y", kind: "decided", byId: "a0", toId: "a2", approved: true, answer: "Yes" }]);
+    await timers.advance(1);
+    expect(d.actor("a0").react?.kind).toBe("approve");
+    const bell = d.bell();
+    d.setBeats([{ id: "v", kind: "deliver", fromId: "a1", taskTitle: "Hit the target" }]);
+    await timers.advance(LONG);
+    expect(d.bell()).toBe(bell + 1);
   });
 });

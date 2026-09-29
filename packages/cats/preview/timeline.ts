@@ -1,10 +1,10 @@
 // The preview's scripted timeline: a pure function of the tick, so the board
 // is reproducible. Eight steps per cycle; every cat plays its own role's
-// scenarios: Kopi plans and hands the settings task to Mochi, Mochi builds
-// and tests it and hands the diff to Onde, who returns it once and then
-// approves it; Tempe hunts a bug and hits an error, Klepon paints, Cilok
-// researches, Bakpao scans and flags, Serabi reads the runbook and is
-// stopped. Tempe's budget runs low near the end of each cycle. A waiting cat
+// scenarios: Oyen plans and hands the settings task to Belang, Belang builds
+// and tests it and hands the diff to Cemong, who returns it once and then
+// approves it; Tompel hunts a bug and hits an error, Gembul paints, Cimol
+// researches, Garong scans and flags, Moci reads the runbook and is
+// stopped. Tompel's budget runs low near the end of each cycle. A waiting cat
 // that starts working plays the catch. Sample content for the preview only.
 import { ACTIVITY_LABEL, ROLE_LABEL, type Activity, type AgentRole, type AgentStatus, type Coat, type Mood } from "@mengai/shared";
 import type { CatCardProps } from "../src/contract";
@@ -18,14 +18,14 @@ export interface CrewMember {
 }
 
 export const CREW: CrewMember[] = [
-  { id: "a1", name: "Kopi", role: "lead", coat: "black", seed: 1187 },
-  { id: "a2", name: "Mochi", role: "engineer", coat: "cream", seed: 2291 },
-  { id: "a3", name: "Onde", role: "reviewer", coat: "gray", seed: 5519 },
-  { id: "a4", name: "Tempe", role: "qa", coat: "tabby", seed: 3373 },
-  { id: "a5", name: "Klepon", role: "designer", coat: "calico", seed: 4447 },
-  { id: "a6", name: "Cilok", role: "researcher", coat: "ginger", seed: 6607 },
-  { id: "a7", name: "Bakpao", role: "security", coat: "siamese", seed: 7703 },
-  { id: "a8", name: "Serabi", role: "operator", coat: "tuxedo", seed: 8849 },
+  { id: "a1", name: "Oyen", role: "lead", coat: "ginger", seed: 1187 },
+  { id: "a2", name: "Belang", role: "engineer", coat: "calico", seed: 2291 },
+  { id: "a3", name: "Cemong", role: "reviewer", coat: "siamese", seed: 5519 },
+  { id: "a4", name: "Tompel", role: "qa", coat: "cream", seed: 3373 },
+  { id: "a5", name: "Gembul", role: "designer", coat: "tabby", seed: 4447 },
+  { id: "a6", name: "Cimol", role: "researcher", coat: "tuxedo", seed: 6607 },
+  { id: "a7", name: "Garong", role: "security", coat: "gray", seed: 7703 },
+  { id: "a8", name: "Moci", role: "operator", coat: "black", seed: 8849 },
 ];
 
 /** One step holds long enough for a full beat (2.5 loops of --loop-pulse) plus the dwell. */
@@ -45,9 +45,9 @@ const SETTINGS = "Ship the settings page";
 const SCRIPTS: Record<string, Step[]> = {
   a1: [
     { activity: "plan", mood: "focused", detail: "Splitting the goal into tasks", task: SETTINGS },
-    { activity: "handoff", detail: "Handing the settings task to Mochi", task: SETTINGS },
+    { activity: "handoff", detail: "Handing the settings task to Belang", task: SETTINGS },
     { activity: "review", detail: "Checking on the crew", task: SETTINGS },
-    { activity: "wait", detail: "Waiting on Mochi", task: SETTINGS },
+    { activity: "wait", detail: "Waiting on Belang", task: SETTINGS },
     { activity: "ask", status: "approval", detail: "Wants to merge the settings branch", task: SETTINGS },
     { activity: "think", detail: "Planning the next goal", task: null },
     { activity: "celebrate", status: "done", mood: "proud", detail: "Goal done", task: SETTINGS },
@@ -55,11 +55,11 @@ const SCRIPTS: Record<string, Step[]> = {
   ],
   a2: [
     { activity: "rest", detail: null, task: null },
-    { activity: "wait", detail: "Waiting on Kopi", task: null },
-    { activity: "read", detail: "Picked up from Kopi", task: SETTINGS },
+    { activity: "wait", detail: "Waiting on Oyen", task: null },
+    { activity: "read", detail: "Picked up from Oyen", task: SETTINGS },
     { activity: "code", mood: "focused", detail: "Editing settings.tsx", task: SETTINGS },
     { activity: "run", mood: "focused", detail: "Running bun test", task: SETTINGS },
-    { activity: "handoff", detail: "Handing the diff to Onde", task: SETTINGS },
+    { activity: "handoff", detail: "Handing the diff to Cemong", task: SETTINGS },
     { activity: "celebrate", status: "done", mood: "proud", detail: "Finished the settings page", task: SETTINGS },
     { activity: "think", detail: "Saving a skill", task: null },
   ],
@@ -68,8 +68,8 @@ const SCRIPTS: Record<string, Step[]> = {
     { activity: "read", detail: "Reading the settings diff", task: "Review the settings diff" },
     { activity: "run", detail: "Running the checks", task: "Review the settings diff" },
     { activity: "review", mood: "frustrated", detail: "Returning it: a test is missing", task: "Review the settings diff" },
-    { activity: "wait", detail: "Waiting on Mochi", task: "Review the settings diff" },
-    { activity: "wait", detail: "Waiting on Mochi", task: "Review the settings diff" },
+    { activity: "wait", detail: "Waiting on Belang", task: "Review the settings diff" },
+    { activity: "wait", detail: "Waiting on Belang", task: "Review the settings diff" },
     { activity: "review", mood: "proud", detail: "Approving the settings diff", task: "Review the settings diff" },
     { activity: "celebrate", status: "done", mood: "proud", detail: "Review done", task: "Review the settings diff" },
   ],
@@ -79,7 +79,7 @@ const SCRIPTS: Record<string, Step[]> = {
     { activity: "run", mood: "focused", detail: "Running the suite", task: "Test the router" },
     { activity: "review", mood: "focused", detail: "Hunting a flaky bug", task: "Test the router" },
     { activity: "run", status: "error", mood: "frustrated", detail: "The suite crashed", task: "Test the router" },
-    { activity: "handoff", detail: "Reporting the bug to Mochi", task: "Test the router" },
+    { activity: "handoff", detail: "Reporting the bug to Belang", task: "Test the router" },
     { activity: "rest", detail: "Budget almost used up", task: null },
     { activity: "celebrate", status: "done", detail: "Tests pass", task: "Test the router" },
   ],
@@ -90,7 +90,7 @@ const SCRIPTS: Record<string, Step[]> = {
     { activity: "read", detail: "Reading the brand notes", task: "Draw the empty state" },
     { activity: "ask", status: "approval", detail: "Wants your pick of two drafts", task: "Draw the empty state" },
     { activity: "design", detail: "Refining the drawing", task: "Draw the empty state" },
-    { activity: "handoff", detail: "Handing the art to Mochi", task: "Draw the empty state" },
+    { activity: "handoff", detail: "Handing the art to Belang", task: "Draw the empty state" },
     { activity: "celebrate", status: "done", mood: "proud", detail: "Art delivered", task: "Draw the empty state" },
   ],
   a6: [
@@ -99,7 +99,7 @@ const SCRIPTS: Record<string, Step[]> = {
     { activity: "code", detail: "Writing up the findings", task: "Research SQLite backups" },
     { activity: "think", detail: "Weighing two options", task: "Research SQLite backups" },
     { activity: "research", detail: "Checking one more source", task: "Research SQLite backups" },
-    { activity: "wait", detail: "Waiting on Kopi", task: null },
+    { activity: "wait", detail: "Waiting on Oyen", task: null },
     { activity: "read", detail: "Picked up the next question", task: "Research log rotation" },
     { activity: "celebrate", status: "done", detail: "Findings saved", task: "Research log rotation" },
   ],
@@ -117,8 +117,8 @@ const SCRIPTS: Record<string, Step[]> = {
     { activity: "rest", detail: null, task: null },
     { activity: "think", detail: "Planning the steps", task: "Draft the release notes" },
     { activity: "read", detail: "Reading the runbook", task: "Draft the release notes" },
-    { activity: "wait", detail: "Waiting on Bakpao", task: "Draft the release notes" },
-    { activity: "read", detail: "Picked up from Bakpao", task: "Draft the release notes" },
+    { activity: "wait", detail: "Waiting on Garong", task: "Draft the release notes" },
+    { activity: "read", detail: "Picked up from Garong", task: "Draft the release notes" },
     { activity: "rest", status: "stopped", detail: "Stopped by you", task: "Draft the release notes" },
     { activity: "rest", status: "stopped", detail: "Stopped by you", task: "Draft the release notes" },
     { activity: "rest", detail: null, task: null },
@@ -149,7 +149,7 @@ export function catLabel(m: Pick<CrewMember, "name" | "role">, status: AgentStat
   return `${m.name}, ${ROLE_LABEL[m.role]}, ${what}`;
 }
 
-/** Budget used: each cat climbs through the cycle; Tempe runs low from step 6. */
+/** Budget used: each cat climbs through the cycle; Tompel runs low from step 6. */
 function energyAt(i: number, step: number): number {
   if (i === 3) return 0.5 + step * 0.065;
   return 0.08 + ((i * 11) % 40) / 100 + step * 0.045;

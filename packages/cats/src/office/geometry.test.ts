@@ -3,7 +3,7 @@
 // desk, table, counter, shelf and easel, at every width and crew size.
 import { describe, expect, test } from "bun:test";
 import { AGENT_ROLES } from "@mengai/shared";
-import { allDesks, planOffice, route, type OfficePlan, type OfficeVariant, type PlanAgent, type Pt, type Rect, type Spot } from "./geometry";
+import { allDesks, planOffice, route, type OfficePlan, type OfficeTheme, type OfficeVariant, type PlanAgent, type Pt, type Rect, type Spot } from "./geometry";
 
 function crew(n: number): PlanAgent[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -24,29 +24,70 @@ function overlaps(a: Rect, b: Rect): boolean {
   return Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0.5 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0.5;
 }
 
-/** Furniture a walking cat must never cross: desk bodies (below the bubble lane), tables, counters, shelves, the easel. */
-function obstacles(plan: OfficePlan): Rect[] {
-  const out: Rect[] = [];
-  for (const d of allDesks(plan)) out.push({ x: d.rect.x, y: d.monitor.y, w: d.rect.w, h: d.rect.y + d.rect.h - d.monitor.y });
-  if (plan.meeting) out.push(plan.meeting.table);
-  if (plan.pantry) for (const s of plan.pantry.slots) out.push({ x: s.x, y: s.y + plan.m.deskTop - 60, w: s.w, h: s.h - plan.m.deskTop + 60 });
-  for (const n of plan.nooks) out.push({ x: n.x, y: n.y + plan.m.deskTop - 30, w: n.w, h: n.h - plan.m.deskTop + 30 });
-  if (plan.ceo.kind === "corner") out.push({ ...plan.ceo.whiteboard, h: plan.ceo.rect.y + plan.ceo.rect.h - plan.ceo.whiteboard.y });
-  if (plan.ceo.lounge) out.push(plan.ceo.lounge);
+/**
+ * Furniture in the three-quarter view: its floor footprint (feet never step
+ * on it) and its drawn extent (a walker in front of it may cover it, a
+ * walker behind it must not: walkers draw over the furniture).
+ */
+interface Obstacle {
+  name: string;
+  foot: Rect;
+  draw: Rect;
+}
+
+function obstacles(plan: OfficePlan): Obstacle[] {
+  const out: Obstacle[] = [];
+  const block = (name: string, x: number, top: number, w: number, bottom: number, drawTop = top) =>
+    out.push({ name, foot: { x, y: top, w, h: bottom - top }, draw: { x, y: drawTop, w, h: bottom - drawTop } });
+  for (const d of allDesks(plan)) block(`desk ${d.agentId}`, d.rect.x, d.top, d.rect.w, d.rect.y + d.rect.h, d.monitor.y);
+  if (plan.meeting) block("table", plan.meeting.table.x, plan.meeting.table.y, plan.meeting.table.w, plan.meeting.table.y + plan.meeting.table.h);
+  const pan = plan.pantry;
+  if (pan) {
+    block("counter", pan.counter.x, pan.counter.y, pan.counter.w, pan.counter.y + pan.counter.h, pan.counter.y - 60);
+    if (pan.fridge) block("fridge", pan.fridge.x, pan.fridge.y, pan.fridge.w, pan.fridge.y + pan.fridge.h);
+    if (pan.table) block("pantry table", pan.table.x, pan.table.y, pan.table.w, pan.table.y + pan.table.h);
+  }
+  for (const c of plan.cells) if (c.kind !== "pantry") block(`cell ${c.kind}`, c.rect.x, c.top, c.rect.w, c.rect.y + c.rect.h, c.top - 70);
+  if (plan.ceo.lounge) block("lounge", plan.ceo.lounge.x, plan.ceo.lounge.y, plan.ceo.lounge.w, plan.ceo.lounge.y + plan.ceo.lounge.h);
+  if (plan.ceo.credenza) block("credenza", plan.ceo.credenza.x, plan.ceo.credenza.y, plan.ceo.credenza.w, plan.ceo.credenza.y + plan.ceo.credenza.h);
+  for (const room of plan.rooms) {
+    const r = room.rect;
+    // the cutaway low front wall, but for its gap
+    if (room.front !== null) {
+      const y0 = room.front - plan.m.low - plan.m.cap;
+      const g = room.gap;
+      const segs = g ? [[r.x, g.x - g.w / 2], [g.x + g.w / 2, r.x + r.w]] : [[r.x, r.x + r.w]];
+      for (const [a, b] of segs) if (b! - a! > 0.5) block(`${room.kind} front wall`, a!, y0, b! - a!, room.front);
+    }
+    // a back wall in the middle of the floor: its base line, but for the doorway
+    if (room.doorway) {
+      const d = room.doorway;
+      for (const [a, b] of [[r.x, d.x], [d.x + d.w, r.x + r.w]]) if (b! - a! > 0.5) out.push({ name: `${room.kind} back wall`, foot: { x: a!, y: room.floorTop - 3, w: b! - a!, h: 3 }, draw: { x: a!, y: room.floorTop - 3, w: b! - a!, h: 3 } });
+    }
+  }
+  // side walls between rooms side by side
+  const band = plan.rooms.filter((r) => r.front !== null).sort((a, b) => a.rect.x - b.rect.x);
+  for (let i = 1; i < band.length; i++) {
+    const x = band[i]!.rect.x;
+    block("partition", x - plan.m.cap / 2, band[i]!.floorTop, plan.m.cap, band[i]!.front!);
+  }
+  if (plan.nap) block("cat bed", plan.nap.bed.x, plan.nap.bed.y, plan.nap.bed.w, plan.nap.bed.y + plan.nap.bed.h);
   return out;
 }
 
-/** The box a walking cat sweeps along one straight segment (feet on the line). */
-function sweep(a: Pt, b: Pt, plan: OfficePlan): Rect {
+/** The box a walking cat's feet sweep along one straight segment, and the box its body sweeps. */
+function sweep(a: Pt, b: Pt, plan: OfficePlan): { feet: Rect; body: Rect } {
   const s = plan.m.walker;
-  const h = 44 * s;
   const vertical = Math.abs(a.x - b.x) < 0.5;
   const half = vertical ? 11 * s : 26 * s;
   const x0 = Math.min(a.x, b.x) - half;
   const x1 = Math.max(a.x, b.x) + half;
-  const y0 = Math.min(a.y, b.y) - h;
+  const y0 = Math.min(a.y, b.y);
   const y1 = Math.max(a.y, b.y);
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  return {
+    feet: { x: x0, y: y0 - 2, w: x1 - x0, h: y1 - y0 + 4 },
+    body: { x: x0, y: y0 - 48 * s, w: x1 - x0, h: y1 - y0 + 48 * s },
+  };
 }
 
 function spots(plan: OfficePlan): Spot[] {
@@ -55,6 +96,8 @@ function spots(plan: OfficePlan): Spot[] {
   out.push(...plan.ceo.visitors, plan.ceo.board, ...plan.huddle);
   if (plan.meeting) out.push(...plan.meeting.seats.map((s) => s.spot), ...plan.meeting.stands);
   if (plan.pantry) out.push(...plan.pantry.spots);
+  if (plan.door) out.push(plan.door.spot);
+  if (plan.nap) out.push(plan.nap.spot);
   return out;
 }
 
@@ -74,6 +117,8 @@ describe("planOffice", () => {
             expect(d.monitor.x + d.monitor.w).toBeLessThanOrEqual(d.rig.x + (d.cat * 40) / 160 - 6 + 0.5);
             expect(d.rig.x + d.cat).toBeLessThanOrEqual(d.rect.x + d.rect.w + 0.5);
             expect(d.card.x + d.card.w).toBeLessThanOrEqual(d.rect.x + d.rect.w);
+            // the seated cat's cut line is the desk top's back edge
+            expect(Math.abs(d.rig.y + (116 * d.cat) / 160 - d.top)).toBeLessThan(0.6);
           }
           for (let i = 0; i < desks.length; i++) {
             for (let j = i + 1; j < desks.length; j++) {
@@ -128,11 +173,14 @@ describe("planOffice", () => {
 });
 
 describe("route", () => {
-  for (const variant of ["full", "hero"] as OfficeVariant[]) {
-    for (const width of [320, 375, 768, 1280]) {
-      for (const n of [4, 12]) {
-        test(`${variant} ${width}px, ${n} cats: every walk stays clear of the furniture`, () => {
-          const plan = planOffice(crew(n), width, variant);
+  const cases: Array<[OfficeVariant, number, number, OfficeTheme]> = [];
+  for (const variant of ["full", "hero"] as OfficeVariant[]) for (const width of [320, 375, 768, 1280]) for (const n of [4, 12]) cases.push([variant, width, n, "studio"]);
+  for (const variant of ["full", "hero"] as OfficeVariant[]) for (const width of [375, 1024, 1280]) cases.push([variant, width, 8, "fund"]);
+  for (const [variant, width, n, theme] of cases) {
+    {
+      {
+        test(`${variant} ${theme} ${width}px, ${n} cats: every walk stays clear of the furniture`, () => {
+          const plan = planOffice(crew(n), width, variant, { theme });
           const all = spots(plan);
           const walls = obstacles(plan);
           for (const a of all) {
@@ -146,8 +194,12 @@ describe("route", () => {
                 // every step is straight along a lane or a spine
                 expect(Math.abs(p.x - q.x) < 0.5 || Math.abs(p.y - q.y) < 0.5).toBe(true);
                 const box = sweep(p, q, plan);
+                const feetY = Math.max(p.y, q.y);
                 for (const w of walls) {
-                  if (overlaps(box, w)) throw new Error(`walk ${JSON.stringify(p)} to ${JSON.stringify(q)} crosses ${JSON.stringify(w)} (${variant} ${width} ${n})`);
+                  const onIt = overlaps(box.feet, w.foot);
+                  // furniture in front of the walker must stay clear of its body
+                  const covers = w.draw.y + w.draw.h > feetY + 0.5 && overlaps(box.body, w.draw);
+                  if (onIt || covers) throw new Error(`walk ${JSON.stringify(p)} to ${JSON.stringify(q)} ${onIt ? "steps on" : "is hidden by"} ${w.name} ${JSON.stringify(w.draw)} (${variant} ${width} ${n})`);
                 }
               }
             }

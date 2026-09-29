@@ -1,39 +1,78 @@
 /*
  * The office scene (office.tsx): one aria-hidden SVG floor, desk buttons
- * over it, and the beat notes under it. Flat fills, tonal steps and
- * hairlines only: no gradient, no shadow, no blur, no glow. The art keeps a
- * small flat palette (floor and wall tones, birch desks, monitors, plants,
- * the coffee machine) beside the JAL Core tokens; nothing in the purple
- * family and never the accent. Motion is CSS keyframes on transform and
- * opacity, on only while data-motion is "live" on the office root; walks
- * are Web Animations translates set by the director. Linear and steps only
- * for constant loops (the walk cycle, typing, scrolling), --ease-standard
- * for anything that starts and stops. Under reduced motion or `still`
- * nothing moves and every beat is also a note.
+ * over it, and the beat notes under it. A three-quarter cutaway drawn with
+ * flat fills, tonal steps and hairlines only: no gradient, no shadow, no
+ * blur, no glow. The art keeps a small flat palette (floors, walls, birch
+ * desks, monitors, plants, the coffee machine, the rack, the fund's ticker)
+ * beside the JAL Core tokens; nothing in the purple family and never the
+ * accent. Motion is CSS keyframes on transform and opacity, on only while
+ * data-motion is "live" on the office root; walks are Web Animations
+ * translates set by the director. Linear and steps only for constant loops
+ * (the walk cycle, typing, scrolling, the ticker), --ease-standard for
+ * anything that starts and stops. Under reduced motion or `still` nothing
+ * moves and every beat is also a note.
  */
 
 .office {
-  --of-slab: #f3f2ef;
-  --of-slab-line: var(--color-border);
-  --of-rug: #e9e5dc;
-  --of-zone: #eeece7;
-  --of-sky: #e4edf2;
-  --of-room-floor: #eceae5;
-  --of-wall: var(--color-surface);
-  --of-skirt: #dedbd4;
-  --of-partition: #e3e0da;
-  --of-glass: #cfccc5;
-  --of-door: #dcd8d0;
-  --of-door-frame: #c9c4ba;
+  /* the building */
+  --of-floor: #f1efea;
+  --of-corridor: #ebe8e2;
+  --of-room-ceo: #ece6dc;
+  --of-room-meeting: #ecebe6;
+  --of-room-pantry: #e8ebe7;
+  --of-zone: #e8e4dc;
+  --of-rug: #e3ddd2;
+  --of-carpet: #e4dccf;
+  --of-carpet-line: #d6ccbc;
+  --of-beanbag: #cfd9c8;
+  --of-beanbag-line: #b7c5ae;
+  --of-wall: #fbfaf8;
+  --of-cap: #d8d3ca;
+  --of-skirt: #e4dfd6;
+  --of-low: #e7e3dc;
+  --of-slab: #d3cec4;
+  --of-light-day: #f7f5f0;
+  --of-light-warm: #f5ece0;
   --of-line: var(--color-border-strong);
-  --of-desk: #e9e0d1;
-  --of-desk-front: #ddd2c0;
-  --of-desk-line: #c7b9a3;
+
+  /* windows and the door */
+  --of-frame: #cfc9bf;
+  --of-sky-day: #dcebf3;
+  --of-sky-dawn: #f3e5d5;
+  --of-sky-dusk: #efdac8;
+  --of-sky-band: #e9c7a8;
+  --of-sky-night: #3c4856;
+  --of-sun: #f1d27c;
+  --of-sun-low: #eba676;
+  --of-moon: #eef0f2;
+  --of-star: #f4f4ef;
+  --of-door: #e2dccf;
+  --of-doorway: #cfc8bc;
+  --of-mat: #c9bfae;
+
+  /* furniture */
+  --of-desk: #eee4d3;
+  --of-desk-front: #e2d5c1;
+  --of-desk-line: #c9b9a2;
+  --of-counter: #e9e9e5;
+  --of-counter-front: #dcdcd7;
+  --of-counter-line: #c3c3bd;
+  --of-cabinet: #e6e3dd;
+  --of-cabinet-front: #dad6ce;
   --of-chair: #d3cfc7;
   --of-chair-line: #b2ada3;
+  --of-key: #d9d6cf;
+  --of-keys: #efece6;
+  --of-handle: #b9ad9a;
+  --of-sofa: #b9c4c9;
+  --of-sofa-2: #a7b3b9;
+  --of-cushion: #e8d9b5;
+
+  /* monitors */
   --of-bezel: #4d4d4b;
   --of-stand: #a3a19c;
   --of-screen: var(--color-surface);
+  --of-screen-off: #5b5b59;
   --of-tabbar: #efefed;
   --of-code-a: #3f7cac;
   --of-code-b: #b9672f;
@@ -42,23 +81,66 @@
   --of-highlight: #e3ecf3;
   --of-scan: #a9cbe0;
   --of-mini: #e7e7e4;
+  --of-bull: #3f8f5a;
+  --of-bear: #c2553f;
+
+  /* small things */
   --of-paper: var(--color-surface);
   --of-note: #f4f3f0;
+  --of-note-doing: #e3ecf3;
+  --of-note-review: #f5ecd7;
   --of-note-done: #ebf4ee;
   --of-leaf: #86a66d;
   --of-leaf-2: #6d8f57;
+  --of-cactus: #7c9d69;
   --of-pot: #d6ccbd;
   --of-mug: var(--color-surface);
+  --of-mug-1: #e3ecf3;
+  --of-mug-2: #f5e6c8;
   --of-coffee: #7a5a44;
   --of-steam: #c9c9c5;
+  --of-sticky-0: #f3e39b;
+  --of-sticky-1: #cfe8d6;
+  --of-sticky-2: #f5d3bf;
+  --of-box: #d8b98e;
+  --of-box-flap: #caa878;
+  --of-box-tape: #eadbbd;
+  --of-box-line: #b08d5f;
+  --of-brass: #d2ad55;
+  --of-brass-dark: #a8873c;
+  --of-stamp: #6f5443;
   --of-machine: #4d4d4b;
+  --of-machine-2: #5d5d5b;
   --of-machine-panel: #7c7b77;
+  --of-lit: #7cc592;
   --of-fridge: #f1f0ec;
-  --of-sofa: #b9c4c9;
-  --of-sofa-2: #a7b3b9;
-  --of-water: #cfe0e8;
+  --of-magnet: #e39a7b;
+  --of-kettle: #d3dadd;
+  --of-rack: #50545a;
+  --of-rack-2: #62666c;
+  --of-rack-unit: #3f4247;
+  --of-rack-vent: #5a5e64;
+  --of-led-idle: #6a9fc4;
+  --of-led-busy: #e6c46b;
+  --of-led-pass: #7cc592;
+  --of-led-fail: #e8836f;
+  --of-cable: #b0b0ab;
+  --of-locker: #c9d4d8;
+  --of-locker-line: #aebcc2;
+  --of-shelf-back: #d8cab4;
+  --of-sisal: #cdb48d;
+  --of-post: #d8cfc0;
+  --of-yarn: #d98b86;
+  --of-bed: #c9a98b;
+  --of-bed-in: #efe3d0;
+  --of-ticker: #2f3337;
+  --of-ticker-ink: #f4f4ef;
+  --of-ticker-mute: #c9ccce;
+  --of-ticker-up: #7cc592;
+  --of-ticker-down: #e8836f;
   --of-pass: #3f8f5a;
   --of-return: #b36a2c;
+  --of-sell: #b3462f;
   --of-sw: 2.5;
   --of-step: calc(var(--dur-300) * 2);
 
@@ -141,41 +223,180 @@
 }
 
 /* ---------------------------------------------------------------------
- * Structure
+ * The building: floors, walls, windows, the door
  * ------------------------------------------------------------------- */
-.of-slab {
-  fill: var(--of-slab);
-  stroke: var(--of-slab-line);
+.of-floor {
+  fill: var(--of-floor);
+}
+.of-corridor {
+  fill: var(--of-corridor);
+}
+.of-room-floor-ceo {
+  fill: var(--of-room-ceo);
+}
+.of-room-floor-meeting {
+  fill: var(--of-room-meeting);
+}
+.of-room-floor-pantry {
+  fill: var(--of-room-pantry);
+}
+.of-zone {
+  fill: var(--of-zone);
+}
+.of-rug {
+  fill: var(--of-rug);
+}
+.of-rug-line {
+  fill: none;
+  stroke: var(--of-carpet-line);
   stroke-width: 1;
 }
-.of-room-floor {
-  fill: var(--of-room-floor);
+.of-runner {
+  fill: var(--of-zone);
+}
+.of-carpet {
+  fill: var(--of-carpet);
+}
+.of-beanbag {
+  fill: var(--of-beanbag);
+  stroke: var(--of-beanbag-line);
+  stroke-width: 1;
+}
+.of-beanbag-top {
+  fill: var(--of-beanbag-line);
+}
+.of-light-day {
+  fill: var(--of-light-day);
+}
+.of-light-dawn,
+.of-light-dusk {
+  fill: var(--of-light-warm);
 }
 .of-wall {
   fill: var(--of-wall);
 }
+.of-cap,
+.of-side-wall {
+  fill: var(--of-cap);
+}
 .of-skirting {
   fill: var(--of-skirt);
 }
-.of-partition {
-  fill: var(--of-partition);
-  stroke: var(--of-glass);
+.of-low-face {
+  fill: var(--of-low);
+  stroke: var(--of-cap);
   stroke-width: 1;
 }
-.of-glass {
-  fill: none;
-  stroke: var(--of-glass);
-  stroke-width: 1.5;
+.of-slab-face {
+  fill: var(--of-slab);
 }
+
+.of-window-frame {
+  fill: var(--of-frame);
+}
+.of-sky,
+.of-sky-day {
+  fill: var(--of-sky-day);
+}
+.of-sky-dawn {
+  fill: var(--of-sky-dawn);
+}
+.of-sky-dusk {
+  fill: var(--of-sky-dusk);
+}
+.of-sky-night,
+.of-window[data-day="night"] .of-sky {
+  fill: var(--of-sky-night);
+}
+.of-sky-band {
+  fill: var(--of-sky-band);
+}
+.of-sun {
+  fill: var(--of-sun);
+}
+.of-sun-low {
+  fill: var(--of-sun-low);
+}
+.of-moon {
+  fill: var(--of-moon);
+}
+.of-star {
+  fill: var(--of-star);
+}
+.of-cloud {
+  fill: var(--color-surface);
+}
+.of-sill {
+  fill: var(--of-cap);
+}
+
 .of-door-frame {
-  fill: var(--of-door-frame);
+  fill: var(--of-frame);
 }
 .of-doorway {
+  fill: var(--of-doorway);
+}
+.of-hall {
+  fill: var(--of-corridor);
+}
+.of-outside {
+  fill: var(--of-sky-day);
+}
+.of-door-leaf {
   fill: var(--of-door);
+  stroke: var(--of-frame);
+  stroke-width: 1;
+}
+.of-door-glass {
+  fill: var(--of-sky-day);
+}
+.of-knob {
+  fill: var(--of-stand);
+}
+.of-mat {
+  fill: var(--of-mat);
+}
+.of-door-panel {
+  transform-box: view-box;
+}
+.of-door[data-open] .of-door-panel {
+  transform: scaleX(0.16);
+}
+
+.of-clock {
+  fill: var(--color-surface);
+  stroke: var(--of-frame);
+  stroke-width: 2;
+}
+.of-clock-hand {
+  fill: none;
+  stroke: var(--color-ink-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.of-clock-min {
+  stroke-width: 1.4;
+}
+
+/* the fund's ticker along the back wall */
+.of-ticker-board {
+  fill: var(--of-ticker);
+}
+.of-ticker-sym {
+  fill: var(--of-ticker-ink);
+}
+.of-ticker-px {
+  fill: var(--of-ticker-mute);
+}
+.of-ticker-up {
+  fill: var(--of-ticker-up);
+}
+.of-ticker-down {
+  fill: var(--of-ticker-down);
 }
 
 /* ---------------------------------------------------------------------
- * Furniture
+ * Furniture blocks: a top face and a front face
  * ------------------------------------------------------------------- */
 .of-desk-top {
   fill: var(--of-desk);
@@ -187,26 +408,93 @@
   stroke: var(--of-desk-line);
   stroke-width: 1;
 }
-.of-chair {
-  fill: var(--of-chair);
-  stroke: var(--of-chair-line);
+.of-counter-top {
+  fill: var(--of-counter);
+  stroke: var(--of-counter-line);
   stroke-width: 1;
 }
+.of-counter-front {
+  fill: var(--of-counter-front);
+  stroke: var(--of-counter-line);
+  stroke-width: 1;
+}
+.of-cabinet-top,
+.of-cabinet {
+  fill: var(--of-cabinet);
+  stroke: var(--of-counter-line);
+  stroke-width: 1;
+}
+.of-cabinet-front {
+  fill: var(--of-cabinet-front);
+  stroke: var(--of-counter-line);
+  stroke-width: 1;
+}
+.of-chair,
 .of-stool {
   fill: var(--of-chair);
   stroke: var(--of-chair-line);
   stroke-width: 1;
+}
+.of-chair-seam {
+  fill: var(--of-chair-line);
+}
+.of-keyboard {
+  fill: var(--of-key);
+  stroke: var(--of-desk-line);
+  stroke-width: 0.8;
+}
+.of-keys {
+  fill: var(--of-keys);
+}
+.of-drawer {
+  fill: var(--of-desk);
+  stroke: var(--of-desk-line);
+  stroke-width: 1;
+}
+.of-drawer-seam {
+  fill: var(--of-desk-line);
+}
+.of-handle {
+  fill: var(--of-handle);
+}
+.of-table-leg {
+  fill: var(--of-desk-line);
 }
 .of-card-paper {
   fill: var(--of-paper);
   stroke: var(--color-border-strong);
   stroke-width: 1;
 }
+.of-sheet {
+  fill: var(--of-paper);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+.of-sofa-back {
+  fill: var(--of-sofa-2);
+}
+.of-sofa-seat,
+.of-sofa-front,
+.of-sofa-arm {
+  fill: var(--of-sofa);
+  stroke: var(--of-sofa-2);
+  stroke-width: 1;
+}
+.of-cushion {
+  fill: var(--of-cushion);
+}
+
+/* plants, mugs, notes, boxes, the bell, the stamp */
 .of-leaf {
   fill: var(--of-leaf);
 }
 .of-leaf-2 {
   fill: var(--of-leaf-2);
+}
+.of-cactus {
+  fill: var(--of-cactus);
+  stroke: var(--of-leaf-2);
+  stroke-width: 1;
 }
 .of-pot {
   fill: var(--of-pot);
@@ -217,6 +505,12 @@
   fill: var(--of-mug);
   stroke: var(--color-ink-muted);
   stroke-width: 3;
+}
+.of-mug-1 {
+  fill: var(--of-mug-1);
+}
+.of-mug-2 {
+  fill: var(--of-mug-2);
 }
 .of-mug.of-thin {
   stroke-width: 1.2;
@@ -241,8 +535,94 @@
 .of-held-mug .of-steam {
   stroke-width: 3;
 }
+.of-sticky-0 {
+  fill: var(--of-sticky-0);
+}
+.of-sticky-1 {
+  fill: var(--of-sticky-1);
+}
+.of-sticky-2 {
+  fill: var(--of-sticky-2);
+}
+.of-sticky-line {
+  fill: var(--color-ink-subtle);
+}
+.of-box {
+  fill: var(--of-box);
+  stroke: var(--of-box-line);
+  stroke-width: 1;
+}
+.of-box.of-thick {
+  stroke-width: 2.4;
+}
+.of-box-flap {
+  fill: var(--of-box-flap);
+  stroke: var(--of-box-line);
+  stroke-width: 1;
+}
+.of-box-tape {
+  fill: var(--of-box-tape);
+}
+.of-box-label {
+  fill: var(--of-paper);
+}
+.of-brass {
+  fill: var(--of-brass);
+  stroke: var(--of-brass-dark);
+  stroke-width: 1;
+}
+.of-brass-dark {
+  fill: var(--of-brass-dark);
+}
+.of-ring {
+  fill: none;
+  stroke: var(--of-brass-dark);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.of-bell {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+.of-stamp-handle,
+.of-stamp-base {
+  fill: var(--of-stamp);
+}
+.of-stamp-press,
+.of-stamp-mark {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.of-lamp {
+  fill: var(--of-code-d);
+  stroke: var(--of-stand);
+  stroke-width: 1;
+}
+.of-lamp-arm {
+  fill: none;
+  stroke: var(--of-stand);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.of-book-0 {
+  fill: var(--of-code-a);
+}
+.of-book-1 {
+  fill: var(--of-leaf-2);
+}
+.of-book-2 {
+  fill: var(--of-code-b);
+}
 
-/* the monitor */
+/* the keyboard paws */
+.of-paws .c-paw {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+/* ---------------------------------------------------------------------
+ * Monitors
+ * ------------------------------------------------------------------- */
 .of-bezel {
   fill: var(--of-bezel);
 }
@@ -252,6 +632,9 @@
 }
 .of-screen {
   fill: var(--of-screen);
+}
+.of-screen-off {
+  fill: var(--of-screen-off);
 }
 .of-tabbar {
   fill: var(--of-tabbar);
@@ -303,112 +686,311 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.of-bull {
+  fill: var(--of-bull);
+}
+.of-bear {
+  fill: var(--of-bear);
+}
+.of-price {
+  fill: none;
+  stroke: var(--of-code-a);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.of-down-line {
+  stroke: var(--of-bear);
+}
+.of-spread {
+  fill: var(--of-code-d);
+}
+.of-limit {
+  fill: var(--of-return);
+}
+.of-idle-paw {
+  fill: var(--of-code-d);
+}
+.of-depth,
+.of-creep {
+  transform-box: fill-box;
+  transform-origin: 100% 50%;
+}
+.of-creep {
+  transform-origin: 0% 50%;
+}
 .of-monitor[data-dim] .of-screen-body {
   opacity: 0.45;
 }
 
-/* the whiteboard and the agenda board */
+/* ---------------------------------------------------------------------
+ * Boards: the whiteboard, the agenda board, the rack's status screen
+ * ------------------------------------------------------------------- */
 .of-board {
   fill: var(--color-surface);
   stroke: var(--color-border-strong);
   stroke-width: 1.5;
 }
+.of-board-rule {
+  fill: var(--color-border);
+}
 .of-tray {
   fill: var(--color-border-strong);
 }
+.of-marker {
+  fill: var(--of-code-a);
+}
 .of-note {
   fill: var(--of-note);
-  stroke: var(--color-border);
+  stroke: var(--color-border-strong);
   stroke-width: 1;
+}
+.of-note-doing {
+  fill: var(--of-note-doing);
+}
+.of-note-review {
+  fill: var(--of-note-review);
 }
 .of-note-done {
   fill: var(--of-note-done);
   stroke: var(--color-success-border);
 }
+.of-token-head {
+  fill: var(--cat-fur, var(--color-layer-2));
+  stroke: var(--color-ink-muted);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+}
+.of-note-line,
+.of-note-bullet {
+  fill: var(--color-ink-subtle);
+}
+.of-plan-card[data-hidden] {
+  opacity: 0;
+}
+.of-live-dot {
+  fill: var(--color-success);
+}
+.of-agenda-now {
+  fill: var(--color-ink);
+}
+.of-agenda-dot {
+  fill: var(--color-ink-subtle);
+}
+.of-progress {
+  fill: var(--of-code-a);
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+}
 
-/* team pods and the meeting room window */
-.of-zone {
-  fill: var(--of-zone);
+/* ---------------------------------------------------------------------
+ * The pantry, the rack, the bookshelf, the cat bed
+ * ------------------------------------------------------------------- */
+.of-machine {
+  fill: var(--of-machine);
 }
-.of-window-frame {
-  fill: var(--of-door-frame);
+.of-machine-top {
+  fill: var(--of-machine-2);
 }
-.of-sky {
-  fill: var(--of-sky);
+.of-machine-panel,
+.of-machine-spout {
+  fill: var(--of-machine-panel);
 }
-.of-cloud {
+.of-machine-tray {
+  fill: var(--of-rack-unit);
+}
+.of-machine-led {
+  fill: var(--of-stand);
+}
+.of-machine-led.of-led-on {
+  fill: var(--of-lit);
+}
+.of-pour {
+  fill: var(--of-coffee);
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+.of-brew:not([data-on]) {
+  opacity: 0;
+}
+.of-kettle {
+  fill: var(--of-kettle);
+  stroke: var(--color-ink-subtle);
+  stroke-width: 1;
+}
+.of-fridge,
+.of-fridge-top {
+  fill: var(--of-fridge);
+  stroke: var(--of-line);
+  stroke-width: 1;
+}
+.of-fridge-top {
   fill: var(--color-surface);
 }
+.of-fridge-seam {
+  fill: var(--of-line);
+}
+.of-magnet {
+  fill: var(--of-magnet);
+}
+.of-printer {
+  fill: var(--of-fridge);
+  stroke: var(--of-line);
+  stroke-width: 1;
+}
+.of-printer-top {
+  fill: var(--of-code-d);
+}
+.of-bin {
+  fill: var(--of-sofa);
+  stroke: var(--of-sofa-2);
+  stroke-width: 1;
+}
+.of-locker {
+  fill: var(--of-locker);
+  stroke: var(--of-locker-line);
+  stroke-width: 1;
+}
+.of-locker-top {
+  fill: var(--of-locker-line);
+}
+.of-locker-vent {
+  fill: var(--of-locker-line);
+}
+.of-scarf {
+  fill: var(--of-code-b);
+}
+.of-hat {
+  fill: var(--of-code-a);
+}
+.of-bowl {
+  fill: var(--of-pot);
+  stroke: var(--of-desk-line);
+  stroke-width: 1;
+}
+.of-fruit-a {
+  fill: var(--of-code-b);
+}
+.of-fruit-b {
+  fill: var(--of-leaf);
+}
+.of-fruit-c {
+  fill: var(--of-sun);
+}
+.of-bottle {
+  fill: var(--color-surface);
+  stroke: var(--of-line);
+  stroke-width: 1;
+}
+.of-bottle-water {
+  fill: var(--of-sky-day);
+}
 
-/* the hero's CEO corner and spare cells */
-.of-rug {
-  fill: var(--of-rug);
+.of-rack {
+  fill: var(--of-rack);
 }
-.of-easel-leg {
-  fill: none;
-  stroke: var(--of-stand);
-  stroke-width: 3;
-  stroke-linecap: round;
+.of-rack-top {
+  fill: var(--of-rack-2);
 }
+.of-rack-unit {
+  fill: var(--of-rack-unit);
+}
+.of-rack-vent {
+  fill: var(--of-rack-vent);
+}
+.of-led {
+  fill: var(--of-led-idle);
+}
+[data-rack="testing"] .of-led {
+  fill: var(--of-led-busy);
+}
+[data-rack="testing"] .of-led-1,
+[data-rack="testing"] .of-led-3 {
+  fill: var(--of-led-pass);
+}
+[data-rack="pass"] .of-led {
+  fill: var(--of-led-pass);
+}
+[data-rack="fail"] .of-led {
+  fill: var(--of-led-fail);
+}
+[data-rack="fail"] .of-led-2 {
+  fill: var(--of-led-busy);
+}
+.of-cable {
+  fill: var(--of-cable);
+}
+
 .of-shelf-body {
   fill: var(--of-desk-front);
   stroke: var(--of-desk-line);
   stroke-width: 1;
 }
+.of-shelf-back {
+  fill: var(--of-shelf-back);
+}
 .of-shelf-board {
   fill: var(--of-desk-line);
 }
-.of-book-0 {
-  fill: var(--of-code-a);
+
+.of-post-base,
+.of-post-top {
+  fill: var(--of-post);
+  stroke: var(--of-desk-line);
+  stroke-width: 1;
 }
-.of-book-1 {
-  fill: var(--of-leaf-2);
+.of-post {
+  fill: var(--of-sisal);
 }
-.of-book-2 {
-  fill: var(--of-code-b);
+.of-yarn {
+  fill: var(--of-yarn);
+}
+.of-yarn-line {
+  fill: none;
+  stroke: var(--of-code-b);
+  stroke-width: 1.2;
+}
+.of-bed-rim {
+  fill: var(--of-bed);
+  stroke: var(--of-box-line);
+  stroke-width: 1;
+}
+.of-bed-inner {
+  fill: var(--of-bed-in);
+}
+.of-z {
+  fill: none;
+  stroke: var(--color-ink-subtle);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.of-nap .of-rig {
+  opacity: 1;
+}
+.of-nap .cat-aside-lie {
+  display: none;
 }
 
-/* the pantry */
-.of-machine {
-  fill: var(--of-machine);
+.of-sign {
+  fill: var(--of-ticker);
 }
-.of-machine-panel {
-  fill: var(--of-machine-panel);
+.of-sign-word {
+  fill: var(--of-ticker-ink);
 }
-.of-machine-spout {
-  fill: var(--of-machine-panel);
+
+/* the fund's order ticket */
+.of-ticket-buy {
+  fill: var(--of-pass);
 }
-.of-shelf {
-  fill: var(--of-desk-line);
+.of-ticket-sell {
+  fill: var(--of-sell);
 }
-.of-fridge {
-  fill: var(--of-fridge);
-  stroke: var(--of-line);
-  stroke-width: 1;
-}
-.of-fridge-seam,
-.of-handle {
-  fill: var(--of-line);
-}
-.of-jug {
+.of-ticket-word {
   fill: var(--color-surface);
-  stroke: var(--of-line);
-  stroke-width: 1;
 }
-.of-jug-water {
-  fill: var(--of-water);
-}
-.of-sofa-back {
-  fill: var(--of-sofa-2);
-}
-.of-sofa-seat,
-.of-sofa-arm {
-  fill: var(--of-sofa);
-  stroke: var(--of-sofa-2);
-  stroke-width: 1;
-}
-.of-brew:not([data-on]) {
-  opacity: 0;
+.of-ticket {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
 }
 
 /* carried cards and stamps */
@@ -468,10 +1050,9 @@
 }
 
 /* ---------------------------------------------------------------------
- * The floor actors: shown only while a cat is away from its desk and seat
+ * The floor actors: shown only while a cat is up and about
  * ------------------------------------------------------------------- */
-.of-actor[data-where="desk"],
-.of-actor[data-where="seat"] {
+.of-actor:is([data-where="desk"], [data-where="seat"], [data-where="nap"], [data-where="out"]) {
   display: none;
 }
 .of-up,
@@ -551,6 +1132,7 @@
 }
 .office .office-hit:enabled:active {
   background-color: color-mix(in oklab, var(--color-ink) 9%, transparent);
+  border-color: transparent;
   transform: none;
 }
 .office .office-hit[data-selected] {
@@ -604,7 +1186,7 @@
  * Motion: only while live
  * ------------------------------------------------------------------- */
 
-/* stand up, sit down, arrive at a seat */
+/* stand up, sit down, arrive at a seat, step out of the door */
 .office[data-motion="live"] .of-arrive,
 .office[data-motion="live"] .of-sit-in {
   animation: of-arrive var(--dur-300) var(--ease-standard) both;
@@ -612,8 +1194,14 @@
 .office[data-motion="live"] .of-sit-out {
   animation: of-leave var(--dur-200-exit) var(--ease-standard) both;
 }
+.office[data-motion="live"] .of-actor[data-pose="exit"] .of-hop {
+  animation: of-exit var(--dur-600) var(--ease-standard) both;
+}
 .office[data-motion="live"] .of-flip {
   transition: transform var(--dur-150) var(--ease-standard);
+}
+.office[data-motion="live"] .of-door-panel {
+  transition: transform var(--dur-300) var(--ease-standard);
 }
 
 /* the walk cycle: legs in pairs, a bob twice a stride, the tail sways */
@@ -647,12 +1235,36 @@
   animation: of-hop calc(var(--dur-600) * 2) var(--ease-standard) both;
 }
 
-/* monitors: typing (mu.R10), streaming output, a review sweep, a scan */
+/* typing paws, the trader standing to execute */
+.office[data-motion="live"] .of-paws[data-typing] .of-tap-a {
+  animation: of-tap calc(var(--loop-caret) / 3) linear infinite;
+}
+.office[data-motion="live"] .of-paws[data-typing] .of-tap-b {
+  animation: of-tap calc(var(--loop-caret) / 3) linear calc(var(--loop-caret) / -6) infinite;
+}
+.of-lifted .of-lift {
+  transform: translateY(var(--of-lift));
+}
+.office[data-motion="live"] .of-lift {
+  transition: transform var(--dur-300) var(--ease-standard);
+}
+/* the trader (JEV motion.choreography stagger_sequence): rises, then the ticket pops, then it leans while the order works */
+.office[data-motion="live"] .of-lifted .of-lean {
+  animation: of-lean calc(var(--loop-pulse) * 1.5) linear var(--dur-600) infinite;
+}
+.office[data-motion="live"] .of-ticket {
+  animation: of-pop var(--dur-300) var(--ease-standard) var(--dur-300) both;
+}
+
+/* monitors: typing (mu.R10), streaming output, a review sweep, a scan, markets */
 .office[data-motion="live"] .of-monitor[data-anim] .of-scroll {
   animation: of-scroll calc(var(--loop-pulse) * 5) steps(8, end) infinite;
 }
 .office[data-motion="live"] .of-monitor[data-anim] .of-scroll-fast {
   animation-duration: calc(var(--loop-pulse) * 2);
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-scroll-x {
+  animation: of-scroll-x calc(var(--loop-pulse) * 8) linear infinite;
 }
 .office[data-motion="live"] .of-monitor[data-anim] .of-typing {
   transform-box: fill-box;
@@ -680,8 +1292,51 @@
 .office[data-motion="live"] .of-monitor[data-anim] .of-mini-move {
   animation: of-move calc(var(--loop-pulse) * 3) linear infinite;
 }
+.office[data-motion="live"] .of-monitor[data-anim] .of-depth {
+  animation: of-depth var(--loop-pulse) steps(4, end) infinite;
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-depth-1 {
+  animation-delay: calc(var(--loop-pulse) * -0.3);
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-depth-2 {
+  animation-delay: calc(var(--loop-pulse) * -0.7);
+}
+.office[data-motion="live"] .of-monitor[data-anim] .of-creep,
+.office[data-motion="live"] .of-risk-screen .of-creep {
+  animation: of-creep calc(var(--loop-pulse) * 4) linear infinite;
+}
 
-/* steam, the brew, bubbles, the talk mark, stamps, pinned cards */
+/* the rack (JEV motion.intensity tier 1, quiet): one LED per unit blinks while tests run, a slow progress sweep */
+.office[data-motion="live"] [data-rack="testing"] .of-led-1 {
+  animation: of-blink var(--loop-caret) steps(2, end) infinite;
+}
+.office[data-motion="live"] [data-rack="testing"] .of-led-3 {
+  animation: of-blink var(--loop-caret) steps(2, end) calc(var(--loop-caret) / -2) infinite;
+}
+.office[data-motion="live"] .of-progress-run {
+  animation: of-progress calc(var(--loop-pulse) * 3) linear infinite;
+}
+
+/* the fund's ticker scrolls, the bell swings */
+.office[data-motion="live"] .of-ticker-run {
+  animation: of-ticker calc(var(--loop-pulse) * var(--of-ticker-n)) linear infinite;
+}
+.office[data-motion="live"] .of-bell-ring {
+  animation: of-swing calc(var(--dur-600) * 2) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-ring-marks {
+  animation: of-ring-out calc(var(--dur-600) * 2) var(--ease-standard) var(--dur-150) both;
+}
+
+/* the approval stamp comes down, the mark appears */
+.office[data-motion="live"] .of-stamp-press {
+  animation: of-press calc(var(--dur-600) * 2) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-stamp-mark {
+  animation: of-mark calc(var(--dur-600) * 2) var(--ease-standard) both;
+}
+
+/* the coffee machine brews, steam, clouds drift, z's rise, notes appear */
 .office[data-motion="live"] .of-steam {
   animation: of-steam calc(var(--loop-pulse) * 1.5) linear infinite;
 }
@@ -691,6 +1346,23 @@
 .office[data-motion="live"] .of-brew[data-on] {
   animation: of-brew calc(var(--hold-word) * 2) linear both;
 }
+.office[data-motion="live"] .of-brew[data-on] .of-pour {
+  animation: of-pour calc(var(--hold-word) * 2) linear both;
+}
+.office[data-motion="live"] .of-cloud-drift {
+  animation: of-drift calc(var(--loop-pulse) * 12) linear infinite alternate;
+}
+.office[data-motion="live"] .of-z {
+  animation: of-z calc(var(--loop-pulse) * 2) linear infinite;
+  animation-delay: calc(var(--loop-pulse) * var(--of-i, 0) * 0.66);
+}
+.office[data-motion="live"] .of-line-in {
+  animation: of-fade-in var(--dur-300) var(--ease-standard) both;
+  animation-delay: calc(var(--dur-600) * var(--of-i, 0));
+}
+.office[data-motion="live"] .of-live-dot {
+  animation: of-appear calc(var(--loop-pulse) * 1.5) linear infinite;
+}
 .office[data-motion="live"] .of-bubble {
   transition: opacity var(--dur-150-exit) var(--ease-standard);
 }
@@ -699,6 +1371,9 @@
 }
 .office[data-motion="live"] .of-talk {
   animation: of-arrive var(--dur-200) var(--ease-standard) both;
+}
+.office[data-motion="live"] .of-talk-glide {
+  transition: transform var(--dur-600) var(--ease-standard);
 }
 .office[data-motion="live"] .of-talk-line {
   animation: of-talk-line var(--loop-caret) linear infinite;
@@ -715,10 +1390,16 @@
 .office[data-motion="live"] .of-desk-stamp {
   animation: of-stamp var(--dur-300) var(--ease-standard) both;
 }
+
+/* plan cards slide to their new column; a delivered one pops as it is pinned */
 .office[data-motion="live"] .of-plan-card {
-  animation: of-fade-in var(--dur-200) var(--ease-standard) both;
+  transition:
+    transform var(--dur-600) var(--ease-standard),
+    opacity var(--dur-300) var(--ease-standard);
 }
 .office[data-motion="live"] .of-pinned {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
   animation: of-pin var(--dur-600) var(--ease-standard) both;
 }
 
@@ -760,6 +1441,10 @@
   0% { opacity: 1; transform: translateY(0); }
   100% { opacity: 0; transform: translateY(-4px); }
 }
+@keyframes of-exit {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-10px) scale(0.86); }
+}
 @keyframes of-leg {
   0% { transform: rotate(20deg); }
   50% { transform: rotate(-20deg); }
@@ -789,9 +1474,32 @@
   72% { transform: translateY(0); }
   100% { transform: translateY(0); }
 }
+@keyframes of-tap {
+  0% { transform: translateY(0); }
+  30% { transform: translateY(-2px); }
+  60% { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+@keyframes of-lean {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+  100% { transform: translateY(0); }
+}
+@keyframes of-pop {
+  0% { opacity: 0; transform: translateY(4px) scale(0.8); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
 @keyframes of-scroll {
   0% { transform: translateY(0); }
   100% { transform: translateY(var(--of-scroll)); }
+}
+@keyframes of-scroll-x {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(var(--of-scroll-x)); }
+}
+@keyframes of-ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(var(--of-ticker)); }
 }
 @keyframes of-type {
   0% { transform: scaleX(0.05); }
@@ -803,6 +1511,10 @@
   49% { opacity: 1; }
   50% { opacity: 0; }
   100% { opacity: 0; }
+}
+@keyframes of-blink {
+  0% { opacity: 1; }
+  100% { opacity: 0.25; }
 }
 @keyframes of-sweep {
   0% { transform: translateY(0); }
@@ -823,6 +1535,51 @@
   85% { transform: translateX(var(--of-move)); }
   100% { transform: translateX(0); }
 }
+@keyframes of-depth {
+  0% { transform: scaleX(1); }
+  25% { transform: scaleX(0.7); }
+  50% { transform: scaleX(1.15); }
+  75% { transform: scaleX(0.85); }
+  100% { transform: scaleX(1); }
+}
+@keyframes of-creep {
+  0% { transform: scaleX(0.9); }
+  50% { transform: scaleX(1.12); }
+  100% { transform: scaleX(0.9); }
+}
+@keyframes of-progress {
+  0% { transform: scaleX(0.04); }
+  90% { transform: scaleX(1); }
+  100% { transform: scaleX(1); }
+}
+@keyframes of-swing {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(-16deg); }
+  35% { transform: rotate(13deg); }
+  55% { transform: rotate(-8deg); }
+  75% { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes of-ring-out {
+  0% { opacity: 0; transform: scale(0.8); }
+  20% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.3); }
+}
+@keyframes of-press {
+  0% { opacity: 0; transform: translateY(-10px); }
+  20% { opacity: 1; transform: translateY(-10px); }
+  40% { transform: translateY(6px); }
+  60% { transform: translateY(-6px); }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-12px); }
+}
+@keyframes of-mark {
+  0% { opacity: 0; transform: scale(0.4); }
+  38% { opacity: 0; transform: scale(0.4); }
+  50% { opacity: 1; transform: scale(1.15); }
+  60% { transform: scale(1); }
+  100% { opacity: 1; transform: scale(1); }
+}
 @keyframes of-steam {
   0% { opacity: 0; transform: translateY(2px); }
   40% { opacity: 1; }
@@ -833,6 +1590,22 @@
   8% { opacity: 1; }
   85% { opacity: 1; }
   100% { opacity: 0; }
+}
+@keyframes of-pour {
+  0% { transform: scaleY(0); }
+  10% { transform: scaleY(1); }
+  55% { transform: scaleY(1); }
+  65% { transform: scaleY(0); }
+  100% { transform: scaleY(0); }
+}
+@keyframes of-drift {
+  0% { transform: translateX(-4px); }
+  100% { transform: translateX(6px); }
+}
+@keyframes of-z {
+  0% { opacity: 0; transform: translateY(4px); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-8px); }
 }
 @keyframes of-bubble-in {
   0% { opacity: 0; transform: translateY(3px); }
@@ -856,7 +1629,7 @@
   100% { opacity: 1; }
 }
 @keyframes of-pin {
-  0% { opacity: 0; transform: translateY(-6px) scale(1.06); }
+  0% { opacity: 0; transform: translateY(-6px) scale(1.3); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes of-nod {

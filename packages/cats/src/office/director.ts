@@ -12,10 +12,18 @@
 //   state     per cat: where it is (desk, floor, meeting seat), its floor
 //             pose, what it carries, one-shot reactions; subscribers
 //             re-render only the cat that changed
-// JEV motion.choreography: handoff, ask, decided, review, deliver and the
-// coffee break are stagger_sequence (one actor after another), the meeting
-// files in with a stagger, celebrate plays in parallel. Under reduced
-// motion every walk is instant and every beat is also a text note.
+//   company   a hire steps in at the door with a box and walks to its
+//             desk; a cat that leaves packs a box and walks out the door;
+//             idle cats take a coffee or nap in the cat bed; the rack
+//             blinks while tests run (the fund's router while orders are
+//             executed), then shows pass or fail; the fund's bell rings
+//             when a target is hit; the windows follow the local hour in
+//             flat steps
+// JEV motion.choreography: handoff, ask, decided, review, deliver, the
+// coffee break, the hire, the departure and the nap are stagger_sequence
+// (one step after another), the meeting files in with a stagger, celebrate
+// plays in parallel. Under reduced motion every walk is instant and every
+// beat is also a text note.
 import type { MeetingKind } from "@mengai/shared";
 import type { OfficeAgent, OfficeBeat, OfficeMeeting } from "../office-contract";
 import { allDesks, deskOf, facingOf, pathLength, route, type Facing, type OfficePlan, type Pt, type Spot } from "./geometry";
@@ -41,7 +49,29 @@ export const TIMING = {
   idleMin: 22000,
   idleMax: 55000,
   poll: 400,
+  /** the door swings open and a cat steps through */
+  door: 700,
+  /** a new hire's box stays on its desk this long */
+  unpack: 6000,
+  nap: 16000,
+  /** the rack shows pass or fail this long after the run */
+  rackHold: 9000,
+  bell: 1400,
+  /** how often the windows re-read the local hour */
+  day: 300000,
 } as const;
+
+/** The window light in flat steps by the local hour. */
+export type Daypart = "dawn" | "day" | "dusk" | "night";
+
+export function daypartOf(hour: number): Daypart {
+  if (hour >= 5 && hour < 8) return "dawn";
+  if (hour >= 8 && hour < 17) return "day";
+  if (hour >= 17 && hour < 19) return "dusk";
+  return "night";
+}
+
+export type RackMode = "idle" | "testing" | "pass" | "fail";
 
 /* ---------------------------------------------------------------------
  * Clock: one pausable timer queue
@@ -147,13 +177,16 @@ export class Clock {
 /* ---------------------------------------------------------------------
  * What the scene renders for each cat
  * ------------------------------------------------------------------- */
-export type Carry = "card" | "card-pass" | "card-deny" | "mug" | "stamp-pass" | "stamp-return";
-export type FloorPose = "walk" | "stand" | "front" | "back";
-export type Reaction = "catch" | "nod" | "shake" | "celebrate" | "stamp-pass" | "stamp-return" | "look";
+export type Carry = "card" | "card-pass" | "card-deny" | "mug" | "stamp-pass" | "stamp-return" | "box";
+/** exit: stepping out through the door, fading */
+export type FloorPose = "walk" | "stand" | "front" | "back" | "exit";
+export type Reaction = "catch" | "nod" | "shake" | "celebrate" | "stamp-pass" | "stamp-return" | "look" | "approve";
+/** desk: seated at its desk; floor: up and about; seat: at the meeting table; nap: in the cat bed; out: not in the office */
+export type Where = "desk" | "floor" | "seat" | "nap" | "out";
 
 export interface ActorView {
   id: string;
-  where: "desk" | "floor" | "seat";
+  where: Where;
   pose: FloorPose;
   /** the seated front rig's beat while on the floor (coffee: rest) */
   beat: "rest" | "wait";
@@ -165,6 +198,12 @@ export interface ActorView {
   react: { kind: Reaction; n: number } | null;
   /** a fresh mug stands on the desk after a coffee break */
   mug: boolean;
+  /** a new hire's open box on its desk */
+  unpack: boolean;
+  /** a leaver has packed its desk things into the box */
+  packed: boolean;
+  /** dozing, curled up on its own desk top (a nap when there is no cat bed) */
+  dozing: boolean;
   /** bumps on every stand up and sit down, so the entrance replays */
   moves: number;
 }
@@ -178,6 +217,8 @@ export interface MeetingView {
   running: boolean;
   seated: string[];
   speaker: string | null;
+  /** agenda items talked through so far */
+  discussed: number;
 }
 
 export interface Note {
@@ -194,14 +235,27 @@ const MEETING_WORD: Record<MeetingKind, string> = {
   wrapup: "Wrap-up",
 };
 
+/** The scene's own beats: a hire walking in, a cat walking out. Their ids start with "~" and never reach onBeatDone. */
+type SceneBeat = OfficeBeat | { id: string; kind: "arrive"; agentId: string } | { id: string; kind: "depart"; agentId: string };
+
+export interface SceneChanges {
+  /** cats that just joined: they walk in through the door */
+  arriving?: string[];
+  /** cats that are leaving: they pack a box and walk out, then onGone fires */
+  leaving?: string[];
+}
+
 class Abort extends Error {
   constructor() {
     super("office scene reset");
   }
 }
 
-function moversOf(beat: OfficeBeat): string[] {
+function moversOf(beat: SceneBeat): string[] {
   switch (beat.kind) {
+    case "arrive":
+    case "depart":
+      return [beat.agentId];
     case "handoff":
     case "ask":
     case "deliver":
@@ -229,6 +283,22 @@ function seeded(seed: number): () => number {
 export interface DirectorOptions {
   timers?: TimerHost;
   onBeatDone?: (beatId: string) => void;
+  /** reads the local hour (tests pin it) */
+  hour?: () => number;
+}
+
+/** Two plans put every cat, room and walkway in the same place: a hire into a free desk needs no reset. */
+export function samePlaces(a: OfficePlan, b: OfficePlan): boolean {
+  if (a.width !== b.width || a.height !== b.height || a.variant !== b.variant || a.theme !== b.theme) return false;
+  const key = (p: OfficePlan) =>
+    JSON.stringify([p.ceo.rect, p.ceo.board.p, p.meeting?.rect, p.meeting?.table, p.pantry?.rect, p.pantry?.counter, p.door?.rect, p.lanes, p.spines, p.huddle.map((s) => s.p)]);
+  if (key(a) !== key(b)) return false;
+  const desks = new Map(allDesks(b).map((d) => [d.agentId, d]));
+  for (const d of allDesks(a)) {
+    const o = desks.get(d.agentId);
+    if (o && JSON.stringify(o.rect) !== JSON.stringify(d.rect)) return false;
+  }
+  return true;
 }
 
 export class Director {
@@ -246,7 +316,7 @@ export class Director {
   private busy = new Set<string>();
   private parked = new Map<string, { spot: string; timer: number }>();
   private reserved = new Map<string, string>();
-  private pending: OfficeBeat[] = [];
+  private pending: SceneBeat[] = [];
   private seen = new Set<string>();
   private done = new Set<string>();
   private sleepers = new Set<(err: Abort) => void>();
@@ -256,7 +326,7 @@ export class Director {
   private mugTimers = new Map<string, number>();
   private rand = new Map<string, () => number>();
 
-  private meeting: MeetingView = { id: null, kind: null, title: "", agenda: [], notes: [], running: false, seated: [], speaker: null };
+  private meeting: MeetingView = { id: null, kind: null, title: "", agenda: [], notes: [], running: false, seated: [], speaker: null, discussed: 0 };
   private meetingSource: OfficeMeeting | null = null;
   private talkTimer = 0;
   private notes: Note[] = [];
@@ -266,11 +336,29 @@ export class Director {
 
   private listeners = new Map<string, Set<() => void>>();
   private disposed = false;
-  private running = new Map<string, OfficeBeat>();
+  private running = new Map<string, SceneBeat>();
+
+  /** fires when a leaving cat has walked out of the door */
+  onGone: ((agentId: string) => void) | undefined;
+  private arriving = new Set<string>();
+  private announced = new Set<string>();
+  private leaving = new Set<string>();
+  private doorHolders = new Set<string>();
+  private unpackTimers = new Map<string, number>();
+  private rack: { mode: RackMode; n: number } = { mode: "idle", n: 0 };
+  private rackRunners = new Set<string>();
+  private rackTimer = 0;
+  private bellN = 0;
+  private hour: () => number;
+  private day: Daypart;
+  private dayTimer = 0;
+  private sceneN = 0;
 
   constructor(opts: DirectorOptions = {}) {
     this.clock = new Clock(opts.timers);
     this.onBeatDone = opts.onBeatDone;
+    this.hour = opts.hour ?? (() => new Date().getHours());
+    this.day = daypartOf(this.hour());
   }
 
   /* ---------------- store ---------------- */
@@ -289,10 +377,31 @@ export class Director {
   actor(id: string): ActorView {
     let v = this.actors.get(id);
     if (!v) {
-      v = { id, where: "desk", pose: "stand", beat: "rest", paw: false, carry: null, seat: -1, react: null, mug: false, moves: 0 };
+      v = { id, where: "desk", pose: "stand", beat: "rest", paw: false, carry: null, seat: -1, react: null, mug: false, unpack: false, packed: false, dozing: false, moves: 0 };
       this.actors.set(id, v);
     }
     return v;
+  }
+
+  doorOpen(): boolean {
+    return this.doorHolders.size > 0;
+  }
+
+  rackView(): { mode: RackMode; n: number } {
+    return this.rack;
+  }
+
+  bell(): number {
+    return this.bellN;
+  }
+
+  daypart(): Daypart {
+    return this.day;
+  }
+
+  /** The local hour the windows and the wall clock show. */
+  hourNow(): number {
+    return this.hour();
   }
 
   meetingView(): MeetingView {
@@ -366,25 +475,124 @@ export class Director {
   }
 
   setAgents(agents: OfficeAgent[]): void {
-    const next = new Map(agents.map((a) => [a.id, a]));
-    this.agents = next;
-    for (const id of next.keys()) this.actor(id);
+    this.applyAgents(agents);
     this.scheduleIdleAll();
     this.pump();
   }
 
-  /** A new plan (width or crew changed): every running script stops, every cat goes back to its desk or seat. */
+  /** A new plan (width or crew changed). When the cats' places moved, every running script stops and every cat goes back to its desk or seat. */
   setPlan(plan: OfficePlan): void {
-    const first = this.plan === null;
+    this.applyPlan(plan);
+    this.pump();
+  }
+
+  /** The crew, its floor plan and who joins or leaves, applied together so a hire walks to a desk that exists. */
+  setScene(agents: OfficeAgent[], plan: OfficePlan, changes: SceneChanges = {}): void {
+    this.applyAgents(agents);
+    if (plan !== this.plan) this.applyPlan(plan);
+    const arrivals: SceneBeat[] = [];
+    for (const id of changes.arriving ?? []) {
+      // each hire walks in once, however often the scene hands the same change over
+      if (this.announced.has(id) || !this.agents.has(id)) continue;
+      this.announced.add(id);
+      this.arriving.add(id);
+      this.cancelIdle(id);
+      this.set(id, { where: "out", carry: null, moves: this.actor(id).moves + 1 });
+      arrivals.push({ id: `~in:${id}:${++this.sceneN}`, kind: "arrive", agentId: id });
+    }
+    // a hire walks in before it does anything else, in the order they joined
+    this.pending = [...arrivals, ...this.pending];
+    // a leaver who is back in the crew stays: its walk out is called off
+    const stay = new Set(changes.leaving ?? []);
+    for (const id of [...this.leaving]) {
+      if (stay.has(id)) continue;
+      this.leaving.delete(id);
+      this.pending = this.pending.filter((b) => !(b.kind === "depart" && b.agentId === id));
+    }
+    for (const id of changes.leaving ?? []) {
+      if (this.leaving.has(id) || !this.agents.has(id)) continue;
+      this.leaving.add(id);
+      this.cancelIdle(id);
+      this.pending.push({ id: `~out:${id}:${++this.sceneN}`, kind: "depart", agentId: id });
+    }
+    this.scheduleIdleAll();
+    this.pump();
+  }
+
+  private applyAgents(agents: OfficeAgent[]): void {
+    const next = new Map(agents.map((a) => [a.id, a]));
+    this.agents = next;
+    for (const id of next.keys()) this.actor(id);
+    for (const id of [...this.arriving]) if (!next.has(id)) this.arriving.delete(id);
+    for (const id of [...this.announced]) if (!next.has(id)) this.announced.delete(id);
+    for (const id of [...this.leaving]) if (!next.has(id)) this.leaving.delete(id);
+    this.updateRack();
+  }
+
+  private applyPlan(plan: OfficePlan): void {
+    const old = this.plan;
     this.plan = plan;
-    if (!first) this.reset();
-    for (const d of allDesks(plan)) this.at.set(d.agentId, d.home);
+    const napMoved = old !== null && JSON.stringify(old.nap?.bed) !== JSON.stringify(plan.nap?.bed) && ([...this.actors.values()].some((v) => v.where === "nap") || this.reserved.has("nap"));
+    const moved = old !== null && (napMoved || !samePlaces(old, plan));
+    if (moved) this.reset();
+    for (const d of allDesks(plan)) {
+      const v = this.actors.get(d.agentId);
+      // a cat up and about keeps walking when nothing moved
+      if (moved || !this.at.has(d.agentId) || !v || v.where === "desk") this.at.set(d.agentId, d.home);
+    }
     for (const [id, el] of this.els) {
       const spot = this.at.get(id);
-      if (spot) this.place(el, spot.p);
+      if (spot && (moved || this.actor(id).where === "desk")) this.place(el, spot.p);
     }
-    if (!first) this.reseatMeeting();
-    this.pump();
+    if (moved) this.reseatMeeting();
+    // the theme decides what the rack watches
+    if (!old || old.theme !== plan.theme) this.updateRack();
+  }
+
+  /* ---------------- the rack: blinking while tests (or trades) run, then pass or fail ---------------- */
+
+  private updateRack(): void {
+    // the studio's rack runs the tests; the fund's order router works the orders being executed
+    const fund = this.plan?.theme === "fund";
+    const runners = [...this.agents.values()].filter((a) => a.activity === (fund ? "automate" : "run") && (a.status === "working" || a.status === "thinking"));
+    if (runners.length) {
+      for (const a of runners) this.rackRunners.add(a.id);
+      if (this.rackTimer) this.clock.cancel(this.rackTimer);
+      this.rackTimer = 0;
+      if (this.rack.mode !== "testing") this.setRack("testing");
+      return;
+    }
+    if (this.rack.mode !== "testing") return;
+    const failed = [...this.rackRunners].some((id) => {
+      const a = this.agents.get(id);
+      return a !== undefined && (a.status === "error" || a.mood === "frustrated");
+    });
+    this.rackRunners.clear();
+    this.setRack(failed ? "fail" : "pass");
+    this.rackTimer = this.clock.after(TIMING.rackHold, () => {
+      this.rackTimer = 0;
+      this.setRack("idle");
+    });
+  }
+
+  private setRack(mode: RackMode): void {
+    this.rack = { mode, n: this.rack.n + 1 };
+    this.emit("rack");
+  }
+
+  /* ---------------- the windows: the local hour in flat steps ---------------- */
+
+  private watchDay(): void {
+    if (this.dayTimer) this.clock.cancel(this.dayTimer);
+    this.dayTimer = this.clock.after(TIMING.day, () => {
+      this.dayTimer = 0;
+      const next = daypartOf(this.hour());
+      if (next !== this.day) {
+        this.day = next;
+        this.emit("day");
+      }
+      this.watchDay();
+    });
   }
 
   setBeats(beats: OfficeBeat[]): void {
@@ -410,6 +618,12 @@ export class Director {
   /** Mounted: idle life and the queue run. */
   attach(): void {
     this.disposed = false;
+    const now = daypartOf(this.hour());
+    if (now !== this.day) {
+      this.day = now;
+      this.emit("day");
+    }
+    this.watchDay();
     this.scheduleIdleAll();
     this.pump();
   }
@@ -421,9 +635,12 @@ export class Director {
     this.clock.clear();
     this.idleTimers.clear();
     this.mugTimers.clear();
+    this.unpackTimers.clear();
     this.talkTimer = 0;
+    this.rackTimer = 0;
+    this.dayTimer = 0;
     this.meetingSource = null;
-    this.meeting = { id: null, kind: null, title: "", agenda: [], notes: [], running: false, seated: [], speaker: null };
+    this.meeting = { id: null, kind: null, title: "", agenda: [], notes: [], running: false, seated: [], speaker: null, discussed: 0 };
   }
 
   dispose(): void {
@@ -448,8 +665,17 @@ export class Director {
     this.parked.clear();
     this.reserved.clear();
     this.busy.clear();
+    if (this.doorHolders.size) {
+      this.doorHolders.clear();
+      this.emit("door");
+    }
+    const waiting = new Set(this.pending.filter((b) => b.kind === "arrive").map((b) => moversOf(b)[0]!));
     for (const [id, v] of this.actors) {
-      if (v.where !== "desk" || v.pose !== "stand" || v.carry) this.set(id, { where: "desk", pose: "stand", carry: null, paw: false, seat: -1, moves: v.moves + 1 });
+      if (waiting.has(id)) {
+        if (v.where !== "out") this.set(id, { where: "out", pose: "stand", carry: null, paw: false, seat: -1, moves: v.moves + 1 });
+        continue;
+      }
+      if (v.where !== "desk" || v.pose !== "stand" || v.carry || v.packed || v.dozing) this.set(id, { where: "desk", pose: "stand", carry: null, paw: false, seat: -1, packed: false, dozing: false, moves: v.moves + 1 });
     }
   }
 
@@ -476,6 +702,29 @@ export class Director {
 
   private place(el: SVGGraphicsElement, p: Pt): void {
     el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    this.restack(el, p.y);
+  }
+
+  /**
+   * Depth: floor cats are drawn in the order of their feet, so a cat nearer
+   * the front passes in front of one further back, never through it.
+   */
+  private restack(el: SVGGraphicsElement, y: number): void {
+    el.setAttribute("data-y", String(Math.round(y)));
+    const parent = el.parentNode;
+    if (!parent) return;
+    let before: Node | null = null;
+    for (const node of Array.from(parent.childNodes)) {
+      if (node === el || !(node instanceof Element)) continue;
+      const ny = Number(node.getAttribute("data-y") ?? "0");
+      if (ny > y) {
+        before = node;
+        break;
+      }
+    }
+    if (before) {
+      if (el.nextSibling !== before) parent.insertBefore(el, before);
+    } else if (parent.lastChild !== el) parent.appendChild(el);
   }
 
   private free(id: string): boolean {
@@ -485,14 +734,14 @@ export class Director {
   private finish(beatId: string): void {
     if (this.done.has(beatId)) return;
     this.done.add(beatId);
-    if (!this.disposed) this.onBeatDone?.(beatId);
+    if (!this.disposed && !beatId.startsWith("~")) this.onBeatDone?.(beatId);
   }
 
   /** Starts every pending beat whose movers are free, keeping each cat's beats in order. */
   private pump(): void {
     if (!this.plan || this.disposed) return;
     const claimed = new Set<string>();
-    const keep: OfficeBeat[] = [];
+    const keep: SceneBeat[] = [];
     for (const beat of this.pending) {
       const movers = moversOf(beat).filter((id) => this.agents.has(id));
       if (movers.length === 0) {
@@ -510,7 +759,7 @@ export class Director {
     this.pending = keep;
   }
 
-  private start(beat: OfficeBeat, movers: string[]): void {
+  private start(beat: SceneBeat, movers: string[]): void {
     for (const id of movers) {
       this.busy.add(id);
       this.cancelIdle(id);
@@ -536,8 +785,12 @@ export class Director {
     void run();
   }
 
-  private async play(beat: OfficeBeat, movers: string[]): Promise<void> {
+  private async play(beat: SceneBeat, movers: string[]): Promise<void> {
     switch (beat.kind) {
+      case "arrive":
+        return this.arrive(beat.agentId);
+      case "depart":
+        return this.depart(beat.agentId);
       case "handoff":
         return this.handoff(beat.fromId, beat.toId, beat.taskTitle);
       case "ask":
@@ -587,8 +840,6 @@ export class Director {
     this.set(id, { pose: "walk" });
     const end = pts[pts.length - 1]!;
     if (el && dur > 0 && typeof el.animate === "function") {
-      // the walker goes on top of every cat standing still
-      el.parentNode?.appendChild(el);
       let acc = 0;
       const frames: Keyframe[] = pts.map((p, i) => {
         if (i > 0) acc += Math.hypot(p.x - pts[i - 1]!.x, p.y - pts[i - 1]!.y);
@@ -599,10 +850,17 @@ export class Director {
       if (this.clock.paused) anim.pause();
       let t = 0;
       for (let i = 1; i < pts.length; i++) {
-        const face = facingOf(pts[i - 1]!, pts[i]!);
-        const seg = (Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y) / total) * dur;
-        if (i === 1) el.setAttribute("data-face", face);
-        else this.clock.after(t, () => el.setAttribute("data-face", face));
+        const a = pts[i - 1]!;
+        const b = pts[i]!;
+        const face = facingOf(a, b);
+        const seg = (Math.hypot(b.x - a.x, b.y - a.y) / total) * dur;
+        const depth = Math.min(a.y, b.y);
+        const turn = () => {
+          el.setAttribute("data-face", face);
+          this.restack(el, depth);
+        };
+        if (i === 1) turn();
+        else this.clock.after(t, turn);
         t += seg;
       }
       try {
@@ -627,8 +885,9 @@ export class Director {
     const plan = this.plan;
     const desk = plan && deskOf(plan, id);
     if (!desk) return;
-    if (this.actor(id).where === "desk") return;
-    if (this.actor(id).where === "seat") this.set(id, { where: "floor", pose: "stand", seat: -1 });
+    const where = this.actor(id).where;
+    if (where === "desk" || where === "out") return;
+    if (where === "seat" || where === "nap") this.set(id, { where: "floor", pose: "stand", seat: -1, moves: this.actor(id).moves + 1 });
     await this.walkTo(id, desk.home);
     await this.sitDown(id);
   }
@@ -716,7 +975,8 @@ export class Director {
 
   private async decided(byId: string, toId: string, approved: boolean, answer: string): Promise<void> {
     this.note(`${this.name(byId)} ${approved ? "approves" : "says not yet to"} ${this.name(toId)}: ${answer}`);
-    this.react(byId, approved ? "nod" : "shake");
+    // yes: a nod and the approval stamp comes down on the desk; no: a head shake
+    this.react(byId, approved ? "approve" : "shake");
     await this.sleep(TIMING.nod);
     if (this.parked.has(toId)) {
       this.set(toId, { carry: approved ? "card-pass" : "card-deny", paw: true });
@@ -770,6 +1030,7 @@ export class Director {
       this.set(fromId, { paw: false, carry: null });
       this.boardN++;
       this.emit("board");
+      this.ring();
       await this.sleep(TIMING.pin);
     } finally {
       this.release(slot.key, fromId);
@@ -782,12 +1043,121 @@ export class Director {
     const standing = ids.filter((id) => this.actor(id).where === "desk");
     await Promise.all(standing.map((id) => this.standUp(id)));
     for (const id of ids) this.react(id, "celebrate");
+    this.ring();
     await this.sleep(TIMING.celebrate);
     await Promise.all(
       standing.map(async (id) => {
         if (this.actor(id).where === "floor") await this.sitDown(id);
       }),
     );
+  }
+
+  /** The fund's bell on the lead's desk: a target was hit. */
+  private ring(): void {
+    this.bellN++;
+    this.emit("bell");
+  }
+
+  private holdDoor(id: string, open: boolean): void {
+    const was = this.doorHolders.size > 0;
+    if (open) this.doorHolders.add(id);
+    else this.doorHolders.delete(id);
+    if (was !== this.doorHolders.size > 0) this.emit("door");
+  }
+
+  /** A hire: the door opens, it steps in carrying its box, walks to its new desk, sits and unpacks. */
+  private async arrive(id: string): Promise<void> {
+    const plan = this.plan!;
+    const desk = deskOf(plan, id);
+    this.note(`${this.name(id)} joins the crew`);
+    const door = plan.door;
+    if (!desk || !door || !this.live) {
+      if (desk) this.at.set(id, desk.home);
+      this.arriving.delete(id);
+      this.set(id, { where: "desk", pose: "stand", carry: null, moves: this.actor(id).moves + 1 });
+      if (desk) this.unpackFor(id);
+      return;
+    }
+    const slot = await this.reserve(id, [{ key: "door", spot: door.spot }]);
+    try {
+      this.at.set(id, door.spot);
+      const el = this.els.get(id);
+      if (el) {
+        el.setAttribute("data-face", "down");
+        this.place(el, door.spot.p);
+      }
+      this.holdDoor(id, true);
+      this.set(id, { where: "floor", pose: "stand", carry: "box", moves: this.actor(id).moves + 1 });
+      this.arriving.delete(id);
+      await this.sleep(TIMING.door);
+      const walk = this.walkTo(id, desk.home);
+      walk.catch(() => undefined);
+      // the next hire may use the door once this one is through it
+      await this.sleep(TIMING.door);
+      this.holdDoor(id, false);
+      this.release(slot.key, id);
+      await walk;
+    } finally {
+      this.holdDoor(id, false);
+      this.release(slot.key, id);
+    }
+    await this.sitDown(id);
+    this.set(id, { carry: null });
+    this.unpackFor(id);
+  }
+
+  private unpackFor(id: string): void {
+    this.set(id, { unpack: true });
+    const old = this.unpackTimers.get(id);
+    if (old) this.clock.cancel(old);
+    this.unpackTimers.set(
+      id,
+      this.clock.after(TIMING.unpack, () => {
+        this.unpackTimers.delete(id);
+        this.set(id, { unpack: false });
+      }),
+    );
+  }
+
+  /** A cat leaving the company: it packs its desk into a box, walks to the door and out. */
+  private async depart(id: string): Promise<void> {
+    const plan = this.plan!;
+    this.note(`${this.name(id)} packs a box and leaves the office`);
+    await this.standUp(id);
+    this.set(id, { carry: "box", packed: true });
+    const door = plan.door;
+    if (door) {
+      const slot = await this.reserve(id, [{ key: "door", spot: door.spot }]);
+      try {
+        await this.walkTo(id, door.spot);
+        this.holdDoor(id, true);
+        this.set(id, { pose: "exit" });
+        const el = this.els.get(id);
+        el?.setAttribute("data-face", "up");
+        await this.sleep(this.live ? TIMING.door : 0);
+        this.set(id, { where: "out", pose: "stand", carry: null });
+        await this.sleep(this.live ? TIMING.door : 0);
+      } finally {
+        this.holdDoor(id, false);
+        this.release(slot.key, id);
+      }
+    } else {
+      this.set(id, { where: "out", pose: "stand", carry: null });
+    }
+    if (!this.leaving.has(id)) {
+      // called back while walking out: it comes back in and sits down again
+      const desk = this.plan && deskOf(this.plan, id);
+      if (desk && door) {
+        this.set(id, { where: "floor", pose: "stand", packed: false, moves: this.actor(id).moves + 1 });
+        await this.walkTo(id, desk.home);
+      }
+      await this.sitDown(id);
+      this.set(id, { packed: false });
+      return;
+    }
+    const gone = this.onGone;
+    // after this beat's own bookkeeping, so the scene can drop the cat
+    this.clock.after(0, () => gone?.(id));
   }
 
   /* ---------------- meetings ---------------- */
@@ -816,7 +1186,7 @@ export class Director {
     this.meetingSource = m;
     const ids = this.attendees(m);
     this.note(`${MEETING_WORD[m.kind]}: ${m.title}`);
-    this.setMeetingView({ id: m.id, kind: m.kind, title: m.title, agenda: m.agenda, notes: [], running: true, seated: [], speaker: null });
+    this.setMeetingView({ id: m.id, kind: m.kind, title: m.title, agenda: m.agenda, notes: [], running: true, seated: [], speaker: null, discussed: 0 });
     ids.forEach((id, i) => {
       void this.joinMeeting(m.id, id, i);
     });
@@ -862,7 +1232,9 @@ export class Director {
     }
     const seated = this.meeting.seated;
     const speaker = seated.length >= 2 ? seated[turn % seated.length]! : null;
-    this.setMeetingView({ speaker });
+    // every second turn the board ticks off the next agenda item
+    const discussed = speaker && turn > 0 && turn % 2 === 0 ? Math.min(this.meeting.agenda.length, this.meeting.discussed + 1) : this.meeting.discussed;
+    this.setMeetingView({ speaker, discussed });
     this.talkTimer = this.clock.after(TIMING.talk, () => this.talk(meetingId, turn + 1));
   }
 
@@ -947,12 +1319,13 @@ export class Director {
       id,
       this.clock.after(wait, () => {
         this.idleTimers.delete(id);
-        this.maybeCoffee(id);
+        this.maybeIdleTrip(id);
       }),
     );
   }
 
-  private maybeCoffee(id: string): void {
+  /** An idle cat's trip: a coffee, or a nap in the cat bed when it is tired; stretching and grooming play at the desk. */
+  private maybeIdleTrip(id: string): void {
     const a = this.agents.get(id);
     const plan = this.plan;
     const eligible =
@@ -962,17 +1335,31 @@ export class Director {
       IDLE_STATUSES.has(a.status) &&
       this.free(id) &&
       !this.parked.has(id) &&
+      !this.leaving.has(id) &&
       this.actor(id).where === "desk" &&
       !this.meeting.running &&
-      !this.pending.some((b) => moversOf(b).includes(id)) &&
-      plan.pantry !== null &&
-      plan.pantry.spots.some((_, i) => !this.reserved.has(`pantry:${i}`));
+      !this.pending.some((b) => moversOf(b).includes(id));
     if (!eligible) {
       this.scheduleIdle(id);
       return;
     }
+    const canCoffee = plan.pantry !== null && plan.pantry.spots.some((_, i) => !this.reserved.has(`pantry:${i}`));
+    // a nap in the cat bed, or curled up on its own desk when the bed is taken or there is none
+    const canNap = true;
+    const sleepy = a.mood === "tired" || a.energy >= 0.7 || a.status === "done";
+    const r = this.randFor(id)();
+    const trip = canNap && (sleepy ? r < 0.6 : r < 0.3) ? "nap" : canCoffee ? "coffee" : canNap ? "nap" : null;
+    if (!trip) {
+      this.scheduleIdle(id);
+      return;
+    }
+    this.runTrip(id, trip === "nap" ? () => this.nap(id) : () => this.coffee(id));
+  }
+
+  private runTrip(id: string, trip: () => Promise<void>): void {
+    this.cancelIdle(id);
     this.busy.add(id);
-    void this.coffee(id)
+    void trip()
       .catch((err) => {
         if (!(err instanceof Abort)) throw err;
       })
@@ -981,6 +1368,42 @@ export class Director {
         this.scheduleIdle(id);
         this.pump();
       });
+  }
+
+  /** Sleeps up to the nap's length, and wakes at once when work comes in. */
+  private async snooze(id: string): Promise<void> {
+    const step = 1000;
+    for (let t = 0; t < TIMING.nap; t += step) {
+      await this.sleep(step);
+      const a = this.agents.get(id);
+      if (!a || !IDLE_STATUSES.has(a.status) || this.pending.some((b) => moversOf(b).includes(id))) return;
+    }
+  }
+
+  /** A nap: into the cat bed, curled up with its eyes shut for a while, then back to the desk; on the desk top when there is no free bed. */
+  private async nap(id: string): Promise<void> {
+    const nap = this.plan?.nap;
+    if (!nap || this.reserved.has("nap")) {
+      this.set(id, { dozing: true });
+      try {
+        await this.snooze(id);
+      } finally {
+        this.set(id, { dozing: false });
+      }
+      return;
+    }
+    await this.standUp(id);
+    const slot = await this.reserve(id, [{ key: "nap", spot: nap.spot }]);
+    try {
+      await this.walkTo(id, nap.spot);
+      this.set(id, { where: "nap", moves: this.actor(id).moves + 1 });
+      await this.snooze(id);
+      this.set(id, { where: "floor", pose: "stand", moves: this.actor(id).moves + 1 });
+      await this.sleep(TIMING.stand);
+    } finally {
+      this.release(slot.key, id);
+    }
+    await this.goHome(id);
   }
 
   private async coffee(id: string): Promise<void> {
@@ -1033,18 +1456,15 @@ export class Director {
 
   /** Sends one idle cat for coffee now (preview story). Returns false when it cannot go. */
   coffeeNow(id: string): boolean {
-    if (!this.agents.has(id) || !this.free(id) || this.actor(id).where !== "desk" || !this.plan?.pantry) return false;
-    this.cancelIdle(id);
-    this.busy.add(id);
-    void this.coffee(id)
-      .catch((err) => {
-        if (!(err instanceof Abort)) throw err;
-      })
-      .finally(() => {
-        this.busy.delete(id);
-        this.scheduleIdle(id);
-        this.pump();
-      });
+    if (!this.agents.has(id) || !this.free(id) || this.actor(id).where !== "desk" || !this.plan?.pantry || this.leaving.has(id)) return false;
+    this.runTrip(id, () => this.coffee(id));
+    return true;
+  }
+
+  /** Sends one idle cat for a nap now, in the cat bed or on its desk (preview story). Returns false when it cannot go. */
+  napNow(id: string): boolean {
+    if (!this.agents.has(id) || !this.free(id) || this.actor(id).where !== "desk" || !this.plan || this.leaving.has(id)) return false;
+    this.runTrip(id, () => this.nap(id));
     return true;
   }
 }

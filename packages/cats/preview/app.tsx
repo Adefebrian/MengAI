@@ -55,7 +55,7 @@ function Crew() {
       <SectionHead
         id="crew-title"
         title="The crew at work"
-        lead="Kopi plans and hands the settings task to Mochi, Mochi builds and tests it for Onde to review, and the rest play their own roles. Pick a cat to select it."
+        lead="Oyen plans and hands the settings task to Belang, Belang builds and tests it for Cemong to review, and the rest play their own roles. Pick a cat to select it."
         action={
           <button type="button" className="btn btn-secondary" aria-pressed={!playing} onClick={() => setPlaying((p) => !p)}>
             {playing ? "Pause the timeline" : "Play the timeline"}
@@ -172,7 +172,7 @@ function MoodsAndStatuses() {
                 key={mood}
                 name={mood[0]!.toUpperCase() + mood.slice(1)}
                 note={MOOD_NOTE[mood]}
-                cat={<Cat look={{ coat: gray.coat, seed: gray.seed }} role="engineer" status="working" activity="code" mood={mood} label={`Onde, Engineer, ${mood}`} size={64} />}
+                cat={<Cat look={{ coat: gray.coat, seed: gray.seed }} role="engineer" status="working" activity="code" mood={mood} label={`Cemong, Engineer, ${mood}`} size={64} />}
               />
             ))}
           </ul>
