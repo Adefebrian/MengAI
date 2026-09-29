@@ -42,13 +42,13 @@ describe("web server", () => {
     const res = await fetch(`http://localhost:${server.port}/`);
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain("<title>crew");
+    expect(body).toContain("<title>MengAI");
   });
 
   test("falls back to index.html for an unknown deep link, not a 404", async () => {
     const res = await fetch(`http://localhost:${server.port}/some/unknown/deep-link`);
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain("<title>crew");
+    expect(body).toContain("<title>MengAI");
   });
 });

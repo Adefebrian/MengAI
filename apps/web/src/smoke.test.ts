@@ -60,11 +60,14 @@ describe.skipIf(!chromePath)("smoke: built SPA renders", () => {
     GlobalRegistrator.register();
   });
 
-  test("renders the welcome heading", async () => {
+  test("renders the crew at work on the sample run", async () => {
     const page = await browser.newPage();
-    await page.goto(`http://localhost:${server.port}`, { waitUntil: "networkidle0" });
+    await page.goto(`http://localhost:${server.port}/app/runs/demo?demo=1`, { waitUntil: "networkidle0" });
+    await page.waitForSelector(".lane");
     const heading = await page.$eval("h1", (el) => el.textContent);
-    expect(heading).toContain("Welcome to crew");
+    expect(heading).toContain("CSV export");
+    const lanes = await page.$$eval(".lane", (els) => els.length);
+    expect(lanes).toBe(6);
     await page.close();
   });
 });

@@ -1,0 +1,1388 @@
+/* MengAI landing (apps/web/src/landing), direction D1 research_notebook.
+   Layout for the hero relay, the board replay and the custom sections only;
+   every kit composition keeps kit.css untouched. Tokens by name, mobile
+   first: below 640 one column, 640 the tablet grid, 1024 the desktop grid.
+   No gradient, no shadow, no side line, no connector, no emoji. */
+
+/* The contract's one accent (docs/design/direction.md, Knobs): teal,
+   role text_and_icon. Links and the MengAI mark only; never a fill. */
+.lp {
+  --color-accent: #0f766e;
+  --color-accent-contrast: var(--color-surface);
+  --kit-link: var(--color-accent);
+}
+
+.lp-mark {
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+}
+
+.lp-mono {
+  font-family: var(--kit-font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.lp p {
+  min-width: 0;
+}
+
+.lp a:not(.btn) {
+  color: var(--kit-link);
+  text-underline-offset: var(--space-4px);
+}
+
+/* ---------------------------------------------------------------------
+ * 1. Masthead: the headline words (R02), the key note, the relay.
+ * The headline is a node (the word spans), so its measure is written here
+ * the way Masthead writes it for a text title: 41 characters.
+ * ------------------------------------------------------------------- */
+.lp .kit-masthead .kit-display {
+  --kit-display-chars: 41;
+}
+
+.lp-words {
+  display: block;
+}
+
+.lp-word {
+  display: inline-block;
+}
+
+/* Phones from 360: the two actions share one row, so the relay's lane
+   stays inside the first screen; at 320 they stack (the kit default). */
+@media (min-width: 360px) and (max-width: 639px) {
+  .lp .kit-masthead .kit-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .lp .kit-masthead .kit-actions > .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: var(--space-12px);
+  }
+  .lp .kit-masthead .kit-actions > .lp-byok {
+    flex-basis: 100%;
+  }
+}
+
+.lp-byok {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8px);
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  min-width: 0;
+}
+
+.lp-byok .icon {
+  flex: 0 0 auto;
+  color: var(--color-ink);
+}
+
+.lp-byok strong {
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+/* The relay: crew, lane, run line, then the player bar, in one frame. */
+.lp-relay {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.lp-relay-stage {
+  --lp-relay-gap: var(--space-4px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  row-gap: var(--space-12px);
+  padding: var(--kit-inset);
+  min-width: 0;
+  color: var(--color-ink);
+}
+
+.lp-relay-stage p {
+  margin: 0;
+}
+
+.lp-relay-crew {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: var(--lp-relay-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp-relay-crew > li {
+  display: grid;
+  min-width: 0;
+}
+
+/* Stations (below 768): the cat, its name and its behaviour word in two
+   reserved lines, so a longer word never moves the lane. */
+.lp-station {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  align-content: start;
+  row-gap: var(--space-2px);
+  text-align: center;
+}
+
+.lp-station-cat {
+  display: grid;
+  place-items: center;
+  inline-size: var(--space-48px);
+  block-size: var(--space-48px);
+}
+
+.lp-station-name {
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.lp-station-act {
+  min-block-size: calc(2 * var(--line-n1));
+  max-inline-size: 100%;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  text-wrap: balance;
+}
+
+.lp-station[data-holder] .lp-station-act {
+  color: var(--color-ink);
+}
+
+/* CatCards (768 and up): one fixed anatomy per card, every row reserved,
+   so a changing note or task never moves a neighbour or the lane. */
+.lp-relay .cat-card {
+  block-size: 100%;
+}
+
+.lp-relay .cat-card-head {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.lp-relay .cat-card-status,
+.lp-relay .cat-card-task {
+  min-block-size: calc(2 * var(--line-n1));
+}
+
+.lp-relay .cat-card-status {
+  align-content: flex-start;
+}
+
+/* The lane: the one card is a quarter of the lane (less the gaps) and
+   moves in whole stations, so it always sits under a cat. Transform only. */
+.lp-relay-lane {
+  display: flex;
+  min-width: 0;
+}
+
+.lp-relay-slot {
+  display: block;
+  box-sizing: border-box;
+  inline-size: calc((100% - 3 * var(--lp-relay-gap)) / 4);
+  transform: translateX(calc((100% + var(--lp-relay-gap)) * var(--lp-relay-pos, 0)));
+}
+
+.lp-relay-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  align-content: center;
+  row-gap: var(--space-2px);
+  box-sizing: border-box;
+  min-block-size: calc(2 * var(--line-n1) + 2 * var(--space-4px) + 2px);
+  padding: var(--space-4px);
+  background: var(--color-layer-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--kit-radius-control);
+  text-align: center;
+  min-width: 0;
+}
+
+.lp-relay-card-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4px);
+  max-inline-size: 100%;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.lp-relay-card-state .icon {
+  flex: 0 0 auto;
+}
+
+.lp-relay-card[data-status="passed"] .lp-relay-card-state,
+.lp-relay-card[data-status="done"] .lp-relay-card-state {
+  color: var(--color-success);
+}
+
+.lp-relay-card[data-status="changes"] .lp-relay-card-state {
+  color: var(--color-warning);
+}
+
+.lp-relay-card-title {
+  display: none;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+/* The run line under the lane: goal, status, run clock, tokens so far. */
+.lp-relay-run {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-block-size: var(--control-h);
+  padding-block-start: var(--space-8px);
+  border-top: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.lp-relay-tokens {
+  display: none;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+
+.lp-relay-tokens .kit-num {
+  color: var(--color-ink);
+}
+
+@media (min-width: 640px) {
+  .lp-relay-stage {
+    --lp-relay-gap: var(--space-8px);
+  }
+  .lp-station-cat {
+    inline-size: var(--space-64px);
+    block-size: var(--space-64px);
+  }
+  .lp-station-name {
+    font-size: var(--text-0);
+    line-height: var(--line-0);
+  }
+  .lp-relay-card {
+    min-block-size: calc(2 * var(--line-n1) + 2 * var(--space-8px) + 2px);
+    padding: var(--space-8px);
+  }
+  .lp-relay-card-state {
+    white-space: nowrap;
+  }
+  .lp-relay-card-title {
+    display: block;
+  }
+  .lp-relay-run {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+  .lp-relay-tokens {
+    display: block;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * 2. The board replay: the stage in a MediaFrame view, the player bar
+ * under it inside the frame, the caption under the frame.
+ * ------------------------------------------------------------------- */
+.lp-replay {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-inside);
+  min-width: 0;
+}
+
+.lp-stage-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.lp-stage {
+  --lp-cat: var(--space-48px);
+  --lp-row-h: var(--space-80px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  align-content: start;
+  padding: var(--space-12px);
+  min-width: 0;
+  color: var(--color-ink);
+}
+
+.lp-stage[data-cat="64"] {
+  --lp-cat: var(--space-64px);
+}
+
+.lp-stage p {
+  margin: 0;
+}
+
+/* Run line: goal, status, clock. */
+.lp-runline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-block-size: var(--control-h);
+  min-width: 0;
+}
+
+.lp-goal {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+}
+
+.lp-runstatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp-clock {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+}
+
+/* Crew sheet: fixed row slots, so a row that changes never moves its
+   neighbours and the handoff card travels exactly one row pitch. */
+.lp-sheet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.lp-crow {
+  display: grid;
+  grid-template-columns: var(--lp-cat) minmax(0, 1fr);
+  grid-template-areas:
+    "cat who"
+    "cat doing"
+    "cat task";
+  align-content: center;
+  align-items: center;
+  column-gap: var(--space-12px);
+  box-sizing: border-box;
+  block-size: var(--lp-row-h);
+  padding-block: var(--space-4px);
+  min-width: 0;
+}
+
+.lp-crow + .lp-crow {
+  border-top: 1px solid var(--color-border);
+}
+
+/* The cat's own square: its beats move inside the rig, never past it. */
+.lp-cat {
+  grid-area: cat;
+  display: grid;
+  place-items: center;
+  inline-size: var(--lp-cat);
+  block-size: var(--lp-cat);
+  min-width: 0;
+}
+
+.lp-cat > * {
+  max-inline-size: 100%;
+  max-block-size: 100%;
+}
+
+.lp-who {
+  grid-area: who;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+
+.lp-name {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.lp-role {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp-doing {
+  grid-area: doing;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.lp-act {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+}
+
+.lp-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6px);
+  color: var(--color-success);
+}
+
+.lp-verdict[data-verdict="changes"] {
+  color: var(--color-warning);
+}
+
+.lp-verdict .icon {
+  flex: 0 0 auto;
+}
+
+/* Energy used: a flat meter (transform only) and its figure, from 1024. */
+.lp-energy {
+  grid-area: energy;
+  display: none;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-4px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  min-width: 0;
+}
+
+.lp-energy .kit-num {
+  color: var(--color-ink);
+}
+
+.lp-energy-bar {
+  display: block;
+  block-size: var(--space-4px);
+  background: var(--color-layer-2);
+  border-radius: var(--space-2px);
+  overflow: clip;
+}
+
+.lp-energy-fill {
+  display: block;
+  block-size: 100%;
+  background: var(--color-ink);
+  transform-origin: 0 50%;
+}
+
+.lp-tool {
+  display: none;
+  min-width: 0;
+  min-block-size: var(--line-n1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp-task {
+  grid-area: task;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-block-size: var(--space-24px);
+  min-width: 0;
+}
+
+/* A task card: one line, ellipsis, full title in its title attribute. */
+.lp-card {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4px);
+  box-sizing: border-box;
+  block-size: var(--space-24px);
+  max-inline-size: 100%;
+  min-width: 0;
+  padding-inline: var(--space-8px);
+  background: var(--color-layer-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-control);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+}
+
+.lp-card[data-done] {
+  color: var(--color-ink-muted);
+}
+
+.lp-card-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.lp-card-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The handoff card in flight: an overlay layer for 600ms, never read,
+   never a target; it moves by transform only, on the frame clock. */
+.lp-ghost {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.lp-ghost .lp-card {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+}
+
+/* Timeline: the latest entries in fixed slots, oldest first. */
+.lp-log {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp-log > :first-child {
+  display: none;
+}
+
+.lp-entry {
+  display: grid;
+  grid-template-columns: var(--space-40px) var(--space-64px) minmax(0, 1fr);
+  column-gap: var(--space-8px);
+  block-size: var(--line-n1);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  min-width: 0;
+}
+
+.lp-entry-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-ink);
+}
+
+/* The verb and its target shrink side by side, each with its own
+   ellipsis, so neither box ever runs past the entry. */
+.lp-entry-text {
+  display: flex;
+  gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp-entry-text > span {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-8px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp-foot .kit-num {
+  color: var(--color-ink);
+}
+
+/* Player controls below the stage. */
+.lp-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+
+.lp-stages {
+  display: none;
+  gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp-stages > .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: var(--space-8px);
+}
+
+.lp-stages > .btn[aria-pressed="true"] {
+  background: var(--color-layer-2);
+  border-color: var(--color-ink);
+}
+
+.lp-stage-select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.lp-caption {
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .lp-stage {
+    --lp-row-h: calc(var(--space-64px) + var(--space-8px));
+    padding: var(--space-16px);
+  }
+  .lp-crow {
+    grid-template-columns: var(--lp-cat) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.25fr);
+    grid-template-areas: "cat who doing task";
+    column-gap: var(--space-16px);
+    padding-block: var(--space-2px);
+  }
+  .lp-who {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .lp-act {
+    font-size: var(--text-0);
+    line-height: var(--line-0);
+  }
+  .lp-tool {
+    display: block;
+  }
+  .lp-controls .lp-stages {
+    display: flex;
+    flex: 1 1 0;
+  }
+  .lp-stage-select {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .lp-log > :first-child {
+    display: grid;
+  }
+  .lp-crow {
+    grid-template-columns: var(--lp-cat) minmax(0, 0.7fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr);
+    grid-template-areas: "cat who doing task energy";
+  }
+  .lp-energy {
+    display: grid;
+  }
+}
+
+/* Player controls inside the frame, under the stage, behind one hairline. */
+.lp-replay .lp-controls,
+.lp-relay .lp-controls {
+  padding: var(--space-12px);
+  border-top: 1px solid var(--color-border);
+}
+
+@media (min-width: 640px) {
+  .lp-replay .lp-controls,
+  .lp-relay .lp-controls {
+    padding-inline: var(--space-16px);
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * 3. How a run works: four steps in order, spaced by whitespace; from
+ * 768 two per row, their titles, sentences and views on shared rows.
+ * ------------------------------------------------------------------- */
+.lp-steps {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-group);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr;
+  row-gap: var(--kit-gap-inside);
+  min-width: 0;
+}
+
+.lp-step > .kit-media {
+  margin-block-start: var(--kit-gap-inside);
+}
+
+.lp-step .kit-media-frame {
+  block-size: 100%;
+}
+
+.lp-steps-note {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 768px) {
+  .lp-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--kit-gutter);
+  }
+  .lp-step {
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+  }
+}
+
+/* A view is a picture of the app: it fills its frame and centres its
+   content, so the frame's ratio is its minimum height. */
+.lp-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.lp-view-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  row-gap: var(--space-12px);
+  padding: var(--space-16px);
+  min-width: 0;
+}
+
+.lp-view-body p {
+  margin: 0;
+}
+
+.lp-view-head {
+  display: grid;
+  grid-template-columns: var(--space-48px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-width: 0;
+}
+
+.lp-view-head-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.lp-view-title {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.lp-view-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp-who-cat {
+  display: grid;
+  place-items: center;
+  inline-size: var(--space-48px);
+  block-size: var(--space-48px);
+}
+
+.lp-who-cat > * {
+  max-inline-size: 100%;
+  max-block-size: 100%;
+}
+
+.lp-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.lp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  row-gap: var(--space-2px);
+  min-block-size: var(--control-h);
+  padding-block: var(--space-8px);
+  min-width: 0;
+}
+
+.lp-row + .lp-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.lp-row-cat {
+  grid-template-columns: var(--space-48px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-12px);
+  padding-block: var(--space-4px);
+}
+
+.lp-row-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.lp-row-title {
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.lp-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-12px);
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp-clip {
+  min-width: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-kv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  border-block: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.lp-kv-row {
+  display: grid;
+  grid-template-columns: var(--space-80px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-block-size: var(--control-h);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  min-width: 0;
+}
+
+.lp-kv-row + .lp-kv-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.lp-kv-row > dt {
+  color: var(--color-ink-muted);
+}
+
+.lp-kv-row > dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--color-ink);
+}
+
+.lp-ok,
+.lp-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6px);
+  font-weight: var(--weight-medium);
+  color: var(--color-success);
+}
+
+.lp-back {
+  color: var(--color-warning);
+}
+
+.lp-ok .icon,
+.lp-back .icon {
+  flex: 0 0 auto;
+}
+
+.lp-handoff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  min-width: 0;
+}
+
+.lp-handoff-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-2px);
+  box-sizing: border-box;
+  padding: var(--space-8px) var(--space-12px);
+  background: var(--color-layer-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--kit-radius-control);
+  min-width: 0;
+}
+
+.lp-handoff-summary {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+/* ---------------------------------------------------------------------
+ * 4. Meet the crew: one bordered list (JAL Core List and Item).
+ * ------------------------------------------------------------------- */
+.lp-crew-head,
+.lp-keys-head {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-width: 0;
+}
+
+.lp-list {
+  --lp-cat: var(--space-48px);
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-card);
+  overflow: clip;
+  min-width: 0;
+}
+
+.lp-item {
+  display: grid;
+  grid-template-columns: var(--lp-cat) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-16px);
+  min-block-size: calc(var(--space-64px) + var(--space-8px));
+  padding: var(--space-12px) var(--space-16px);
+  min-width: 0;
+}
+
+.lp-item + .lp-item {
+  border-top: 1px solid var(--color-border);
+}
+
+/* The stage rows place .lp-cat by grid area; a list row places it by
+   column, so the area is reset here. */
+.lp-item > .lp-cat {
+  grid-area: auto;
+}
+
+.lp-item-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-2px);
+  min-width: 0;
+}
+
+.lp-item-title {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.lp-item-desc {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  text-wrap: pretty;
+}
+
+/* ---------------------------------------------------------------------
+ * 5. Judgment calls: the decisions log as a real table, rows between
+ * hairlines; below 1024 every row stacks into one record.
+ * ------------------------------------------------------------------- */
+.lp-log-wrap {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-related);
+  min-width: 0;
+}
+
+.lp-log-table {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-block-start: 1px solid var(--color-border);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+}
+
+.lp-log-table thead {
+  display: none;
+}
+
+.lp-log-table tbody,
+.lp-log-table tr,
+.lp-log-table th,
+.lp-log-table td {
+  display: block;
+  min-width: 0;
+}
+
+/* Below 1024 a row is one record: the question, then the decision id,
+   the answer and the judged stamp on one wrapping line, then the action. */
+.lp-log-table tr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4px) var(--space-12px);
+  padding-block: var(--space-12px);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.lp-log-table tbody th,
+.lp-log-table td:last-child {
+  flex-basis: 100%;
+}
+
+.lp-log-table th,
+.lp-log-table td {
+  padding: 0;
+  text-align: start;
+  font-weight: var(--weight-regular);
+  overflow-wrap: anywhere;
+}
+
+.lp-log-table tbody th {
+  order: -1;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+}
+
+.lp-log-table td.lp-mono {
+  color: var(--color-ink-muted);
+}
+
+.lp-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6px);
+  color: var(--color-ink-muted);
+}
+
+.lp-stamp .kit-num {
+  color: var(--color-ink);
+}
+
+.lp-stamp[data-kind="fallback"] {
+  font-weight: var(--weight-medium);
+  color: var(--color-warning);
+}
+
+@media (min-width: 1024px) {
+  .lp-log-table {
+    display: table;
+    table-layout: fixed;
+  }
+  .lp-log-table thead {
+    display: table-header-group;
+  }
+  .lp-log-table tbody {
+    display: table-row-group;
+  }
+  .lp-log-table tr {
+    display: table-row;
+    padding: 0;
+    border: 0;
+  }
+  .lp-log-table th,
+  .lp-log-table td {
+    display: table-cell;
+    box-sizing: border-box;
+    block-size: var(--control-h);
+    padding: var(--space-8px) var(--space-16px) var(--space-8px) 0;
+    vertical-align: middle;
+    border-block-end: 1px solid var(--color-border);
+  }
+  .lp-log-table thead th {
+    font-weight: var(--weight-medium);
+    color: var(--color-ink-muted);
+  }
+  .lp-log-table tbody th {
+    font-size: var(--text-n1);
+    line-height: var(--line-n1);
+  }
+  .lp-log-table th:nth-child(1) { inline-size: 16%; }
+  .lp-log-table th:nth-child(2) { inline-size: 28%; }
+  .lp-log-table th:nth-child(3) { inline-size: 11%; }
+  .lp-log-table th:nth-child(4) { inline-size: 19%; }
+  .lp-log-table th:nth-child(5) { inline-size: 26%; }
+}
+
+/* ---------------------------------------------------------------------
+ * 6. Tokens: the per-scenario chart (legacy in gray, v2 in ink). Bars are
+ * flat fills; they grow once from the start edge when the chart makes its
+ * entrance (transform only), and never under reduced motion.
+ * ------------------------------------------------------------------- */
+.lp-chart {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-related);
+  margin: 0;
+  padding: var(--kit-inset);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-media);
+  min-width: 0;
+}
+
+.lp-bars {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name save"
+    "bars bars";
+  align-items: baseline;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp-bar-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp-bar-save {
+  grid-area: save;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+}
+
+.lp-bar-pair {
+  grid-area: bars;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-2px);
+  min-width: 0;
+}
+
+.lp-bar-track {
+  display: block;
+  block-size: var(--space-6px);
+  min-width: 0;
+}
+
+.lp-bar {
+  display: block;
+  block-size: 100%;
+  transform-origin: 0 50%;
+}
+
+.lp-bar[data-series="legacy"] {
+  background: var(--color-border-control);
+}
+
+.lp-bar[data-series="v2"] {
+  background: var(--color-ink);
+}
+
+@keyframes lp-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kit-page [data-motion-state="in"] .lp-bar {
+    animation: lp-grow var(--dur-600) var(--ease-standard) backwards;
+  }
+  .kit-page [data-motion-state="in"] .lp-bar[data-series="v2"] {
+    animation-delay: var(--stagger-item);
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * 7. Bring your own key: the head beside two spec rails.
+ * ------------------------------------------------------------------- */
+.lp-keys-rails {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-group);
+  min-width: 0;
+}
+
+.lp-rail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-related);
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------
+ * 9. Open source: the four facts as one spec strip on the grid.
+ * ------------------------------------------------------------------- */
+.lp-facts {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------
+ * 11. Put the crew to work: start aligned, never centred.
+ * ------------------------------------------------------------------- */
+.lp-close {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  column-gap: var(--kit-gutter);
+  row-gap: var(--kit-gap-related);
+  min-width: 0;
+}
+
+.lp-close > * {
+  grid-column: 1 / -1;
+}
+
+.lp-close-crew {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16px);
+  margin: 0 0 var(--kit-gap-related);
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp-close-cat {
+  display: grid;
+  min-width: 0;
+}
+
+.lp-close-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-related);
+  min-width: 0;
+}
+
+.lp-close-actions {
+  margin-block-start: var(--kit-gap-inside);
+}
+
+.lp-close-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--control-h);
+  padding-inline: var(--space-4px);
+  font-weight: var(--weight-medium);
+}
+
+.lp-credit {
+  margin-block-start: var(--kit-gap-inside);
+}
+
+/* ---------------------------------------------------------------------
+ * Desktop placements on the 12 columns.
+ * ------------------------------------------------------------------- */
+@media (min-width: 1024px) {
+  .lp-crew-head {
+    grid-column: 1 / span 4;
+  }
+  /* A tall list or rail beside a short head: the head stays in view. */
+  .lp-crew-head > .kit-head,
+  .lp-keys-head > .kit-head {
+    position: sticky;
+    top: calc(var(--shell-header-h, 57px) + var(--space-32px));
+  }
+  .lp-list {
+    grid-column: 5 / -1;
+  }
+  .lp-keys-head {
+    grid-column: 1 / span 5;
+  }
+  .lp-keys-rails {
+    grid-column: 7 / -1;
+  }
+  .lp-close-text,
+  .lp-close-actions,
+  .lp-credit {
+    grid-column: 1 / span 8;
+  }
+  .lp-close-crew {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

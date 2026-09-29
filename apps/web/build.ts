@@ -61,6 +61,8 @@ async function runBuild() {
     sourcemap: "linked",
     splitting: true,
     publicPath: "/",
+    // React and motion ship their production builds only when this is set.
+    define: { "process.env.NODE_ENV": JSON.stringify("production") },
     external: ["/fonts/*"],
     loader: { ".glb": "file", ".gltf": "file", ".ktx2": "file", ".hdr": "file", ".wasm": "file", ".bin": "file" },
     plugins: await optionalPlugins(),
