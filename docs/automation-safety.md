@@ -1,4 +1,10 @@
-# Local automation: safety model (proposal for Brian's approval)
+# Local automation: safety model (deferred, not in this build)
+
+> Status: deferred. The local computer control capability is out of scope for
+> the current build. The operator role exists in the contracts, but its
+> capability reports as unavailable and no helper ships. This document is kept
+> as the design reference for a future, separately reviewed effort.
+
 
 MengAI's operator cat can act on the owner's own Mac, the way a desktop
 assistant does. This document is the safety model that the automation
