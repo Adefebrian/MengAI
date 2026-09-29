@@ -7,7 +7,7 @@ import { AppShell, type AppShellDestination } from "@mengai/ui";
 import { EmptyState, Glyph, Notice, ProductIcon, SkeletonRows } from "@mengai/ui/src/product";
 import { MotionConfig } from "motion/react";
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
-import { createApiClient, errorMessage, type ApiClient } from "../api/client";
+import { ApiError, createApiClient, errorMessage, type ApiClient } from "../api/client";
 import { consumeLaunchToken } from "../api/launch";
 import { createDemoFetch } from "../demo/demoApi";
 import { DEMO_LABEL } from "../demo/fixture";
@@ -86,7 +86,12 @@ export function AppRoot({ route, location, demo }: { route: RouteMatch<AppRouteI
     setGate({ kind: "loading" });
     (async () => {
       try {
-        const launched = await consumeLaunchToken(api);
+        // A launch token that was already used (a reopened tab, a restored
+        // address) is not an outage: the session cookie still decides.
+        const launched = await consumeLaunchToken(api).catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 401) return null;
+          throw err;
+        });
         const session = launched ?? (await api.call("GET /api/session"));
         if (alive) setGate({ kind: "ready", session });
       } catch (err) {

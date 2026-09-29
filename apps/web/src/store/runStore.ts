@@ -12,6 +12,7 @@ import {
   type ApprovalDTO,
   type DecisionDTO,
   type HandoffDTO,
+  type MeetingKind,
   type MengaiEvent,
   type RunDTO,
   type RunSnapshotDTO,
@@ -28,6 +29,31 @@ export interface ToolInFlight {
   activity: Activity;
   argsPreview: string;
   ts: number;
+}
+
+/** One crew meeting: started with an agenda, ended with notes and decisions. */
+export interface MeetingState {
+  id: string;
+  kind: MeetingKind;
+  title: string;
+  agentIds: string[];
+  agenda: string[];
+  notes: string[];
+  decisions: string[];
+  startedAt: number;
+  /** null while the crew is still at the table */
+  endedAt: number | null;
+}
+
+/** A question a crew cat raised; the lead (the CEO cat) decides unless it must go to the owner. */
+export interface RequestState {
+  id: string;
+  fromAgentId: string;
+  toAgentId: string | null;
+  question: string;
+  toOwner: boolean;
+  raisedAt: number;
+  decision: { byAgentId: string | null; byOwner: boolean; answer: string; approved: boolean; at: number } | null;
 }
 
 export interface RunState {
@@ -64,6 +90,10 @@ export interface RunState {
   rounds: Record<string, number>;
   /** place of a task in the batch it was planned in (0 = first), for the deal-in stagger */
   deal: Record<string, number>;
+  meetings: Record<string, MeetingState>;
+  meetingOrder: string[];
+  requests: Record<string, RequestState>;
+  requestOrder: string[];
   /** every applied event in seq order, the source for the timeline and the replay */
   log: MengaiEvent[];
   lastSeq: number;
@@ -94,11 +124,47 @@ export function emptyRunState(runId: string | null = null): RunState {
     holders: {},
     rounds: {},
     deal: {},
+    meetings: {},
+    meetingOrder: [],
+    requests: {},
+    requestOrder: [],
     log: [],
     lastSeq: 0,
     connection: "idle",
     error: null,
   };
+}
+
+/**
+ * Meetings from a snapshot that carries them (RunSnapshotDTO.meetings).
+ * Read loosely, so an older or newer shape never breaks the first paint:
+ * anything without an id and a kind is skipped, and decisions are kept
+ * when a server sends them.
+ */
+function snapshotMeetings(s: RunSnapshotDTO): MeetingState[] {
+  const raw: unknown = s.meetings;
+  if (!Array.isArray(raw)) return [];
+  const out: MeetingState[] = [];
+  const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  for (const m of raw as unknown as Array<Record<string, unknown>>) {
+    if (!m || typeof m !== "object") continue;
+    const id = typeof m.id === "string" ? m.id : typeof m.meetingId === "string" ? m.meetingId : null;
+    const kind = typeof m.kind === "string" ? (m.kind as MeetingKind) : null;
+    if (!id || !kind) continue;
+    out.push({
+      id,
+      kind,
+      title: typeof m.title === "string" ? m.title : kind,
+      agentIds: strings(m.agentIds),
+      agenda: strings(m.agenda),
+      notes: strings(m.notes),
+      decisions: strings(m.decisions),
+      startedAt: num(m.startedAt) ?? num(m.createdAt) ?? s.run.createdAt,
+      endedAt: num(m.endedAt),
+    });
+  }
+  return out.sort((a, b) => a.startedAt - b.startedAt);
 }
 
 /** State from the REST snapshot; events after snapshot.lastSeq follow. */
@@ -123,9 +189,12 @@ export function stateFromSnapshot(s: RunSnapshotDTO, prev?: RunState): RunState 
     if (t.assigneeId && settled) holders[t.id] = t.assigneeId;
     if (!holders[t.id] && t.createdBy) holders[t.id] = t.createdBy;
   }
+  const meetings = snapshotMeetings(s);
   return {
     ...base,
     run: s.run,
+    meetings: Object.fromEntries(meetings.map((m) => [m.id, m])),
+    meetingOrder: meetings.map((m) => m.id),
     agents,
     agentOrder: s.agents.map((a) => a.id),
     tasks,
@@ -341,6 +410,78 @@ export function reduceRun(state: RunState, e: MengaiEvent): RunState {
     case "file.changed": {
       const d = (e as MengaiEvent<"file.changed">).data;
       return { ...next, files: { ...next.files, [d.path]: { op: d.op, bytes: d.bytes, ts: e.ts, by: e.agentId } } };
+    }
+    case "meeting.started": {
+      const d = (e as MengaiEvent<"meeting.started">).data;
+      const known = !!next.meetings[d.meetingId];
+      const prev = next.meetings[d.meetingId];
+      const meeting: MeetingState = {
+        id: d.meetingId,
+        kind: d.kind,
+        title: d.title,
+        agentIds: [...d.agentIds],
+        agenda: [...d.agenda],
+        notes: prev?.notes ?? [],
+        decisions: prev?.decisions ?? [],
+        startedAt: prev?.startedAt ?? e.ts,
+        endedAt: prev?.endedAt ?? null,
+      };
+      return {
+        ...next,
+        meetings: { ...next.meetings, [d.meetingId]: meeting },
+        meetingOrder: known ? next.meetingOrder : [...next.meetingOrder, d.meetingId],
+      };
+    }
+    case "meeting.ended": {
+      const d = (e as MengaiEvent<"meeting.ended">).data;
+      const prev = next.meetings[d.meetingId];
+      // An end without its start (the stream began mid meeting) still records the notes.
+      const meeting: MeetingState = {
+        id: d.meetingId,
+        kind: d.kind,
+        title: prev?.title ?? d.kind,
+        agentIds: prev?.agentIds ?? [],
+        agenda: prev?.agenda ?? [],
+        notes: [...d.notes],
+        decisions: [...d.decisions],
+        startedAt: prev?.startedAt ?? e.ts,
+        endedAt: e.ts,
+      };
+      return {
+        ...next,
+        meetings: { ...next.meetings, [d.meetingId]: meeting },
+        meetingOrder: prev ? next.meetingOrder : [...next.meetingOrder, d.meetingId],
+      };
+    }
+    case "request.raised": {
+      const d = (e as MengaiEvent<"request.raised">).data;
+      const known = !!next.requests[d.requestId];
+      const request: RequestState = {
+        id: d.requestId,
+        fromAgentId: d.fromAgentId,
+        toAgentId: d.toAgentId,
+        question: d.question,
+        toOwner: d.toOwner,
+        raisedAt: next.requests[d.requestId]?.raisedAt ?? e.ts,
+        decision: next.requests[d.requestId]?.decision ?? null,
+      };
+      return {
+        ...next,
+        requests: { ...next.requests, [d.requestId]: request },
+        requestOrder: known ? next.requestOrder : [...next.requestOrder, d.requestId],
+      };
+    }
+    case "request.decided": {
+      const d = (e as MengaiEvent<"request.decided">).data;
+      const prev = next.requests[d.requestId];
+      if (!prev) return next;
+      return {
+        ...next,
+        requests: {
+          ...next.requests,
+          [d.requestId]: { ...prev, decision: { byAgentId: d.byAgentId, byOwner: d.byOwner, answer: d.answer, approved: d.approved, at: e.ts } },
+        },
+      };
     }
     case "error": {
       const d = (e as MengaiEvent<"error">).data;

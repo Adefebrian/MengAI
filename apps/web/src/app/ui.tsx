@@ -243,15 +243,22 @@ export function Switch({ label, description, checked, onChange, disabled }: { la
   );
 }
 
+/**
+ * A checkbox on the app's control row: the whole 44px row is the button
+ * (role checkbox, Space and Enter toggle), the box is drawn beside the
+ * words, so the target never shrinks to the 20px box.
+ */
 export function Checkbox({ label, description, checked, onChange, disabled }: { label: string; description?: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <label className="jal-checkbox">
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      <span>
-        {label}
-        {description ? <span data-slot="description">{description}</span> : null}
+    <button type="button" role="checkbox" aria-checked={checked} className="app-check" disabled={disabled} onClick={() => onChange(!checked)}>
+      <span className="app-check-box" aria-hidden="true">
+        {checked ? <ProductIcon name="check" size={16} /> : null}
       </span>
-    </label>
+      <span className="app-check-text">
+        <span className="app-check-label">{label}</span>
+        {description ? <span className="app-check-desc">{description}</span> : null}
+      </span>
+    </button>
   );
 }
 

@@ -60,14 +60,16 @@ describe.skipIf(!chromePath)("smoke: built SPA renders", () => {
     GlobalRegistrator.register();
   });
 
-  test("renders the crew at work on the sample run", async () => {
+  test("renders the cat company at work on the sample run", async () => {
     const page = await browser.newPage();
     await page.goto(`http://localhost:${server.port}/app/runs/demo?demo=1`, { waitUntil: "networkidle0" });
-    await page.waitForSelector(".lane");
+    await page.waitForSelector(".run-office");
     const heading = await page.$eval("h1", (el) => el.textContent);
     expect(heading).toContain("CSV export");
-    const lanes = await page.$$eval(".lane", (els) => els.length);
-    expect(lanes).toBe(6);
+    const office = await page.$eval(".run-office", (el) => el.textContent ?? "");
+    for (const name of ["Kopi", "Mochi", "Klepon", "Tempe", "Onde", "Cilok"]) expect(office).toContain(name);
+    const now = await page.$eval(".status-now", (el) => el.textContent ?? "");
+    expect(now.length).toBeGreaterThan(0);
     await page.close();
   });
 });

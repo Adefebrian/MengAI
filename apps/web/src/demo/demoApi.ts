@@ -33,7 +33,7 @@ import {
   DEMO_APPROVAL,
   DEMO_CALLS,
   DEMO_EVENTS,
-  DEMO_FILES,
+  demoFiles,
   DEMO_PROJECT,
   DEMO_RUN_ID,
   DEMO_T0,
@@ -204,7 +204,7 @@ export function createDemoState() {
   ];
   const approvals: ApprovalDTO[] = [
     { ...DEMO_APPROVAL },
-    { id: "ap-2", runId: "demo-older", agentId: null, capability: "browser", risk: "read", title: "Open http://localhost:5173/menu in the browser", detail: { url: "http://localhost:5173/menu" }, status: "approved", scope: "session", createdAt: DEMO_T0 - 2 * D, decidedAt: DEMO_T0 - 2 * D + 20_000, expiresAt: DEMO_T0 - 2 * D + 600_000 },
+    { id: "ap-2", runId: "demo-older", agentId: null, capability: "network", risk: "read", title: "Fetch the date-fns changelog from registry.npmjs.org", detail: { url: "https://registry.npmjs.org/date-fns", reason: "Check the 4.x changes before the upgrade" }, status: "approved", scope: "session", createdAt: DEMO_T0 - 2 * D, decidedAt: DEMO_T0 - 2 * D + 20_000, expiresAt: DEMO_T0 - 2 * D + 600_000 },
     { id: "ap-3", runId: "demo-older", agentId: null, capability: "fs", risk: "destructive", title: "Delete src/legacy (41 files)", detail: { path: "/Users/you/code/kopi-menu/src/legacy" }, status: "denied", scope: "once", createdAt: DEMO_T0 - 2 * D + 30 * 60_000, decidedAt: DEMO_T0 - 2 * D + 31 * 60_000, expiresAt: DEMO_T0 - 2 * D + 40 * 60_000 },
   ];
   const grants: PermissionDTO[] = [
@@ -250,8 +250,8 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       st.projects.push(p);
       return p;
     }],
-    ["GET /api/projects/:id/files", () => DEMO_FILES],
-    ["GET /api/projects/:id/file", ({ query }) => demoFile(query.get("path") ?? "")],
+    ["GET /api/projects/:id/files", () => demoFiles(clockFn())],
+    ["GET /api/projects/:id/file", ({ query }) => demoFile(query.get("path") ?? "", clockFn())],
     ["POST /api/local/pick-folder", () => ({ path: "/Users/you/code/new-project" })],
     ["GET /api/runs", () => runs()],
     ["POST /api/runs/estimate", ({ body }) => {

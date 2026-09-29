@@ -1,1388 +1,1108 @@
-/* MengAI landing (apps/web/src/landing), direction D1 research_notebook.
-   Layout for the hero relay, the board replay and the custom sections only;
-   every kit composition keeps kit.css untouched. Tokens by name, mobile
-   first: below 640 one column, 640 the tablet grid, 1024 the desktop grid.
-   No gradient, no shadow, no side line, no connector, no emoji. */
+/* MengAI landing. Styles for the landing's own parts only: every kit
+   composition keeps kit.css. Tokens by name only; the five type roles of
+   the kit (display, heading, title 19, body 16, meta 13) and nothing else.
+   Direction: D5 calm_productivity knobs with the product accent (see
+   direction.md in this folder). No gradients, no shadows, no side lines,
+   transform and opacity only, reduced motion rests every part. */
 
-/* The contract's one accent (docs/design/direction.md, Knobs): teal,
-   role text_and_icon. Links and the MengAI mark only; never a fill. */
-.lp {
+/* ---------------------------------------------------------------------
+ * Direction knob delta: one accent product-wide. D5 names red-orange; the
+ * product accent is teal #0f766e (HSL 175, 5.47:1 on surface), role
+ * text_and_icon, the same hue the app uses.
+ * ------------------------------------------------------------------- */
+.lp .kit-page[data-direction="D5"] {
   --color-accent: #0f766e;
   --color-accent-contrast: var(--color-surface);
   --kit-link: var(--color-accent);
+  /* D5 sets -0.01em; -0.025em (inside the -0.01 to -0.04 range) keeps the
+     39-character headline on two lines in the five-column text measure. */
+  --tracking-display: -0.025em;
 }
 
-.lp-mark {
-  color: var(--color-accent);
+.lp .lp-mark {
+  font-size: var(--text-1);
+  line-height: var(--line-1);
   font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-title);
+  color: var(--color-ink);
 }
 
-.lp-mono {
-  font-family: var(--kit-font-mono);
-  font-variant-numeric: tabular-nums slashed-zero;
+/* Shared helpers */
+.lp .lp-nowrap {
+  white-space: nowrap;
 }
 
-.lp p {
+.lp .lp-clip {
   min-width: 0;
-}
-
-.lp a:not(.btn) {
-  color: var(--kit-link);
-  text-underline-offset: var(--space-4px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* ---------------------------------------------------------------------
- * 1. Masthead: the headline words (R02), the key note, the relay.
- * The headline is a node (the word spans), so its measure is written here
- * the way Masthead writes it for a text title: 41 characters.
+ * Masthead: the key note under the actions.
  * ------------------------------------------------------------------- */
-.lp .kit-masthead .kit-display {
-  --kit-display-chars: 41;
+.lp .lp-byok {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8px);
+  margin: 0;
+  max-inline-size: 48ch;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
 }
 
-.lp-words {
-  display: block;
+.lp .lp-byok > .icon {
+  color: var(--kit-link);
 }
 
-.lp-word {
-  display: inline-block;
-}
-
-/* Phones from 360: the two actions share one row, so the relay's lane
-   stays inside the first screen; at 320 they stack (the kit default). */
-@media (min-width: 360px) and (max-width: 639px) {
-  .lp .kit-masthead .kit-actions {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-  .lp .kit-masthead .kit-actions > .btn {
-    flex: 1 1 0;
-    min-width: 0;
-    padding-inline: var(--space-12px);
-  }
-  .lp .kit-masthead .kit-actions > .lp-byok {
+@media (min-width: 640px) {
+  /* The actions wrap in a row from 640: the note takes its own line. */
+  .lp .lp-byok {
     flex-basis: 100%;
   }
 }
 
-.lp-byok {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-8px);
-  margin: 0;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-  min-width: 0;
-}
-
-.lp-byok .icon {
-  flex: 0 0 auto;
-  color: var(--color-ink);
-}
-
-.lp-byok strong {
+.lp .lp-byok strong {
   font-weight: var(--weight-medium);
   color: var(--color-ink);
 }
 
-/* The relay: crew, lane, run line, then the player bar, in one frame. */
-.lp-relay {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+/* ---------------------------------------------------------------------
+ * Hero office: the frame, then the story bar under it.
+ * ------------------------------------------------------------------- */
+.lp .lp-hero-office {
   min-width: 0;
 }
 
-.lp-relay-stage {
-  --lp-relay-gap: var(--space-4px);
+.lp .lp-story {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  row-gap: var(--space-12px);
-  padding: var(--kit-inset);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-12px);
   min-width: 0;
+}
+
+.lp .lp-story-toggle {
+  inline-size: var(--control-h);
+  padding: 0;
+}
+
+.lp .lp-story-text {
+  display: grid;
+  min-width: 0;
+}
+
+.lp .lp-story-caption {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
   color: var(--color-ink);
+  animation: lp-fade-in var(--dur-300) var(--ease-standard);
 }
 
-.lp-relay-stage p {
-  margin: 0;
+.lp .lp-story-meta {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-8px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
 }
 
-.lp-relay-crew {
+@keyframes lp-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * DeskFloor: the flat office plan (the landing's rendition of Office).
+ * Rooms are surface cells with one full hairline on the layer-1 floor.
+ * ------------------------------------------------------------------- */
+.lp .lp-floor {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  column-gap: var(--lp-relay-gap);
+  inline-size: 100%;
+  min-width: 0;
+  padding: var(--space-8px);
+  background: var(--color-layer-1);
+}
+
+.lp .lp-floor-plan {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* On a phone the first desk row leads, so the opening handoff between
+     Mochi and Tempe is inside the first screen. */
+  grid-template-areas:
+    "d1 d2 d3"
+    "ceo ceo ceo"
+    "meet meet meet"
+    "d4 d5 pantry";
+  gap: var(--space-8px);
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
-.lp-relay-crew > li {
-  display: grid;
+.lp .lp-floor-room {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4px);
   min-width: 0;
-}
-
-/* Stations (below 768): the cat, its name and its behaviour word in two
-   reserved lines, so a longer word never moves the lane. */
-.lp-station {
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-  align-content: start;
-  row-gap: var(--space-2px);
-  text-align: center;
-}
-
-.lp-station-cat {
-  display: grid;
-  place-items: center;
-  inline-size: var(--space-48px);
-  block-size: var(--space-48px);
-}
-
-.lp-station-name {
-  max-inline-size: 100%;
-  overflow-wrap: anywhere;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-}
-
-.lp-station-act {
-  min-block-size: calc(2 * var(--line-n1));
-  max-inline-size: 100%;
+  padding: var(--space-8px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-4);
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
-  text-wrap: balance;
 }
 
-.lp-station[data-holder] .lp-station-act {
-  color: var(--color-ink);
-}
-
-/* CatCards (768 and up): one fixed anatomy per card, every row reserved,
-   so a changing note or task never moves a neighbour or the lane. */
-.lp-relay .cat-card {
-  block-size: 100%;
-}
-
-.lp-relay .cat-card-head {
+.lp .lp-floor-who {
+  display: flex;
   flex-direction: column;
   align-items: flex-start;
-}
-
-.lp-relay .cat-card-status,
-.lp-relay .cat-card-task {
-  min-block-size: calc(2 * var(--line-n1));
-}
-
-.lp-relay .cat-card-status {
-  align-content: flex-start;
-}
-
-/* The lane: the one card is a quarter of the lane (less the gaps) and
-   moves in whole stations, so it always sits under a cat. Transform only. */
-.lp-relay-lane {
-  display: flex;
-  min-width: 0;
-}
-
-.lp-relay-slot {
-  display: block;
-  box-sizing: border-box;
-  inline-size: calc((100% - 3 * var(--lp-relay-gap)) / 4);
-  transform: translateX(calc((100% + var(--lp-relay-gap)) * var(--lp-relay-pos, 0)));
-}
-
-.lp-relay-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-  align-content: center;
-  row-gap: var(--space-2px);
-  box-sizing: border-box;
-  min-block-size: calc(2 * var(--line-n1) + 2 * var(--space-4px) + 2px);
-  padding: var(--space-4px);
-  background: var(--color-layer-1);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--kit-radius-control);
-  text-align: center;
-  min-width: 0;
-}
-
-.lp-relay-card-state {
-  display: inline-flex;
-  align-items: center;
   gap: var(--space-4px);
-  max-inline-size: 100%;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-}
-
-.lp-relay-card-state .icon {
-  flex: 0 0 auto;
-}
-
-.lp-relay-card[data-status="passed"] .lp-relay-card-state,
-.lp-relay-card[data-status="done"] .lp-relay-card-state {
-  color: var(--color-success);
-}
-
-.lp-relay-card[data-status="changes"] .lp-relay-card-state {
-  color: var(--color-warning);
-}
-
-.lp-relay-card-title {
-  display: none;
-  max-inline-size: 100%;
-  overflow-wrap: anywhere;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
-/* The run line under the lane: goal, status, run clock, tokens so far. */
-.lp-relay-run {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  column-gap: var(--space-12px);
-  min-block-size: var(--control-h);
-  padding-block-start: var(--space-8px);
-  border-top: 1px solid var(--color-border);
   min-width: 0;
 }
 
-.lp-relay-tokens {
-  display: none;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-  white-space: nowrap;
-}
-
-.lp-relay-tokens .kit-num {
-  color: var(--color-ink);
-}
-
-@media (min-width: 640px) {
-  .lp-relay-stage {
-    --lp-relay-gap: var(--space-8px);
-  }
-  .lp-station-cat {
-    inline-size: var(--space-64px);
-    block-size: var(--space-64px);
-  }
-  .lp-station-name {
-    font-size: var(--text-0);
-    line-height: var(--line-0);
-  }
-  .lp-relay-card {
-    min-block-size: calc(2 * var(--line-n1) + 2 * var(--space-8px) + 2px);
-    padding: var(--space-8px);
-  }
-  .lp-relay-card-state {
-    white-space: nowrap;
-  }
-  .lp-relay-card-title {
-    display: block;
-  }
-  .lp-relay-run {
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
-  }
-  .lp-relay-tokens {
-    display: block;
-  }
-}
-
-/* ---------------------------------------------------------------------
- * 2. The board replay: the stage in a MediaFrame view, the player bar
- * under it inside the frame, the caption under the frame.
- * ------------------------------------------------------------------- */
-.lp-replay {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--kit-gap-inside);
-  min-width: 0;
-}
-
-.lp-stage-wrap {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-}
-
-.lp-stage {
-  --lp-cat: var(--space-48px);
-  --lp-row-h: var(--space-80px);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-12px);
-  align-content: start;
-  padding: var(--space-12px);
-  min-width: 0;
-  color: var(--color-ink);
-}
-
-.lp-stage[data-cat="64"] {
-  --lp-cat: var(--space-64px);
-}
-
-.lp-stage p {
-  margin: 0;
-}
-
-/* Run line: goal, status, clock. */
-.lp-runline {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  column-gap: var(--space-12px);
-  min-block-size: var(--control-h);
-  min-width: 0;
-}
-
-.lp-goal {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-  font-weight: var(--weight-medium);
-}
-
-.lp-runstatus {
+.lp .lp-floor-seat {
   display: inline-flex;
-  align-items: center;
-  gap: var(--space-6px);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
+  flex: none;
 }
 
-.lp-clock {
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-}
-
-/* Crew sheet: fixed row slots, so a row that changes never moves its
-   neighbours and the handoff card travels exactly one row pitch. */
-.lp-sheet {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-block: 1px solid var(--color-border);
-  min-width: 0;
-}
-
-.lp-crow {
-  display: grid;
-  grid-template-columns: var(--lp-cat) minmax(0, 1fr);
-  grid-template-areas:
-    "cat who"
-    "cat doing"
-    "cat task";
-  align-content: center;
-  align-items: center;
-  column-gap: var(--space-12px);
+.lp .lp-floor-chair {
   box-sizing: border-box;
-  block-size: var(--lp-row-h);
-  padding-block: var(--space-4px);
-  min-width: 0;
-}
-
-.lp-crow + .lp-crow {
-  border-top: 1px solid var(--color-border);
-}
-
-/* The cat's own square: its beats move inside the rig, never past it. */
-.lp-cat {
-  grid-area: cat;
-  display: grid;
+  display: inline-grid;
   place-items: center;
-  inline-size: var(--lp-cat);
-  block-size: var(--lp-cat);
-  min-width: 0;
+  flex: none;
+  inline-size: var(--space-48px);
+  block-size: var(--space-48px);
+  color: var(--color-ink-subtle);
 }
 
-.lp-cat > * {
-  max-inline-size: 100%;
-  max-block-size: 100%;
-}
-
-.lp-who {
-  grid-area: who;
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-8px);
-  min-width: 0;
-}
-
-.lp-name {
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-  font-weight: var(--weight-medium);
-  white-space: nowrap;
-}
-
-.lp-role {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
-.lp-doing {
-  grid-area: doing;
+.lp .lp-floor-name {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
+  max-inline-size: 100%;
 }
 
-.lp-act {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
+.lp .lp-floor-strong {
+  font-weight: var(--weight-medium);
   color: var(--color-ink);
 }
 
-.lp-verdict {
+.lp .lp-floor-muted {
+  color: var(--color-ink-muted);
+}
+
+.lp .lp-floor-name > .lp-floor-muted,
+.lp .lp-floor-line,
+.lp .lp-floor-file {
+  display: none;
+}
+
+.lp .lp-floor-line,
+.lp .lp-floor-file,
+.lp .lp-floor-clip,
+.lp .lp-floor-chip-text,
+.lp .lp-floor-task {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lp .lp-floor-file {
+  font-family: var(--kit-font-mono);
+  color: var(--color-ink-subtle);
+}
+
+.lp .lp-floor-slot {
+  display: flex;
+  align-items: center;
+  flex: none;
+  block-size: var(--space-32px);
+  margin-block-start: auto;
+  min-width: 0;
+}
+
+.lp .lp-floor-chip,
+.lp .lp-floor-task {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-6px);
+  gap: var(--space-4px);
+  max-inline-size: 100%;
+  min-width: 0;
+  padding: var(--space-2px) var(--space-8px);
+  border-radius: var(--radius-4);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+}
+
+.lp .lp-floor-task {
+  display: block;
+  background: var(--color-layer-2);
+  color: var(--color-ink-muted);
+}
+
+.lp .lp-floor-chip {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-ink);
+}
+
+.lp .lp-floor-chip[data-tone="approved"],
+.lp .lp-floor-chip[data-tone="passed"] {
+  background: var(--color-success-surface);
+  border-color: var(--color-success-border);
   color: var(--color-success);
 }
 
-.lp-verdict[data-verdict="changes"] {
-  color: var(--color-warning);
-}
-
-.lp-verdict .icon {
-  flex: 0 0 auto;
-}
-
-/* Energy used: a flat meter (transform only) and its figure, from 1024. */
-.lp-energy {
-  grid-area: energy;
-  display: none;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-4px);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-  min-width: 0;
-}
-
-.lp-energy .kit-num {
-  color: var(--color-ink);
-}
-
-.lp-energy-bar {
-  display: block;
-  block-size: var(--space-4px);
-  background: var(--color-layer-2);
-  border-radius: var(--space-2px);
-  overflow: clip;
-}
-
-.lp-energy-fill {
-  display: block;
-  block-size: 100%;
-  background: var(--color-ink);
-  transform-origin: 0 50%;
-}
-
-.lp-tool {
-  display: none;
-  min-width: 0;
-  min-block-size: var(--line-n1);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
-.lp-task {
-  grid-area: task;
-  position: relative;
+.lp .lp-floor-roomname {
   display: flex;
-  align-items: center;
-  min-block-size: var(--space-24px);
-  min-width: 0;
-}
-
-/* A task card: one line, ellipsis, full title in its title attribute. */
-.lp-card {
-  display: inline-flex;
   align-items: center;
   gap: var(--space-4px);
-  box-sizing: border-box;
-  block-size: var(--space-24px);
-  max-inline-size: 100%;
   min-width: 0;
-  padding-inline: var(--space-8px);
-  background: var(--color-layer-1);
-  border: 1px solid var(--color-border);
-  border-radius: var(--kit-radius-control);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink);
-}
-
-.lp-card[data-done] {
-  color: var(--color-ink-muted);
-}
-
-.lp-card-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-}
-
-.lp-card-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The handoff card in flight: an overlay layer for 600ms, never read,
-   never a target; it moves by transform only, on the frame clock. */
-.lp-ghost {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  pointer-events: none;
-}
-
-.lp-ghost .lp-card {
-  background: var(--color-surface);
-  border-color: var(--color-border-strong);
-}
-
-/* Timeline: the latest entries in fixed slots, oldest first. */
-.lp-log {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-4px);
   margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.lp-log > :first-child {
-  display: none;
-}
-
-.lp-entry {
-  display: grid;
-  grid-template-columns: var(--space-40px) var(--space-64px) minmax(0, 1fr);
-  column-gap: var(--space-8px);
-  block-size: var(--line-n1);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-  min-width: 0;
-}
-
-.lp-entry-who {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: var(--weight-medium);
   color: var(--color-ink);
 }
 
-/* The verb and its target shrink side by side, each with its own
-   ellipsis, so neither box ever runs past the entry. */
-.lp-entry-text {
-  display: flex;
-  gap: var(--space-4px);
-  min-width: 0;
-}
-
-.lp-entry-text > span {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lp-foot {
+/* The meeting table and the pantry counter: one flat layer-2 surface the
+   cats sit at, filling what the room has left. */
+.lp .lp-floor-table {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 var(--space-8px);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
+  align-content: center;
+  justify-content: center;
+  gap: var(--space-4px);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-block-size: var(--space-48px);
+  padding: var(--space-4px);
+  border-radius: var(--radius-4);
+  background: var(--color-layer-2);
 }
 
-.lp-foot .kit-num {
+.lp .lp-floor-notes {
+  display: grid;
+  align-content: center;
+  flex: 1 1 auto;
+  margin: 0;
+  padding: var(--space-4px) var(--space-8px);
+  list-style: none;
+  min-width: 0;
+  border-radius: var(--radius-4);
+  background: var(--color-layer-2);
   color: var(--color-ink);
 }
 
-/* Player controls below the stage. */
-.lp-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8px);
-  min-width: 0;
+.lp .lp-floor-foot {
+  margin-block-start: auto;
 }
 
-.lp-stages {
-  display: none;
-  gap: var(--space-4px);
-  min-width: 0;
-}
-
-.lp-stages > .btn {
-  flex: 1 1 0;
-  min-width: 0;
-  padding-inline: var(--space-8px);
-}
-
-.lp-stages > .btn[aria-pressed="true"] {
-  background: var(--color-layer-2);
-  border-color: var(--color-ink);
-}
-
-.lp-stage-select {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.lp-caption {
-  min-width: 0;
-}
-
-@media (min-width: 640px) {
-  .lp-stage {
-    --lp-row-h: calc(var(--space-64px) + var(--space-8px));
-    padding: var(--space-16px);
-  }
-  .lp-crow {
-    grid-template-columns: var(--lp-cat) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.25fr);
-    grid-template-areas: "cat who doing task";
-    column-gap: var(--space-16px);
-    padding-block: var(--space-2px);
-  }
-  .lp-who {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0;
-  }
-  .lp-act {
-    font-size: var(--text-0);
-    line-height: var(--line-0);
-  }
-  .lp-tool {
-    display: block;
-  }
-  .lp-controls .lp-stages {
-    display: flex;
-    flex: 1 1 0;
-  }
-  .lp-stage-select {
-    display: none;
-  }
-}
-
-@media (min-width: 1024px) {
-  .lp-log > :first-child {
-    display: grid;
-  }
-  .lp-crow {
-    grid-template-columns: var(--lp-cat) minmax(0, 0.7fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr);
-    grid-template-areas: "cat who doing task energy";
-  }
-  .lp-energy {
-    display: grid;
-  }
-}
-
-/* Player controls inside the frame, under the stage, behind one hairline. */
-.lp-replay .lp-controls,
-.lp-relay .lp-controls {
-  padding: var(--space-12px);
-  border-top: 1px solid var(--color-border);
-}
-
-@media (min-width: 640px) {
-  .lp-replay .lp-controls,
-  .lp-relay .lp-controls {
-    padding-inline: var(--space-16px);
-  }
-}
-
-/* ---------------------------------------------------------------------
- * 3. How a run works: four steps in order, spaced by whitespace; from
- * 768 two per row, their titles, sentences and views on shared rows.
- * ------------------------------------------------------------------- */
-.lp-steps {
-  grid-column: 1 / -1;
+/* The CEO office: Kopi beside the whiteboard, the answer slot under both. */
+.lp .lp-floor-ceo {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--kit-gap-group);
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-4px);
+  align-items: start;
+}
+
+.lp .lp-floor-ceo > .lp-floor-slot {
+  grid-column: 1 / -1;
+}
+
+.lp .lp-floor-board {
+  display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
-.lp-step {
+.lp .lp-floor-board > li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto 1fr;
-  row-gap: var(--kit-gap-inside);
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-8px);
   min-width: 0;
+  color: var(--color-ink);
 }
 
-.lp-step > .kit-media {
-  margin-block-start: var(--kit-gap-inside);
+.lp .lp-floor-board > li[data-status="done"] {
+  color: var(--color-ink-subtle);
 }
 
-.lp-step .kit-media-frame {
-  block-size: 100%;
+.lp .lp-floor-status {
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.lp-steps-note {
-  grid-column: 1 / -1;
+.lp .lp-floor-board > li[data-status="done"] .lp-floor-status {
+  color: var(--color-ink-subtle);
 }
 
-@media (min-width: 768px) {
-  .lp-steps {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: var(--kit-gutter);
+
+@media (min-width: 640px) {
+  .lp .lp-floor {
+    padding: var(--space-12px);
   }
-  .lp-step {
-    grid-row: span 3;
-    grid-template-rows: subgrid;
+  .lp .lp-floor-plan {
+    grid-template-areas:
+      "ceo ceo meet"
+      "d1 d2 d3"
+      "d4 d5 pantry";
+    gap: var(--space-8px);
+  }
+  .lp .lp-floor-room {
+    padding: var(--space-12px);
+  }
+  .lp .lp-floor-who {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-8px);
+  }
+  .lp .lp-floor-name > .lp-floor-muted,
+  .lp .lp-floor-line,
+  .lp .lp-floor-file {
+    display: block;
   }
 }
 
-/* A view is a picture of the app: it fills its frame and centres its
-   content, so the frame's ratio is its minimum height. */
-.lp-view {
+/* ---------------------------------------------------------------------
+ * Live views (company steps and workbench tiles): rows between hairlines,
+ * a cat at the start of a row, tabular mono for times and files.
+ * ------------------------------------------------------------------- */
+.lp .lp-view {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  row-gap: var(--kit-gap-related);
+  inline-size: 100%;
   min-width: 0;
+  padding: var(--kit-inset);
 }
 
-.lp-view-body {
+.lp .lp-view-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: center;
-  row-gap: var(--space-12px);
-  padding: var(--space-16px);
-  min-width: 0;
-}
-
-.lp-view-body p {
-  margin: 0;
-}
-
-.lp-view-head {
-  display: grid;
-  grid-template-columns: var(--space-48px) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   column-gap: var(--space-12px);
   min-width: 0;
 }
 
-.lp-view-head-text {
+.lp .lp-view-headtext {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
 }
 
-.lp-view-title {
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
+.lp .lp-view-headtext > p {
+  margin: 0;
 }
 
-.lp-view-meta {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
-.lp-who-cat {
-  display: grid;
+.lp .lp-view-icon {
+  display: inline-grid;
   place-items: center;
   inline-size: var(--space-48px);
   block-size: var(--space-48px);
+  color: var(--kit-link);
 }
 
-.lp-who-cat > * {
-  max-inline-size: 100%;
-  max-block-size: 100%;
+.lp .lp-view-strong,
+.lp .lp-view-muted {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
 }
 
-.lp-rows {
+.lp .lp-view-strong {
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.lp .lp-view-muted {
+  color: var(--color-ink-muted);
+}
+
+.lp .lp-rows {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   padding: 0;
   list-style: none;
-  border-block: 1px solid var(--color-border);
   min-width: 0;
-}
-
-.lp-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: center;
-  row-gap: var(--space-2px);
-  min-block-size: var(--control-h);
-  padding-block: var(--space-8px);
-  min-width: 0;
-}
-
-.lp-row + .lp-row {
-  border-top: 1px solid var(--color-border);
-}
-
-.lp-row-cat {
-  grid-template-columns: var(--space-48px) minmax(0, 1fr);
-  align-items: center;
-  column-gap: var(--space-12px);
-  padding-block: var(--space-4px);
-}
-
-.lp-row-text {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-}
-
-.lp-row-title {
-  min-width: 0;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-}
-
-.lp-row-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-12px);
-  min-width: 0;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
-.lp-clip {
-  min-width: 0;
-  max-inline-size: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lp-kv {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  margin: 0;
-  border-block: 1px solid var(--color-border);
-  min-width: 0;
-}
-
-.lp-kv-row {
-  display: grid;
-  grid-template-columns: var(--space-80px) minmax(0, 1fr);
-  align-items: center;
-  column-gap: var(--space-12px);
-  min-block-size: var(--control-h);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  min-width: 0;
-}
-
-.lp-kv-row + .lp-kv-row {
-  border-top: 1px solid var(--color-border);
-}
-
-.lp-kv-row > dt {
-  color: var(--color-ink-muted);
-}
-
-.lp-kv-row > dd {
-  margin: 0;
-  min-width: 0;
-  color: var(--color-ink);
-}
-
-.lp-ok,
-.lp-back {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-6px);
-  font-weight: var(--weight-medium);
-  color: var(--color-success);
-}
-
-.lp-back {
-  color: var(--color-warning);
-}
-
-.lp-ok .icon,
-.lp-back .icon {
-  flex: 0 0 auto;
-}
-
-.lp-handoff {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-12px);
-  min-width: 0;
-}
-
-.lp-handoff-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-2px);
-  box-sizing: border-box;
-  padding: var(--space-8px) var(--space-12px);
-  background: var(--color-layer-1);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--kit-radius-control);
-  min-width: 0;
-}
-
-.lp-handoff-summary {
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
-/* ---------------------------------------------------------------------
- * 4. Meet the crew: one bordered list (JAL Core List and Item).
- * ------------------------------------------------------------------- */
-.lp-crew-head,
-.lp-keys-head {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  min-width: 0;
-}
-
-.lp-list {
-  --lp-cat: var(--space-48px);
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--kit-radius-card);
-  overflow: clip;
-  min-width: 0;
-}
-
-.lp-item {
-  display: grid;
-  grid-template-columns: var(--lp-cat) minmax(0, 1fr);
-  align-items: center;
-  column-gap: var(--space-16px);
-  min-block-size: calc(var(--space-64px) + var(--space-8px));
-  padding: var(--space-12px) var(--space-16px);
-  min-width: 0;
-}
-
-.lp-item + .lp-item {
-  border-top: 1px solid var(--color-border);
-}
-
-/* The stage rows place .lp-cat by grid area; a list row places it by
-   column, so the area is reset here. */
-.lp-item > .lp-cat {
-  grid-area: auto;
-}
-
-.lp-item-text {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-2px);
-  min-width: 0;
-}
-
-.lp-item-title {
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-}
-
-.lp-item-desc {
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-  text-wrap: pretty;
-}
-
-/* ---------------------------------------------------------------------
- * 5. Judgment calls: the decisions log as a real table, rows between
- * hairlines; below 1024 every row stacks into one record.
- * ------------------------------------------------------------------- */
-.lp-log-wrap {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--kit-gap-related);
-  min-width: 0;
-}
-
-.lp-log-table {
-  inline-size: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
   border-block-start: 1px solid var(--color-border);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink);
 }
 
-.lp-log-table thead {
-  display: none;
-}
-
-.lp-log-table tbody,
-.lp-log-table tr,
-.lp-log-table th,
-.lp-log-table td {
-  display: block;
+.lp .lp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-block-size: var(--control-h);
+  padding-block: var(--space-4px);
   min-width: 0;
-}
-
-/* Below 1024 a row is one record: the question, then the decision id,
-   the answer and the judged stamp on one wrapping line, then the action. */
-.lp-log-table tr {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-4px) var(--space-12px);
-  padding-block: var(--space-12px);
   border-block-end: 1px solid var(--color-border);
 }
 
-.lp-log-table tbody th,
-.lp-log-table td:last-child {
-  flex-basis: 100%;
+.lp .lp-row-3 {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
-.lp-log-table th,
-.lp-log-table td {
-  padding: 0;
-  text-align: start;
-  font-weight: var(--weight-regular);
-  overflow-wrap: anywhere;
+.lp .lp-row-cat {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
-.lp-log-table tbody th {
-  order: -1;
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-  font-weight: var(--weight-medium);
+.lp .lp-row-icon {
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-8px);
 }
 
-.lp-log-table td.lp-mono {
-  color: var(--color-ink-muted);
+.lp .lp-row-icon > .icon {
+  color: var(--color-success);
 }
 
-.lp-stamp {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-6px);
-  color: var(--color-ink-muted);
+.lp .lp-row-time {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
-.lp-stamp .kit-num {
-  color: var(--color-ink);
-}
-
-.lp-stamp[data-kind="fallback"] {
-  font-weight: var(--weight-medium);
-  color: var(--color-warning);
-}
-
-@media (min-width: 1024px) {
-  .lp-log-table {
-    display: table;
-    table-layout: fixed;
-  }
-  .lp-log-table thead {
-    display: table-header-group;
-  }
-  .lp-log-table tbody {
-    display: table-row-group;
-  }
-  .lp-log-table tr {
-    display: table-row;
-    padding: 0;
-    border: 0;
-  }
-  .lp-log-table th,
-  .lp-log-table td {
-    display: table-cell;
-    box-sizing: border-box;
-    block-size: var(--control-h);
-    padding: var(--space-8px) var(--space-16px) var(--space-8px) 0;
-    vertical-align: middle;
-    border-block-end: 1px solid var(--color-border);
-  }
-  .lp-log-table thead th {
-    font-weight: var(--weight-medium);
-    color: var(--color-ink-muted);
-  }
-  .lp-log-table tbody th {
-    font-size: var(--text-n1);
-    line-height: var(--line-n1);
-  }
-  .lp-log-table th:nth-child(1) { inline-size: 16%; }
-  .lp-log-table th:nth-child(2) { inline-size: 28%; }
-  .lp-log-table th:nth-child(3) { inline-size: 11%; }
-  .lp-log-table th:nth-child(4) { inline-size: 19%; }
-  .lp-log-table th:nth-child(5) { inline-size: 26%; }
-}
-
-/* ---------------------------------------------------------------------
- * 6. Tokens: the per-scenario chart (legacy in gray, v2 in ink). Bars are
- * flat fills; they grow once from the start edge when the chart makes its
- * entrance (transform only), and never under reduced motion.
- * ------------------------------------------------------------------- */
-.lp-chart {
+.lp .lp-row-text {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--kit-gap-related);
-  margin: 0;
-  padding: var(--kit-inset);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--kit-radius-media);
   min-width: 0;
 }
 
-.lp-bars {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-12px);
+.lp .lp-row-end {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.lp .lp-row-file {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .lp .lp-row-cat:has(.lp-row-file) {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .lp .lp-row-file {
+    display: block;
+    justify-self: end;
+    max-inline-size: 100%;
+  }
+}
+
+.lp .lp-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+}
+
+.lp .lp-state[data-state="ok"] {
+  color: var(--color-success);
+}
+
+.lp .lp-state[data-state="wait"] {
+  color: var(--color-info);
+}
+
+.lp .lp-seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12px);
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
-.lp-bar-row {
+.lp .lp-seats > li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "name save"
-    "bars bars";
-  align-items: baseline;
-  column-gap: var(--space-12px);
+  justify-items: center;
   row-gap: var(--space-4px);
   min-width: 0;
 }
 
-.lp-bar-name {
-  grid-area: name;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
-.lp-bar-save {
-  grid-area: save;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink);
-}
-
-.lp-bar-pair {
-  grid-area: bars;
+.lp .lp-thread {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-2px);
-  min-width: 0;
-}
-
-.lp-bar-track {
-  display: block;
-  block-size: var(--space-6px);
-  min-width: 0;
-}
-
-.lp-bar {
-  display: block;
-  block-size: 100%;
-  transform-origin: 0 50%;
-}
-
-.lp-bar[data-series="legacy"] {
-  background: var(--color-border-control);
-}
-
-.lp-bar[data-series="v2"] {
-  background: var(--color-ink);
-}
-
-@keyframes lp-grow {
-  from {
-    transform: scaleX(0);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .kit-page [data-motion-state="in"] .lp-bar {
-    animation: lp-grow var(--dur-600) var(--ease-standard) backwards;
-  }
-  .kit-page [data-motion-state="in"] .lp-bar[data-series="v2"] {
-    animation-delay: var(--stagger-item);
-  }
-}
-
-/* ---------------------------------------------------------------------
- * 7. Bring your own key: the head beside two spec rails.
- * ------------------------------------------------------------------- */
-.lp-keys-rails {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--kit-gap-group);
-  min-width: 0;
-}
-
-.lp-rail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
   row-gap: var(--kit-gap-related);
+  margin: 0;
+  padding: 0;
+  list-style: none;
   min-width: 0;
 }
 
-/* ---------------------------------------------------------------------
- * 9. Open source: the four facts as one spec strip on the grid.
- * ------------------------------------------------------------------- */
-.lp-facts {
-  grid-column: 1 / -1;
+.lp .lp-say {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--space-12px);
   min-width: 0;
 }
 
+.lp .lp-say .lp-row-text {
+  row-gap: var(--space-2px);
+}
+
 /* ---------------------------------------------------------------------
- * 11. Put the crew to work: start aligned, never centred.
+ * Company: five steps beside one stage, pinned from 1024.
  * ------------------------------------------------------------------- */
-.lp-close {
+.lp .lp-steps {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
   column-gap: var(--kit-gutter);
-  row-gap: var(--kit-gap-related);
+  row-gap: var(--kit-gap-group);
   min-width: 0;
+  --lp-steps-top: calc(var(--shell-header-h, 57px) + var(--kit-gap-group));
+  --lp-steps-h: calc(100svh - var(--lp-steps-top) - var(--kit-gap-group));
+  --lp-steps-step: 56svh;
 }
 
-.lp-close > * {
+.lp .lp-steps-track,
+.lp .lp-steps-pin {
+  display: none;
+}
+
+.lp .lp-steps-flow {
   grid-column: 1 / -1;
-}
-
-.lp-close-crew {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-16px);
-  margin: 0 0 var(--kit-gap-related);
+  row-gap: var(--kit-gap-group);
+  margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
-.lp-close-cat {
+.lp .lp-steps-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.lp .lp-flow-step {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-inside);
+  align-content: start;
   min-width: 0;
 }
 
-.lp-close-text {
+.lp .lp-flow-step > .kit-media {
+  margin-block-start: var(--kit-gap-inside);
+}
+
+.lp .lp-step-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+  margin: 0;
+  min-width: 0;
+}
+
+.lp .lp-step-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--kit-link);
+}
+
+@media (min-width: 640px) {
+  .lp .lp-flow-step {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    column-gap: var(--kit-gutter);
+    align-items: start;
+  }
+  .lp .lp-flow-step > .lp-step-title,
+  .lp .lp-flow-step > .kit-body {
+    grid-column: 1;
+  }
+  .lp .lp-flow-step > .kit-media {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    margin-block-start: 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  .lp .lp-steps-flow {
+    display: none;
+  }
+  .lp .lp-steps-track {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: grid;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .lp .lp-steps-marker {
+    block-size: var(--lp-steps-step);
+  }
+  .lp .lp-steps-marker:first-child {
+    block-size: calc(50svh - var(--lp-steps-top) + var(--lp-steps-step));
+  }
+  .lp .lp-steps-track::after {
+    content: "";
+    block-size: calc(50svh - var(--kit-gap-group));
+  }
+  .lp .lp-steps-pin {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: subgrid;
+    column-gap: var(--kit-gutter);
+    align-items: center;
+    align-self: start;
+    position: sticky;
+    top: var(--lp-steps-top);
+    min-block-size: var(--lp-steps-h);
+    min-width: 0;
+  }
+  .lp .lp-steps-nav {
+    grid-column: 1 / span 5;
+    position: relative;
+    min-width: 0;
+  }
+  .lp .lp-steps-thumb {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    block-size: var(--lp-thumb-h, 0px);
+    transform: translateY(var(--lp-thumb-y, 0px));
+    border-radius: var(--kit-radius-control);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform var(--dur-300) var(--ease-standard);
+  }
+  .lp .lp-steps-nav[data-thumb] > .lp-steps-thumb {
+    opacity: 1;
+  }
+  .lp .lp-steps-list {
+    position: relative;
+    display: grid;
+    row-gap: var(--space-4px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: 0;
+  }
+  .lp .lp-step {
+    min-width: 0;
+  }
+  .lp .lp-steps-stage {
+    grid-column: 7 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+  .lp .lp-steps-frame {
+    grid-area: 1 / 1;
+    min-width: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity var(--dur-300-exit) var(--ease-standard),
+      visibility 0s linear var(--dur-300-exit);
+  }
+  .lp .lp-steps-frame[data-active] {
+    opacity: 1;
+    visibility: visible;
+    transition:
+      opacity var(--dur-300) var(--ease-standard),
+      visibility 0s;
+  }
+}
+
+/* The step buttons: text rows, not filled buttons. The active step reads
+   in ink on the surface thumb; the others stay on screen in ink-subtle. */
+.lp .lp-step-button {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-4px);
+  justify-items: start;
+  inline-size: 100%;
+  block-size: auto;
+  min-block-size: var(--control-h);
+  padding: var(--space-12px) var(--space-16px);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--kit-radius-control);
+  color: var(--color-ink);
+  text-align: start;
+  white-space: normal;
+  font-weight: var(--weight-regular);
+}
+
+.lp .lp-step-button .kit-title,
+.lp .lp-step-button .kit-body {
+  transition: color var(--dur-150) var(--ease-standard);
+}
+
+.lp .lp-step:not([data-active]) .lp-step-button .kit-title,
+.lp .lp-step:not([data-active]) .lp-step-button .kit-body,
+.lp .lp-step:not([data-active]) .lp-step-button .lp-step-icon {
+  color: var(--color-ink-subtle);
+}
+
+@media (hover: hover) {
+  .lp .lp-step:not([data-active]) .lp-step-button:hover {
+    background: color-mix(in oklab, var(--color-ink) 4%, transparent);
+  }
+  .lp .lp-step:not([data-active]) .lp-step-button:hover .kit-title {
+    color: var(--color-ink);
+  }
+}
+
+.lp .lp-step-button:active {
+  transform: none;
+}
+
+.lp .lp-step-button:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------
+ * Bento views: in flow inside the tile's visual, so a view sets its own
+ * height and nothing inside it is ever cut off.
+ * ------------------------------------------------------------------- */
+.lp .kit-bento-visual:has(> .lp-tile-view) {
+  min-block-size: 0;
+}
+
+.lp .kit-bento-visual > .lp-tile-view {
+  position: relative;
+  inset: auto;
+  block-size: auto;
+  min-block-size: 100%;
+  display: grid;
+  min-width: 0;
+  background: var(--color-surface);
+}
+
+.lp .lp-tile-view > .lp-rows {
+  margin: var(--kit-inset);
+  align-self: start;
+}
+
+/* The editor: who is typing, then the file, line numbers, no chrome. */
+.lp .lp-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.lp .lp-editor-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  padding: var(--space-12px) var(--kit-inset);
+  border-block-end: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.lp .lp-code {
+  margin: 0;
+  padding-block: var(--space-12px);
+  overflow-x: auto;
+  min-width: 0;
+  font-family: var(--kit-font-mono);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+  background: var(--color-surface);
+}
+
+.lp .lp-code:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.lp .lp-code > code {
+  display: grid;
+  align-content: start;
+  min-inline-size: max-content;
+}
+
+.lp .lp-code-line {
+  display: grid;
+  grid-template-columns: var(--space-40px) auto;
+  column-gap: var(--space-12px);
+  padding-inline-end: var(--kit-inset);
+  white-space: pre;
+}
+
+.lp .lp-code-no {
+  justify-self: end;
+  color: var(--color-ink-subtle);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.lp .lp-code-key {
+  font-weight: var(--weight-semibold);
+}
+
+.lp .lp-code-comment {
+  color: var(--color-ink-subtle);
+}
+
+/* Only typed lines exist; the file's full height is reserved up front, so
+   nothing below the editor moves while it types. */
+.lp .lp-code > code {
+  min-block-size: calc(var(--lp-lines, 1) * var(--line-n1));
+}
+
+.lp .lp-code-line {
+  animation: lp-fade-in var(--dur-150) var(--ease-standard);
+}
+
+.lp .lp-code-line[data-caret] {
+  background: var(--color-layer-1);
+}
+
+/* Timeline rows arrive with the editor; the list keeps room for all of
+   them (two meta lines, the row padding, one hairline each). */
+.lp .lp-timeline {
+  align-content: start;
+  min-block-size: calc(var(--lp-rows, 1) * (2 * var(--line-n1) + var(--space-8px) + 1px));
+}
+
+.lp .lp-timeline > .lp-row {
+  animation: lp-fade-in var(--dur-300) var(--ease-standard);
+}
+
+.lp .lp-minutes {
+  box-sizing: border-box;
+  display: grid;
+  row-gap: var(--kit-gap-related);
+  align-content: start;
+  padding: var(--kit-inset);
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .lp .lp-minutes {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--kit-gutter);
+    align-items: start;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Keys: three groups between hairline dividers.
+ * ------------------------------------------------------------------- */
+.lp .lp-divided {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  border-block-end: 1px solid var(--color-border);
+}
+
+.lp .lp-divided-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  column-gap: var(--kit-gutter);
+  row-gap: var(--kit-gap-inside);
+  align-items: start;
+  padding-block: var(--kit-inset);
+  min-width: 0;
+  border-block-start: 1px solid var(--color-border);
+}
+
+.lp .lp-divided-row > * {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.lp .lp-divided-body {
+  display: grid;
   row-gap: var(--kit-gap-related);
   min-width: 0;
 }
 
-.lp-close-actions {
-  margin-block-start: var(--kit-gap-inside);
+.lp .lp-divided-value {
+  margin: 0;
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  color: var(--color-ink);
 }
 
-.lp-close-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-block-size: var(--control-h);
-  padding-inline: var(--space-4px);
-  font-weight: var(--weight-medium);
+.lp .lp-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
 }
 
-.lp-credit {
-  margin-block-start: var(--kit-gap-inside);
+.lp .lp-providers > li {
+  padding: var(--space-4px) var(--space-8px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-4);
+  background: var(--color-surface);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+@media (min-width: 640px) {
+  .lp .lp-divided-row > .kit-title {
+    grid-column: 1 / span 3;
+  }
+  .lp .lp-divided-row > .lp-divided-body,
+  .lp .lp-divided-row > .lp-divided-value {
+    grid-column: 4 / -1;
+  }
+}
+
+@media (min-width: 1024px) {
+  .lp .lp-divided-row > .kit-title {
+    grid-column: 1 / span 4;
+  }
+  .lp .lp-divided-row > .lp-divided-body {
+    grid-column: 5 / span 5;
+    grid-row: 1;
+  }
+  .lp .lp-divided-row > .lp-divided-value {
+    grid-column: 10 / -1;
+    grid-row: 1;
+    justify-self: end;
+    text-align: end;
+  }
 }
 
 /* ---------------------------------------------------------------------
- * Desktop placements on the 12 columns.
+ * Token chart: two bars per task on one scale, flat, square ends.
  * ------------------------------------------------------------------- */
-@media (min-width: 1024px) {
-  .lp-crew-head {
-    grid-column: 1 / span 4;
+.lp .lp-chart {
+  box-sizing: border-box;
+  display: grid;
+  align-content: start;
+  row-gap: var(--kit-gap-related);
+  padding: var(--kit-inset);
+  min-width: 0;
+}
+
+.lp .lp-chart-key {
+  margin: 0;
+}
+
+.lp .lp-chart-rows {
+  display: grid;
+  row-gap: var(--space-8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp .lp-chart-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp .lp-bars {
+  grid-column: 1 / -1;
+  display: grid;
+  align-content: center;
+  row-gap: var(--space-2px);
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  /* One line per task: name, the two bars, the saving. */
+  .lp .lp-chart-row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+    align-items: center;
   }
-  /* A tall list or rail beside a short head: the head stays in view. */
-  .lp-crew-head > .kit-head,
-  .lp-keys-head > .kit-head {
-    position: sticky;
-    top: calc(var(--shell-header-h, 57px) + var(--space-32px));
+  .lp .lp-chart-row > .lp-bars {
+    grid-column: 2;
+    grid-row: 1;
   }
-  .lp-list {
-    grid-column: 5 / -1;
+  .lp .lp-chart-row > .lp-row-end {
+    grid-column: 3;
   }
-  .lp-keys-head {
-    grid-column: 1 / span 5;
+}
+
+.lp .lp-bar {
+  display: block;
+  block-size: var(--space-8px);
+  transform: scaleX(var(--lp-bar, 1));
+  transform-origin: 0 50%;
+  transition: transform var(--dur-600) var(--ease-standard);
+}
+
+.lp .lp-bar[data-series="legacy"] {
+  background: var(--color-border-strong);
+}
+
+.lp .lp-bar[data-series="v2"] {
+  background: var(--color-ink);
+}
+
+.lp .kit-bento[data-motion-state="pending"] .lp-bar {
+  transform: scaleX(0);
+}
+
+/* ---------------------------------------------------------------------
+ * The close: the proof rail, then the credit and the license.
+ * ------------------------------------------------------------------- */
+.lp .lp-close-proof {
+  display: grid;
+  row-gap: var(--kit-gap-related);
+  min-width: 0;
+}
+
+.lp .lp-credit {
+  margin: 0;
+}
+
+.lp .lp-credit a {
+  white-space: nowrap;
+  color: var(--kit-link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: var(--space-4px);
+}
+
+/* ---------------------------------------------------------------------
+ * Reduced motion: every part rests at its final state.
+ * ------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .lp .lp-story-caption,
+  .lp .lp-code-line,
+  .lp .lp-timeline > .lp-row {
+    animation: none;
   }
-  .lp-keys-rails {
-    grid-column: 7 / -1;
-  }
-  .lp-close-text,
-  .lp-close-actions,
-  .lp-credit {
-    grid-column: 1 / span 8;
-  }
-  .lp-close-crew {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .lp .lp-bar,
+  .lp .lp-steps-thumb,
+  .lp .lp-steps-frame,
+  .lp .lp-steps-frame[data-active],
+  .lp .lp-step-button .kit-title,
+  .lp .lp-step-button .kit-body {
+    transition: none;
   }
 }

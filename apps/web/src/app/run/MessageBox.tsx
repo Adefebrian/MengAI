@@ -1,6 +1,6 @@
-// Message the lead (JEV: plain spacing, ui.component_recipe core.composer):
-// one 44px field and Send on one row, a reserved status line under it, so
-// the confirmation never moves the page.
+// Message the CEO cat (JEV: core.composer): one 44px field and Send on one
+// row, a reserved status line under it, so the confirmation never moves
+// the page. It sits pinned at the foot of the company feed.
 import { ProductIcon } from "@mengai/ui/src/product";
 import { useId, useState, type FormEvent } from "react";
 import { useAction } from "../hooks";
@@ -28,34 +28,33 @@ export function MessageBox({ lead, onSend }: { lead: string; onSend: (text: stri
     }
   };
   return (
-    <section className="app-region message" data-container="plain" aria-label={`Message ${lead}`}>
-      <form className="message-form" onSubmit={submit} noValidate>
-        <div className="field message-field">
-          <label htmlFor={`${id}-in`}>Tell {lead}</label>
-          <div className="message-row">
-            <input
-              id={`${id}-in`}
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                if (act.error) act.setError(null);
-              }}
-              placeholder="What should the crew change or check?"
-              maxLength={2000}
-              autoComplete="off"
-              aria-describedby={`${id}-hint`}
-              aria-invalid={act.error ? true : undefined}
-            />
-            <button type="submit" aria-busy={act.busy || undefined}>
-              <ProductIcon name="send" size={20} />
-              <span>Send</span>
-            </button>
-          </div>
-          <p className="field-hint" id={`${id}-hint`} data-state={act.error ? "error" : sent ? "success" : undefined} aria-live="polite">
-            {act.error ?? sent ?? `${lead} leads the crew, so notes go to ${lead} first.`}
-          </p>
+    <form className="message-form" onSubmit={submit} noValidate aria-label={`Message ${lead}`}>
+      <div className="field message-field">
+        <label htmlFor={`${id}-in`}>Tell {lead}, the CEO</label>
+        <div className="message-row">
+          <input
+            id={`${id}-in`}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (act.error) act.setError(null);
+              if (sent) setSent(null);
+            }}
+            placeholder="What should the crew change or check?"
+            maxLength={2000}
+            autoComplete="off"
+            aria-describedby={`${id}-hint`}
+            aria-invalid={act.error ? true : undefined}
+          />
+          <button type="submit" aria-busy={act.busy || undefined}>
+            <ProductIcon name="send" size={20} />
+            <span>Send</span>
+          </button>
         </div>
-      </form>
-    </section>
+        <p className="field-hint" id={`${id}-hint`} data-state={act.error ? "error" : sent ? "success" : undefined} aria-live="polite">
+          {act.error ?? sent ?? `${lead} runs the company, so your notes go to ${lead} first.`}
+        </p>
+      </div>
+    </form>
   );
 }

@@ -1,12 +1,11 @@
-// The run report and its replay (JEV ui.region_gate report card 0.58 and
-// replay card 0.57, one card since both exist only once a run ends;
-// ui.component_recipe core.card_summary 0.78): the outcome in a title that
-// names it, the lead's closing line, the figures in tabular numerals, then
-// play or pause and a range over the event sequence. The floor, the
-// timeline and the tabs all follow the position, so scrubbing forward
-// deals the plan, flies the handoffs and bounces the review again. Playing
-// steps the position; it is data, not an animation, so reduced motion
-// changes nothing here but the travel.
+// The run report and its replay (JEV ui.region_gate divided section 0.68,
+// ui.component_recipe core.slider 0.97, motion tier 0): it sits right under
+// the office like a player. The outcome in a title that names it, the
+// CEO's closing line, the figures in tabular numerals, then play or pause
+// and a range over the event sequence. The office, the feed, the queue and
+// the tabs all follow the position, so playing forward walks the crew to
+// the kickoff table again, carries every handoff, and replays the review.
+// Playing steps the position; it is data, not an animation.
 import type { MengaiEvent, RunStatus } from "@mengai/shared";
 import { ProductIcon } from "@mengai/ui/src/product";
 import { useEffect, useId } from "react";
@@ -28,14 +27,17 @@ function Report({ state }: { state: RunState }) {
   const c = taskCounts(state);
   const rounds = Object.values(state.rounds).reduce((n, r) => n + Math.max(0, r - 1), 0);
   const answered = state.approvalOrder.filter((id) => state.approvals[id] && state.approvals[id]!.status !== "pending").length;
+  const calls = state.requestOrder.filter((id) => state.requests[id]?.decision && !state.requests[id]?.decision?.byOwner).length;
   const time = run.startedAt && run.endedAt ? fmtDuration(run.endedAt - run.startedAt) : null;
   const items: Array<{ label: string; value: string }> = [
     { label: "Tasks done", value: `${fmtInt(c.done)} of ${fmtInt(c.total)}` },
-    { label: "Review rounds sent back", value: fmtInt(rounds) },
-    { label: "Requests you answered", value: fmtInt(answered) },
+    { label: "Sent back in review", value: fmtInt(rounds) },
+    { label: "Meetings", value: fmtInt(state.meetingOrder.length) },
+    { label: "CEO calls", value: fmtInt(calls) },
+    { label: "Your answers", value: fmtInt(answered) },
     { label: "Tokens", value: fmtInt(tokensUsed(run.usage)) },
     { label: "Cost", value: fmtUsd(run.usage.costUsd) },
-    ...(time ? [{ label: "Time", value: time }] : []),
+    { label: "Time", value: time ?? "Not timed" },
   ];
   return (
     <dl className="report-figures" aria-label="Run figures">
@@ -82,7 +84,7 @@ export function Replay({
 
   const ts = log && pos > 0 ? log[Math.min(pos, total) - 1]!.ts : log?.[0]?.ts ?? null;
   return (
-    <section className="app-region app-card replay" data-container="card" aria-labelledby={`${id}-h`}>
+    <section className="app-region replay" data-container="divided" aria-labelledby={`${id}-h`}>
       <RegionHead
         title={state.run ? (OUTCOME[state.run.status] ?? "Run ended") : "Run ended"}
         id={`${id}-h`}

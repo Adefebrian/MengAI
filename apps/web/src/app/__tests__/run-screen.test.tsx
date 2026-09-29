@@ -1,7 +1,8 @@
-// The run screen renders the crew at work from the bundled demo, with no
-// API: one lane per cat with its CatCard, the task cards in their lanes,
-// the request that blocks a cat with the asking cat beside it, and the
-// record tabs. Nothing on it uses an em dash.
+// The run page renders the cat company at work from the bundled demo, with
+// no API: the office with every cat, the status line in cat voice, the
+// meetings and CEO calls, the code editor on the file the crew touched
+// last, the task queue, the request that blocks a cat with the asking cat
+// beside it, and the record tabs. Nothing on it uses an em dash.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root as ReactRoot } from "react-dom/client";
@@ -24,9 +25,11 @@ async function mount(path: string) {
       <AppRoot route={{ id: "run", params: { id: "demo" } }} location={{ pathname: url.pathname, search: url.search, hash: "" }} demo />,
     );
   });
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 20));
-  });
+  for (let i = 0; i < 3; i++) {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+  }
   return host;
 }
 
@@ -38,23 +41,45 @@ afterEach(async () => {
   window.history.pushState(null, "", "/");
 });
 
-describe("run screen, demo", () => {
-  test("draws one lane per cat, lead first, with its CatCard", async () => {
+const desktop = () => typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1024px)").matches;
+
+describe("run page, demo", () => {
+  test("the office holds every cat, the CEO first, and says what the company is doing", async () => {
     const el = await mount("/app/runs/demo?demo=1");
-    const lanes = el.querySelectorAll(".lane");
-    expect(lanes.length).toBe(6);
-    expect(el.querySelectorAll(".lane .cat-card").length).toBe(6);
-    expect(lanes[0]!.getAttribute("aria-label")).toBe("Kopi's lane");
     expect(el.querySelector("h1")?.textContent).toContain("CSV export");
+    const office = el.querySelector(".run-office");
+    expect(office).toBeTruthy();
+    const text = office!.textContent ?? "";
+    for (const name of ["Kopi", "Mochi", "Klepon", "Tempe", "Onde", "Cilok"]) expect(text).toContain(name);
+    expect(el.querySelector(".status-now")?.textContent).toContain("Mochi is waiting on you");
   });
 
-  test("puts every task card in a lane and the waiting request on top with its cat", async () => {
+  test("the request that blocks a cat sits on top with its cat, and the panels are there", async () => {
     const el = await mount("/app/runs/demo?demo=1");
-    expect(el.querySelectorAll(".lane .tcard").length).toBe(6);
     const ask = el.querySelector(".approvals-now");
     expect(ask?.textContent).toContain("Mochi needs you");
     expect(ask?.querySelector(".ask-cat")).toBeTruthy();
-    expect(el.querySelectorAll('[role="tab"]').length).toBe(5);
+    expect(el.querySelectorAll('[role="tab"]').length).toBe(desktop() ? 4 : 7);
+    if (desktop()) {
+      expect(el.querySelector(".feed")?.textContent).toContain("Kickoff: CSV export");
+      expect(el.querySelector(".feed")?.textContent).toContain("Kopi approved");
+      expect(el.querySelectorAll(".queue-row").length).toBe(6);
+      expect(el.querySelector(".ide")).toBeTruthy();
+    }
+  });
+
+  test("the code editor opens the file the crew changed last, with line numbers", async () => {
+    const el = await mount("/app/runs/demo?demo=1");
+    if (!desktop()) {
+      const codeTab = [...el.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((t) => t.textContent?.includes("Code"));
+      await act(async () => codeTab?.click());
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+    }
+    const path = el.querySelector(".ide-path")?.textContent ?? "";
+    expect(path.length).toBeGreaterThan(0);
+    expect(el.querySelectorAll(".ide-node").length).toBeGreaterThan(3);
   });
 
   test("never renders an em dash", async () => {

@@ -281,6 +281,75 @@
   margin-bottom: var(--space-4px);
   padding: 0;
 }
+/* The checkbox row: a 44px button, a 20px drawn box, the words beside it. */
+button.app-check,
+button.app-check:enabled:active {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: var(--space-20px) minmax(0, 1fr);
+  column-gap: var(--space-12px);
+  align-items: start;
+  justify-content: stretch;
+  inline-size: 100%;
+  height: auto;
+  min-height: var(--control-h);
+  padding: calc((var(--control-h) - var(--line-0)) / 2) 0;
+  font: inherit;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-regular);
+  color: var(--color-ink);
+  text-align: start;
+  white-space: normal;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-8);
+  transform: none;
+}
+button.app-check:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 0;
+}
+.app-check-box {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-20px);
+  block-size: var(--space-20px);
+  margin-block-start: calc((var(--line-0) - var(--space-20px)) / 2);
+  color: var(--color-surface);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-4);
+}
+button.app-check[aria-checked="true"] .app-check-box {
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+}
+@media (hover: hover) {
+  button.app-check:enabled:hover .app-check-box {
+    border-color: var(--color-ink);
+  }
+}
+button.app-check:disabled {
+  color: var(--state-disabled-content);
+  background: transparent;
+}
+button.app-check:disabled .app-check-box {
+  background: var(--state-disabled-container);
+  border-color: var(--color-border);
+}
+.app-check-text {
+  display: grid;
+  gap: var(--space-2px);
+  min-width: 0;
+}
+.app-check-desc {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
 
 .shell .app-btn-danger,
 .app-btn-danger {
@@ -365,7 +434,7 @@ button.app-btn-destructive[aria-busy="true"]::after {
   display: inline-flex;
 }
 
-.app-page a:not(.btn):not(.p-row):not(.live-card):not(.shell-nav-item) {
+.app-page a:not(.btn):not(.p-row):not(.live-card):not(.shell-nav-item):not(.queue-row) {
   color: var(--color-accent);
   text-underline-offset: var(--space-4px);
 }
@@ -442,6 +511,7 @@ button.app-btn-destructive[aria-busy="true"]::after {
   }
   .run-head-side {
     grid-column: 9 / span 4;
+    justify-items: end;
   }
 }
 
@@ -490,235 +560,897 @@ button.app-btn-destructive[aria-busy="true"]::after {
   margin: 0;
 }
 
-/* ------------------------------------------------------------ floor */
-/* The ethogram: one lane per cat between hairlines, the CatCard at the
-   start, the cat's task cards after it. Below 640 the card sits over its
-   list; from 640 beside it; from 1280 the list opens into the four status
-   columns under one header row. Lanes group by department with a label
-   row (never a kicker). Nothing here draws a line between cards. */
-.floor {
+/* ------------------------------------------------------- status strip */
+/* One sentence in cat voice, then three figures between hairlines. */
+.status-strip {
   gap: var(--space-16px);
 }
-.floor-board {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-}
-.floor-cols {
-  display: none;
-}
-.floor-count {
-  color: var(--color-ink-muted);
-}
-.floor-dept {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-}
-.floor-dept + .floor-dept {
-  padding-top: var(--space-16px);
-}
-.floor-dept-label {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-8px);
+.status-now {
+  max-inline-size: 72ch;
   margin: 0;
-  padding-block: var(--space-8px);
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-title);
+  color: var(--color-ink);
+  text-wrap: pretty;
+}
+.status-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16px);
+  margin: 0;
+  min-width: 0;
+}
+.status-figure {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4px);
+  min-width: 0;
+}
+.status-figure:last-child {
+  grid-column: 1 / -1;
+}
+.status-figure > dt {
   font-size: var(--text-n1);
   line-height: var(--line-n1);
-  font-weight: var(--weight-medium);
   color: var(--color-ink-muted);
 }
-.floor-lanes {
+.status-figure > dd {
+  display: grid;
+  gap: var(--space-8px);
+  margin: 0;
+  min-width: 0;
+}
+.status-value {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.status-of {
+  font-size: var(--text-n1);
+  color: var(--color-ink-muted);
+}
+@media (min-width: 768px) {
+  .status-figures {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: var(--space-24px);
+  }
+  .status-figure:last-child {
+    grid-column: auto;
+  }
+}
+
+/* -------------------------------------------------------------- stage */
+/* The office spans the page; from 1024 the code editor stands beside a
+   side stack of the feed over the task queue, and the editor canvas (a
+   scroll viewport, the one part that may stretch) grows to that height. */
+.run-work,
+.run-side {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--app-gap);
+  min-width: 0;
+}
+.run-work > *,
+.run-side > * {
+  min-width: 0;
+}
+@media (min-width: 1024px) {
+  .run-work {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .run-work > .ide {
+    grid-column: 1 / span 8;
+  }
+  /* The side stack takes the editor's height and never sets it: the feed
+     keeps its own height (its list scrolls past four entries), the queue
+     fills the rest and scrolls inside, so both columns end on one line. */
+  .run-work > .run-side {
+    grid-column: 9 / span 4;
+    display: flex;
+    flex-direction: column;
+    contain: size;
+    min-block-size: 0;
+  }
+  .run-side > .feed {
+    flex: 0 1 auto;
+    min-block-size: 0;
+  }
+  .run-side .feed-list {
+    max-block-size: calc(var(--space-96px) * 3);
+  }
+  .run-side > .queue {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-block-size: var(--space-96px);
+  }
+  .run-side > .queue > .queue-groups,
+  .run-side > .queue > .app-empty-line {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .run-side > .queue > .queue-groups {
+    border-bottom: 1px solid var(--color-border);
+  }
+}
+.run-office {
+  gap: var(--space-12px);
+}
+/* Until packages/cats ships the same rule: the scene's visually hidden beat
+   notes take the zero-height scroller pattern of .p-sr-wrap, so the hidden
+   list never sits on the stage or sticks out of its 1px box. */
+.run-office .office-notes:not([data-visible]) {
+  block-size: 0;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+/* The desk view that stands in for the office scene. */
+.desks {
+  display: grid;
+  gap: var(--space-16px);
+  min-width: 0;
+}
+.desks-note,
+.desks-beat {
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.desks-beat {
+  min-block-size: calc(2 * var(--line-n1));
+  color: var(--color-ink);
+}
+.desks-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-16px);
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
-.lane {
+@media (min-width: 640px) {
+  .desks-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .desks-grid {
+    grid-template-columns: repeat(var(--desk-cols, 3), minmax(0, 1fr));
+  }
+}
+.desk {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+.desk > .cat-card {
+  box-sizing: border-box;
+  block-size: 100%;
+}
+.desk-monitor {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8px);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+}
+.desk-monitor-label {
+  flex: 0 0 auto;
+  color: var(--color-ink-muted);
+}
+.desk-monitor-file {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  color: var(--color-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- feed */
+/* The team channel: entries between hairlines, the composer at the foot. */
+.app-region.feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16px);
+  min-height: 0;
+}
+.feed-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+/* Beside the editor the list scrolls inside the card; in a phone tab the
+   page itself scrolls, so there is no scroller inside a scroller. */
+@media (min-width: 1024px) {
+  .feed-list {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+.feed-list:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.feed-item {
+  display: grid;
+  gap: var(--space-8px);
+  padding-block: var(--space-16px);
+  min-width: 0;
+}
+.feed-item:first-child {
+  padding-top: 0;
+}
+.feed-item + .feed-item {
+  border-top: 1px solid var(--color-border);
+}
+.feed-head {
+  display: grid;
+  grid-template-columns: var(--space-24px) minmax(0, 1fr) auto;
+  column-gap: var(--space-8px);
+  align-items: start;
+  margin: 0;
+  min-width: 0;
+}
+.feed-icon {
+  display: inline-flex;
+  padding-top: var(--space-2px);
+  color: var(--color-ink-muted);
+}
+.feed-title {
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.feed-time {
+  font-size: var(--text-n1);
+  line-height: var(--line-0);
+  color: var(--color-ink-muted);
+}
+.feed-meta,
+.feed-quote,
+.feed-points,
+.feed-agreed,
+.feed-answer {
+  margin: 0;
+  padding-inline-start: var(--space-32px);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feed-meta,
+.feed-points {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.feed-quote {
+  color: var(--color-ink);
+}
+.feed-points,
+.feed-agreed {
+  display: grid;
+  gap: var(--space-4px);
+  list-style: none;
+}
+.feed-agreed > li,
+.feed-answer {
+  display: grid;
+  grid-template-columns: var(--space-16px) minmax(0, 1fr);
+  column-gap: var(--space-8px);
+  align-items: start;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+}
+.feed-agreed-icon,
+.feed-answer-icon {
+  display: inline-flex;
+  padding-top: var(--space-2px);
+  color: var(--color-ink-muted);
+}
+.feed-agreed-icon,
+.feed-answer[data-tone="success"] .feed-answer-icon {
+  color: var(--color-success);
+}
+.feed-answer-word {
+  font-weight: var(--weight-semibold);
+}
+.feed-foot {
+  display: grid;
+  min-width: 0;
+  padding-top: var(--space-16px);
+  border-top: 1px solid var(--color-border);
+}
+.feed .message-form {
+  max-inline-size: none;
+}
+.feed-empty {
+  flex: 0 0 auto;
+}
+
+/* ---------------------------------------------------------- the editor */
+/* The tree beside the editor from 768; one scroller in both directions
+   inside the editor, so a long line never widens the page. */
+.ide {
+  gap: var(--space-16px);
+}
+.ide-follow {
+  display: flex;
+  min-width: 0;
+}
+.ide-follow button.app-switch {
+  inline-size: auto;
+  padding-inline: var(--space-4px) var(--space-8px);
+}
+.ide-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-12px);
   align-items: start;
   min-width: 0;
-  padding-block: var(--space-16px);
-  border-top: 1px solid var(--color-border);
 }
-.lane-cat {
-  display: grid;
+.ide-side {
+  box-sizing: border-box;
   min-width: 0;
+  max-block-size: calc(var(--space-64px) * 5);
+  padding: var(--space-4px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
 }
-.lane-cells {
+@media (min-width: 768px) {
+  .ide-body {
+    grid-template-columns: 240px minmax(0, 1fr);
+    column-gap: var(--space-16px);
+    align-items: stretch;
+  }
+  .ide-side {
+    max-block-size: none;
+    contain: size;
+  }
+}
+.ide-tree-level {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-8px);
-  align-content: start;
-  min-width: 0;
-}
-.lane-cells:not(:has(.tcard-item)) {
-  display: none;
-}
-.lane-cell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-8px);
-  align-content: start;
-  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-}
-.lane-cell[data-empty] {
-  display: none;
-}
-.tcard-item {
   min-width: 0;
-  margin: 0;
 }
-/* A task card: surface, one full hairline, the control radius; the whole
-   card opens the task. Hover and press are state layers, never a lift. */
-.tcard {
+.ide-tree-level > li {
+  min-width: 0;
+}
+button.ide-node,
+button.ide-node:enabled:active,
+button.ide-files-toggle,
+button.ide-files-toggle:enabled:active {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-6px);
-  align-content: start;
+  grid-template-columns: var(--space-16px) var(--space-16px) minmax(0, 1fr) auto;
+  column-gap: var(--space-8px);
+  align-items: center;
   justify-content: stretch;
   inline-size: 100%;
   height: auto;
   min-height: var(--control-h);
-  padding: var(--space-12px);
+  padding: 0 var(--space-8px) 0 calc(var(--space-8px) + var(--depth, 0) * var(--space-16px));
   font: inherit;
-  font-size: var(--text-0);
-  line-height: var(--line-0);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
   font-weight: var(--weight-regular);
   color: var(--color-ink);
   text-align: start;
-  white-space: normal;
-  text-decoration: none;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-4);
+  transform: none;
+}
+button.ide-files-toggle,
+button.ide-files-toggle:enabled:active {
+  grid-template-columns: var(--space-20px) minmax(0, 1fr) var(--space-20px);
+  padding: 0 var(--space-12px);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-8);
+}
+@media (hover: hover) {
+  button.ide-node:enabled:hover,
+  button.ide-files-toggle:enabled:hover {
+    background: var(--state-hover);
+    border-color: var(--color-border-control);
+  }
+  button.ide-node:enabled:hover {
+    border-color: transparent;
+  }
+}
+button.ide-node:enabled:active,
+button.ide-files-toggle:enabled:active {
+  background: var(--state-pressed);
+}
+button.ide-node[data-selected],
+button.ide-node[data-selected]:enabled:active {
+  font-weight: var(--weight-semibold);
+  background: var(--color-layer-2);
+}
+button.ide-node:focus-visible,
+button.ide-files-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.ide-node-chevron,
+.ide-node-icon {
+  display: inline-flex;
+  color: var(--color-ink-muted);
+}
+.ide-node-chevron {
+  transition: transform var(--dur-150) var(--ease-standard);
+}
+button.ide-node[aria-expanded="true"] .ide-node-chevron,
+button.ide-files-toggle[aria-expanded="true"] .ide-node-chevron {
+  transform: rotate(90deg);
+}
+button.ide-files-toggle .ide-node-chevron {
+  transform: rotate(-90deg);
+}
+button.ide-files-toggle[aria-expanded="true"] .ide-node-chevron {
+  transform: none;
+}
+.ide-node-name,
+.ide-files-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ide-node-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4px);
+  font-size: var(--text-n2);
+  line-height: var(--line-n2);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-muted);
+}
+.ide-node-mark[data-live] {
+  color: var(--color-ink);
+}
+.ide-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
-  cursor: pointer;
-  transition:
-    background-color var(--dur-100) var(--ease-standard),
-    transform var(--dur-100) var(--ease-standard);
+  overflow: hidden;
+}
+.ide-editor-head {
+  display: grid;
+  gap: var(--space-8px);
+  min-width: 0;
+  padding: var(--space-8px) var(--space-12px);
+  border-bottom: 1px solid var(--color-border);
+}
+.ide-path-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-2px);
+  margin: 0;
+  min-width: 0;
+}
+.ide-path {
+  min-width: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ide-meta {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-muted);
+}
+.ide-fresh-word {
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+.ide-tag {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+  min-block-size: var(--space-48px);
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.ide-tag-cat {
+  display: inline-flex;
+  flex: 0 0 auto;
+  inline-size: var(--space-48px);
+  block-size: var(--space-48px);
+}
+.ide-tag-text {
+  min-width: 0;
+}
+.ide-tag-name {
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.ide-tree-empty {
+  margin: 0;
+  padding: var(--space-8px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+/* The editor canvas keeps one height whatever is open, like a real editor:
+   a file, a note about it, or the empty editor. */
+.ide-editor {
+  --ide-canvas-h: calc(var(--space-64px) * 5);
+}
+@media (min-width: 1024px) {
+  .ide-editor {
+    --ide-canvas-h: calc(var(--space-96px) * 6);
+  }
+}
+.ide-canvas {
+  box-sizing: border-box;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+  block-size: var(--ide-canvas-h);
+  padding: var(--space-24px);
+  text-align: center;
+}
+.ide-editor > .ide-canvas:only-child {
+  grid-row: 1 / -1;
+}
+.ide-canvas[data-loading] {
+  align-content: start;
+  justify-items: stretch;
+  padding: var(--space-16px) var(--space-12px);
+  text-align: start;
+}
+.ide-canvas-icon {
+  display: inline-flex;
+  color: var(--color-ink-subtle);
+}
+.ide-canvas-title {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.ide-canvas-text {
+  max-inline-size: 44ch;
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+.ide-code {
+  min-width: 0;
+  min-height: 0;
+  block-size: var(--ide-canvas-h);
+  margin: 0;
+  padding: var(--space-8px) 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-family: var(--font-mono);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+  background: var(--color-surface);
+  tab-size: 2;
+}
+.ide-code:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+.ide-lines {
+  display: grid;
+  min-width: max-content;
+  font: inherit;
+}
+.ide-row {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: var(--space-40px) auto;
+  column-gap: var(--space-12px);
+  padding-inline: var(--space-4px) var(--space-16px);
+  white-space: pre;
+}
+.ide-num {
+  color: var(--color-ink-subtle);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  user-select: none;
+}
+.ide-row[data-fresh] .ide-num {
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+/* The fresh lines: a flat tonal fill that fades, the text entering once. */
+.ide-row[data-fresh]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--color-layer-2);
+  animation: ide-tint 4200ms linear both;
+}
+.ide-row[data-fresh] .ide-text {
+  animation: ide-line-in var(--dur-300) var(--ease-standard) both;
+  animation-delay: var(--line-delay, 0ms);
+}
+.ide-caret {
+  display: inline-block;
+  inline-size: var(--space-2px);
+  block-size: var(--line-n1);
+  margin-inline-start: var(--space-2px);
+  vertical-align: top;
+  background: var(--color-ink);
+  animation: ide-caret var(--loop-caret) steps(1, end) infinite;
+}
+@keyframes ide-tint {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ide-line-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--space-4px)));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ide-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ide-caret {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+/* Syntax emphasis, JEV ui.syntax_palette two_hue: keywords and strings
+   carry a hue, every other token an ink step. */
+.tok-kw {
+  color: var(--viz-1);
+}
+.tok-str {
+  color: var(--viz-4);
+}
+.tok-com {
+  color: var(--color-ink-subtle);
+}
+.tok-num {
+  color: var(--color-ink);
+}
+.tok-type,
+.tok-tag,
+.tok-prop,
+.tok-attr {
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+.tok-punct {
+  color: var(--color-ink-muted);
+}
+.tok-head,
+.tok-strong {
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ide-row[data-fresh]::before,
+  .ide-caret {
+    animation: none;
+  }
+  .ide-row[data-fresh] .ide-text {
+    animation: ide-fade var(--dur-reduced) linear both;
+  }
+  .ide-node-chevron {
+    transition: none;
+  }
+}
+.app-root[data-motion="off"] .ide-row[data-fresh]::before,
+.app-root[data-motion="off"] .ide-caret {
+  animation: none;
+}
+.app-root[data-motion="off"] .ide-row[data-fresh] .ide-text {
+  animation: ide-fade var(--dur-reduced) linear both;
+}
+.app-root[data-motion="off"] .ide-node-chevron {
+  transition: none;
+}
+
+/* --------------------------------------------------------------- queue */
+/* The task queue: groups by status, one row per task between hairlines. */
+.queue-groups {
+  display: grid;
+  gap: var(--space-20px);
+  min-width: 0;
+}
+.queue-group {
+  display: grid;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+.queue-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8px);
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-muted);
+}
+.queue-count {
+  color: var(--color-ink-subtle);
+}
+.queue-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+.queue-item {
+  min-width: 0;
+}
+.queue-item + .queue-item {
+  border-top: 1px solid var(--color-border);
+}
+a.queue-row {
+  box-sizing: border-box;
+  display: grid;
+  gap: var(--space-4px);
+  min-width: 0;
+  min-height: var(--control-h);
+  padding: var(--space-12px) var(--space-8px);
+  color: var(--color-ink);
+  text-decoration: none;
+  border-radius: var(--radius-4);
 }
 @media (hover: hover) {
-  .tcard:hover {
+  a.queue-row:hover {
     background: var(--state-hover);
   }
 }
-.tcard:active {
+a.queue-row:active {
   background: var(--state-pressed);
-  transform: scale(0.98);
 }
-.tcard:focus-visible {
+a.queue-row:focus-visible {
   outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
-.tcard[data-status="done"],
-.tcard[data-status="cancelled"] {
-  background: var(--color-layer-1);
-}
-@media (hover: hover) {
-  .tcard[data-status="done"]:hover,
-  .tcard[data-status="cancelled"]:hover {
-    background: color-mix(in oklab, var(--color-ink) 8%, var(--color-layer-1));
-  }
-}
-.tcard-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.queue-title {
   min-width: 0;
+  overflow: hidden;
   font-weight: var(--weight-medium);
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.tcard-meta {
+.queue-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   column-gap: var(--space-12px);
-  row-gap: var(--space-2px);
+  row-gap: var(--space-4px);
   min-width: 0;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
 }
-.tcard-meta:empty {
-  display: none;
-}
-.tcard-status {
-  display: inline-flex;
+
+/* One task up close (the sheet opened from a card). */
+.task-sheet {
+  display: grid;
+  gap: var(--space-16px);
   min-width: 0;
 }
-.tcard-round {
-  color: var(--color-ink);
-  font-weight: var(--weight-medium);
+.task-sheet-spec,
+.task-sheet-result {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
-.tcard-deps {
+.task-sheet-block {
+  display: grid;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+.task-sheet-label {
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-muted);
+}
+.task-sheet-chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4px);
+  margin: 0;
   min-width: 0;
 }
-@media (min-width: 640px) {
-  .lane {
-    grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
-    column-gap: var(--space-16px);
-  }
-  .lane-cells:not(:has(.tcard-item)) {
-    display: grid;
-  }
+.task-sheet-list {
+  display: grid;
+  gap: var(--space-8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-@media (min-width: 1280px) {
-  .floor-cols {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    display: grid;
-    grid-template-columns: 320px repeat(4, minmax(0, 1fr));
-    column-gap: var(--space-16px);
-    padding-block: var(--space-8px);
-    background: var(--color-page);
-    border-bottom: 1px solid var(--color-border);
-    font-size: var(--text-n1);
-    line-height: var(--line-n1);
-    font-weight: var(--weight-medium);
-    color: var(--color-ink);
-  }
-  .floor-col {
-    display: inline-flex;
-    align-items: baseline;
-    gap: var(--space-8px);
-    min-width: 0;
-  }
-  .floor-dept:first-child .floor-dept-label {
-    padding-top: var(--space-16px);
-  }
-  .lane {
-    grid-template-columns: 320px minmax(0, 1fr);
-  }
-  .lane-cells {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    column-gap: var(--space-16px);
-  }
-  .lane-cell[data-empty] {
-    display: grid;
-  }
-  /* The column says the status (the card's name says it too). */
-  .tcard-status {
-    display: none;
-  }
-  .tcard-meta:not(:has(.tcard-round)) {
-    display: none;
-  }
+.task-sheet-list > li {
+  display: grid;
+  grid-template-columns: var(--space-16px) minmax(0, 1fr);
+  column-gap: var(--space-8px);
+  align-items: start;
+  min-width: 0;
+}
+.task-sheet-check {
+  display: inline-flex;
+  padding-top: var(--space-4px);
+  color: var(--color-ink-muted);
+}
+.task-sheet-check[data-done] {
+  color: var(--color-success);
 }
 
 /* The asking cat beside its request, its paw up. */
@@ -779,12 +1511,7 @@ button.app-btn-destructive[aria-busy="true"]::after {
 }
 @media (min-width: 768px) {
   .report-figures {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-@media (min-width: 1024px) {
-  .report-figures {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -1214,117 +1941,12 @@ button.app-btn-destructive[aria-busy="true"]::after {
   transition: none;
 }
 
-/* ------------------------------------------------------------- files */
-.files {
-  gap: var(--space-16px);
-}
-.files-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-16px);
-  align-items: start;
-  min-width: 0;
-}
-.files-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.files-list > li {
-  min-width: 0;
-}
-.files-list > li + li {
-  border-top: 1px solid var(--color-border);
-}
-button.files-row,
-button.files-row:enabled:active {
-  box-sizing: border-box;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas:
-    "icon path"
-    "icon meta";
-  column-gap: var(--space-8px);
-  row-gap: var(--space-2px);
-  align-items: start;
-  justify-content: stretch;
-  inline-size: 100%;
-  height: auto;
-  min-height: var(--control-h);
-  padding: var(--space-8px);
-  font: inherit;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  font-weight: var(--weight-regular);
-  color: var(--color-ink);
-  text-align: start;
-  white-space: normal;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-8);
-  transform: none;
-}
-@media (hover: hover) {
-  button.files-row:enabled:hover {
-    background: var(--state-hover);
-    border-color: transparent;
-  }
-}
-button.files-row:enabled:active {
-  background: var(--state-pressed);
-}
-button.files-row[data-selected],
-button.files-row[data-selected]:enabled:active {
-  background: var(--color-layer-2);
-}
-button.files-row:disabled {
-  color: var(--color-ink-muted);
-  background: transparent;
-}
-button.files-row:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: -2px;
-}
-.files-icon {
-  grid-area: icon;
-  display: inline-flex;
-  padding-top: var(--space-2px);
-  color: var(--color-ink-muted);
-}
-.files-path {
-  grid-area: path;
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.files-meta {
-  grid-area: meta;
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: var(--space-12px);
-  min-width: 0;
-  color: var(--color-ink-muted);
-}
-.files-viewer {
-  min-width: 0;
-}
-@media (min-width: 1024px) {
-  .files-body {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  }
-}
-
 /* ------------------------------------------------------------ replay */
 .replay-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-12px);
-  align-items: center;
+  align-items: start;
   min-width: 0;
 }
 .replay-scrub {
@@ -2103,10 +2725,11 @@ button.files-row:focus-visible {
   line-height: var(--line-n1);
   color: var(--color-danger);
 }
-.asset-delete {
+.asset-delete,
+.asset-delete:not(:disabled):not([aria-disabled="true"]):active {
   justify-self: start;
   margin-top: auto;
-  margin-inline-start: calc(-1 * var(--space-12px));
+  padding-inline: 0 var(--space-12px);
 }
 
 /* =========================================================== SECURITY */

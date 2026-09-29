@@ -1,9 +1,10 @@
 // The observation log (JEV: rows, ui.component_recipe an.R21 0.62,
 // motion.choreography reveal): newest first, grouped by the cat that did
-// the work, the way a shift log reads. A new line slides in at the top of
-// its cat's group while the older lines shift down by a layout transform;
-// when another cat acts, a new group slides in above. Under reduced motion
-// lines and groups simply appear.
+// the work, the way a shift log reads. A new line fades in at the top of
+// its cat's group; when another cat acts, a new group fades in above. The
+// log sits under a live office, so nothing in it slides: a layout transform
+// here would replay every time the page above changed height. Under
+// reduced motion lines and groups simply appear.
 import { ROLE_LABEL } from "@mengai/shared";
 import { ProductIcon } from "@mengai/ui/src/product";
 import { AnimatePresence, motion } from "motion/react";
@@ -13,7 +14,7 @@ import { fmtClock } from "../format";
 import { T, useMotionLevel } from "../motion";
 import { timelineLines, type TimelineLine } from "./describe";
 
-const PAGE = 60;
+const PAGE = 30;
 
 interface Group {
   key: number;
@@ -46,16 +47,18 @@ export function Timeline({ state }: { state: RunState }) {
   }
   const groups = groupLines(lines);
   const roleOf = new Map(state.agentOrder.map((id) => state.agents[id]).filter((a) => !!a).map((a) => [a!.name, ROLE_LABEL[a!.role]]));
-  const enter = off ? { opacity: 0 } : { opacity: 0, y: -8 };
-  const shown = { opacity: 1, y: 0, transition: off ? T.reduced : T.base };
+  // A new line fades in where it lands; nothing slides, so the log never
+  // moves when the page above it grows (the office, the feed) and no line
+  // ever leaves the list's box mid-entrance.
+  const enter = { opacity: 0 };
+  const shown = { opacity: 1, transition: off ? T.reduced : T.base };
   const leave = { opacity: 0, transition: off ? T.reduced : T.baseExit };
-  const layout = off ? false : ("position" as const);
   return (
     <div className="timeline">
       <ol className="timeline-list" aria-label="Run timeline, newest first, grouped by cat" aria-live="polite" aria-relevant="additions">
         <AnimatePresence initial={false}>
           {groups.map((g) => (
-            <motion.li key={g.key} layout={layout} className="tl-group" initial={enter} animate={shown} exit={leave} transition={{ layout: T.base }}>
+            <motion.li key={g.key} className="tl-group" initial={enter} animate={shown} exit={leave}>
               <p className="tl-who">
                 <span className="tl-name">{g.who}</span>
                 {roleOf.get(g.who) ? <span>{roleOf.get(g.who)}</span> : null}
@@ -63,7 +66,7 @@ export function Timeline({ state }: { state: RunState }) {
               <ol className="tl-lines">
                 <AnimatePresence initial={false}>
                   {g.lines.map((l) => (
-                    <motion.li key={l.seq} layout={layout} className="timeline-row" initial={enter} animate={shown} exit={leave} transition={{ layout: T.base }}>
+                    <motion.li key={l.seq} className="timeline-row" initial={enter} animate={shown} exit={leave}>
                       <span className="timeline-clock tnum">{fmtClock(l.ts)}</span>
                       <span className="timeline-icon" data-tone={l.tone}>
                         <ProductIcon name={l.icon} size={16} />

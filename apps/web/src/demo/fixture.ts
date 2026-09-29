@@ -19,6 +19,7 @@ import type {
   FileContent,
   FileNodeDTO,
   LlmCallDTO,
+  MeetingKind,
   MengaiEvent,
   Mood,
   ProjectDTO,
@@ -97,6 +98,8 @@ class Script {
   tasks = new Map<string, TaskDTO>();
   rand = rng(20260929);
   callN = 0;
+  /** every version the crew wrote, per path, oldest first: the demo editor shows the one at the player's clock */
+  versions = new Map<string, Array<{ ts: number; content: string | null; by: string; deleted: boolean }>>();
 
   wait(ms: number) {
     this.t += ms;
@@ -275,14 +278,271 @@ class Script {
     return this.emit("handoff", { handoff: { id, runId: DEMO_RUN_ID, taskId, fromAgentId: from, toAgentId: to, toRole, summary, createdAt: this.t } }, from, taskId);
   }
 
-  file(path: string, op: "create" | "update" | "delete", bytes: number, agentId: string) {
-    return this.emit("file.changed", { path, op, bytes }, agentId);
+  /** A file the crew wrote. `content` is the new text (null for a binary or a delete). */
+  file(path: string, op: "create" | "update" | "delete", bytes: number, agentId: string, content: string | null = null) {
+    const list = this.versions.get(path) ?? [];
+    list.push({ ts: this.t, content: op === "delete" ? null : content, by: agentId, deleted: op === "delete" });
+    this.versions.set(path, list);
+    return this.emit("file.changed", { path, op, bytes: content !== null ? content.length : bytes }, agentId);
+  }
+
+  meeting(id: string, kind: MeetingKind, title: string, agentIds: string[], agenda: string[]) {
+    return this.emit("meeting.started", { meetingId: id, kind, title, agentIds, agenda }, agentIds[0] ?? null);
+  }
+
+  endMeeting(id: string, kind: MeetingKind, notes: string[], decisions: string[], by: string) {
+    return this.emit("meeting.ended", { meetingId: id, kind, notes, decisions }, by);
+  }
+
+  ask(id: string, from: string, to: string | null, question: string, taskId: string | null, toOwner = false) {
+    return this.emit("request.raised", { requestId: id, fromAgentId: from, toAgentId: to, question, toOwner }, from, taskId);
+  }
+
+  decide(id: string, by: string, answer: string, approved: boolean, taskId: string | null) {
+    return this.emit("request.decided", { requestId: id, byAgentId: by, byOwner: false, answer, approved }, by, taskId);
   }
 }
 
+// ------------------------------------------------------------ file contents
+// What the crew writes, version by version, so the demo editor shows the
+// code change while you watch: csv.ts is written, reviewed, sent back and
+// fixed; the tests grow; the page gets its Export button.
+
+const DAILY_TS = `export interface DailySalesRow {
+  time: string;
+  item: string;
+  qty: number;
+  unitCents: number;
+  totalCents: number;
+  cashier: string;
+}
+
+/** Sum of the day in cents. */
+export function dayTotal(rows: DailySalesRow[]): number {
+  return rows.reduce((sum, r) => sum + r.totalCents, 0);
+}
+`;
+
+const CSV_TS_V1 = `// RFC 4180 CSV for the daily sales report. Money stays in cents in the
+// data and is formatted only here, at the edge.
+import type { DailySalesRow } from "./daily";
+
+const HEADER = ["time", "item", "qty", "unit_price", "total", "cashier"];
+
+/** Quote a field that holds a comma. */
+export function quoteField(value: string): string {
+  if (!value.includes(",")) return value;
+  return \`"\${value}"\`;
+}
+
+function rupiah(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+export function toCsv(rows: DailySalesRow[]): string {
+  const lines = [HEADER.join(",")];
+  for (const r of rows) {
+    lines.push(
+      [r.time, r.item, String(r.qty), rupiah(r.unitCents), rupiah(r.totalCents), r.cashier]
+        .map(quoteField)
+        .join(","),
+    );
+  }
+  return lines.join("\\r\\n") + "\\r\\n";
+}
+`;
+
+const CSV_TS = `// RFC 4180 CSV for the daily sales report. Money stays in cents in the
+// data and is formatted only here, at the edge.
+import type { DailySalesRow } from "./daily";
+
+const HEADER = ["time", "item", "qty", "unit_price", "total", "cashier"];
+
+/** Quote a field that holds a comma, a quote, CR or LF; double inner quotes. */
+export function quoteField(value: string): string {
+  if (!/[",\\r\\n]/.test(value)) return value;
+  return \`"\${value.replaceAll('"', '""')}"\`;
+}
+
+function rupiah(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+export function toCsv(rows: DailySalesRow[]): string {
+  const lines = [HEADER.join(",")];
+  for (const r of rows) {
+    lines.push(
+      [r.time, r.item, String(r.qty), rupiah(r.unitCents), rupiah(r.totalCents), r.cashier]
+        .map(quoteField)
+        .join(","),
+    );
+  }
+  return lines.join("\\r\\n") + "\\r\\n";
+}
+`;
+
+const CSV_TEST_V1 = `import { describe, expect, test } from "bun:test";
+import { quoteField, toCsv } from "./csv";
+
+const ROW = { time: "09:12", item: "Kopi susu", qty: 2, unitCents: 1800, totalCents: 3600, cashier: "Sari" };
+
+describe("toCsv", () => {
+  test("empty day is a header row only", () => {
+    expect(toCsv([])).toBe("time,item,qty,unit_price,total,cashier\\r\\n");
+  });
+
+  test("writes one line per row", () => {
+    expect(toCsv([ROW, ROW, ROW]).split("\\r\\n").length).toBe(5);
+  });
+
+  test("formats cents at the edge", () => {
+    expect(toCsv([ROW])).toContain("18.00,36.00");
+  });
+
+  test("quotes a comma", () => {
+    expect(quoteField("Teh, manis")).toBe('"Teh, manis"');
+  });
+});
+`;
+
+const CSV_TEST = `import { describe, expect, test } from "bun:test";
+import { quoteField, toCsv } from "./csv";
+
+const ROW = { time: "09:12", item: "Kopi susu", qty: 2, unitCents: 1800, totalCents: 3600, cashier: "Sari" };
+
+describe("toCsv", () => {
+  test("empty day is a header row only", () => {
+    expect(toCsv([])).toBe("time,item,qty,unit_price,total,cashier\\r\\n");
+  });
+
+  test("writes one line per row", () => {
+    expect(toCsv([ROW, ROW, ROW]).split("\\r\\n").length).toBe(5);
+  });
+
+  test("formats cents at the edge", () => {
+    expect(toCsv([ROW])).toContain("18.00,36.00");
+  });
+
+  test("quotes a comma", () => {
+    expect(quoteField("Teh, manis")).toBe('"Teh, manis"');
+  });
+
+  test('doubles quotes in Kopi "Tubruk"', () => {
+    expect(quoteField('Kopi "Tubruk"')).toBe('"Kopi ""Tubruk"""');
+  });
+
+  test("quotes a newline in a note", () => {
+    expect(quoteField("no sugar\\nextra ice")).toBe('"no sugar\\nextra ice"');
+  });
+});
+`;
+
+const REPORT_TSX_V0 = `import type { DailySalesRow } from "../report/daily";
+import { dayTotal } from "../report/daily";
+
+export function ReportToolbar({ day, rows }: { day: Date; rows: DailySalesRow[] }) {
+  return (
+    <div className="toolbar">
+      <h1>Sales for {day.toDateString()}</h1>
+      <span>{rows.length} sales, {(dayTotal(rows) / 100).toFixed(2)} total</span>
+    </div>
+  );
+}
+`;
+
+const REPORT_TSX = `import { format } from "date-fns";
+import type { DailySalesRow } from "../report/daily";
+import { dayTotal } from "../report/daily";
+import { toCsv } from "../report/csv";
+
+export function exportDay(day: Date, rows: DailySalesRow[]) {
+  const blob = new Blob([toCsv(rows)], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = \`sales-\${format(day, "yyyy-MM-dd")}.csv\`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+export function ReportToolbar({ day, rows }: { day: Date; rows: DailySalesRow[] }) {
+  const empty = rows.length === 0;
+  return (
+    <div className="toolbar">
+      <h1>Sales for {day.toDateString()}</h1>
+      <span>{rows.length} sales, {(dayTotal(rows) / 100).toFixed(2)} total</span>
+      <button type="button" className="secondary" disabled={empty} onClick={() => exportDay(day, rows)}>
+        Export CSV
+      </button>
+      {empty ? <p className="hint">No sales on this day, so there is nothing to export.</p> : null}
+    </div>
+  );
+}
+`;
+
+const PACKAGE_JSON_V0 = `{
+  "name": "warung-kas",
+  "private": true,
+  "dependencies": {
+    "react": "19.3.0"
+  }
+}
+`;
+
+const PACKAGE_JSON = `{
+  "name": "warung-kas",
+  "private": true,
+  "dependencies": {
+    "date-fns": "4.1.0",
+    "react": "19.3.0"
+  }
+}
+`;
+
+const BUTTON_MD = `# Export button
+
+One secondary button in the report toolbar.
+
+## States
+
+- Default: Export CSV
+- Hover and pressed: the state layer only
+- Focus: the 2px ink outline
+- Disabled: a day with no sales, with the reason beside it
+- Busy: while the file is written
+- Done: the download itself, no toast
+
+File name: \`sales-YYYY-MM-DD.csv\`, the report date.
+`;
+
+const FIXTURE_EMPTY = `[]
+`;
+
+const FIXTURE_NORMAL = `[
+  { "time": "08:05", "item": "Kopi tubruk", "qty": 1, "unitCents": 1500, "totalCents": 1500, "cashier": "Sari" },
+  { "time": "08:40", "item": "Teh manis", "qty": 2, "unitCents": 800, "totalCents": 1600, "cashier": "Sari" },
+  { "time": "12:15", "item": "Nasi goreng", "qty": 1, "unitCents": 2800, "totalCents": 2800, "cashier": "Budi" }
+]
+`;
+
+const FIXTURE_QUOTED = `[
+  { "time": "09:30", "item": "Kopi \\"Tubruk\\"", "qty": 1, "unitCents": 1500, "totalCents": 1500, "cashier": "Sari" },
+  { "time": "10:02", "item": "Teh, manis", "qty": 3, "unitCents": 800, "totalCents": 2400, "cashier": "Budi" },
+  { "time": "10:45", "item": "Roti bakar", "qty": 1, "unitCents": 2000, "totalCents": 2000, "cashier": "Budi\\nshift 2" }
+]
+`;
+
+/** Files the workspace held before the run started. */
+const BASE_FILES: Record<string, string | null> = {
+  "src/report/daily.ts": DAILY_TS,
+  "src/pages/report.tsx": REPORT_TSX_V0,
+  "package.json": PACKAGE_JSON_V0,
+  "bun.lock": null,
+  "README.md": "# warung-kas\n\nThe till and the daily sales report for a small warung.\n",
+};
+
 export const DEMO_APPROVAL_ID = "appr-install-date-fns";
 
-function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: ApprovalDTO } {
+function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: ApprovalDTO; versions: Script["versions"] } {
   const s = new Script();
   const [kopi, mochi, klepon, tempe, onde, cilok] = DEMO_CATS.map((c) => c.id) as [string, string, string, string, string, string];
 
@@ -337,6 +597,25 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.decision("orch.model", { tier: "balanced" }, "Balanced tier for the engineer tasks", 0.74);
   s.wait(600).spawn(DEMO_CATS[1]!);
   s.wait(200).spawn(DEMO_CATS[2]!);
+
+  // Kickoff: Kopi walks the new hires through the plan at the meeting table.
+  s.wait(300).meeting("m-kickoff", "kickoff", "Kickoff: CSV export", [kopi, mochi, klepon], [
+    "Walk through the 5 tasks and their order",
+    "Agree the CSV columns with the report",
+    "Who reviews and who tests",
+  ]);
+  s.status(kopi, "working", "plan", "Running the kickoff", null, "calm");
+  s.status(mochi, "thinking", "think", "In the kickoff", null, "calm");
+  s.status(klepon, "thinking", "think", "In the kickoff", null, "calm");
+  s.say(kopi, "Mochi takes the serializer, Klepon the button. Tempe reviews, Onde tests, Cilok scans.");
+  s.wait(3200).endMeeting("m-kickoff", "kickoff", [
+    "Columns follow the report: time, item, qty, unit price, total, cashier",
+    "Money stays in cents in the data, formatted only in the file",
+  ], [
+    "Mochi owns the serializer, Klepon the Export button",
+    "Tempe reviews the serializer before anything is wired",
+  ], kopi);
+
   s.wait(300).handoff("h-1", "t-csv", kopi, mochi, "engineer", "Serializer only; keep cents as integers, format at the edge.");
   s.update("t-csv", { status: "running", assigneeId: mochi });
   s.status(mochi, "working", "read", "Reading the report types", "t-csv");
@@ -346,15 +625,20 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.wait(500).tool(mochi, "fs_read", "src/report/daily.ts lines 1 to 120", "Types and the totals helper", { taskId: "t-csv" });
   s.say(mochi, "Rows carry cents as integers. I will format them only when writing the file.");
   s.tool(klepon, "generate_image", "Export button, 8 states, 1024x1024", "1 image, $0.04", { taskId: "t-button", ms: 3200 });
+  s.ask("rq-empty-day", klepon, kopi, "On a day with no sales, should Export be hidden or shown disabled?", "t-button");
+  s.status(klepon, "waiting", "ask", "Asking Kopi about the empty day", "t-button", "calm");
   s.status(mochi, "working", "code", "Writing csv.ts", "t-csv");
-  s.tool(mochi, "fs_write", "src/report/csv.ts (64 lines)", "Created src/report/csv.ts", { taskId: "t-csv" });
-  s.file("src/report/csv.ts", "create", 1840, mochi);
-  s.tool(mochi, "fs_write", "src/report/csv.test.ts (41 lines)", "Created src/report/csv.test.ts", { taskId: "t-csv" });
-  s.file("src/report/csv.test.ts", "create", 1210, mochi);
+  s.tool(mochi, "fs_write", "src/report/csv.ts (31 lines)", "Created src/report/csv.ts", { taskId: "t-csv" });
+  s.file("src/report/csv.ts", "create", 0, mochi, CSV_TS_V1);
+  s.decide("rq-empty-day", kopi, "Shown and disabled, with the reason beside it. A hidden control makes people hunt for it.", true, "t-button");
+  s.status(klepon, "working", "design", "Sketching the Export button", "t-button");
+  s.tool(mochi, "fs_write", "src/report/csv.test.ts (24 lines)", "Created src/report/csv.test.ts", { taskId: "t-csv" });
+  s.file("src/report/csv.test.ts", "create", 0, mochi, CSV_TEST_V1);
   s.status(mochi, "working", "run", "Running the report tests", "t-csv");
   s.tool(mochi, "shell_run", "bun test src/report", "4 pass, 0 fail", { taskId: "t-csv", ms: 2600 });
   s.file("assets/export-button.png", "create", 184_320, klepon);
   s.tool(klepon, "fs_write", "docs/export-button.md", "States and copy written", { taskId: "t-button" });
+  s.file("docs/export-button.md", "create", 0, klepon, BUTTON_MD);
   s.update("t-button", { status: "done", resultSummary: "8 states, empty day copy, file name sales-YYYY-MM-DD.csv" });
   s.status(klepon, "done", "celebrate", "Export button designed", null, "proud");
 
@@ -363,12 +647,37 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.update("t-csv", { status: "review" });
   s.handoff("h-2", "t-csv", mochi, tempe, "reviewer", "csv.ts added, 4 tests pass. Check quoting of commas in item names.");
   s.status(mochi, "waiting", "handoff", "Waiting on review", "t-csv", "calm");
-  s.status(tempe, "working", "review", "Reviewing csv.ts", "t-csv");
-  s.tool(tempe, "fs_read", "src/report/csv.ts lines 1 to 64", "Quote only wraps fields with commas", { taskId: "t-csv" });
-  s.tool(tempe, "shell_run", "bun test src/report", "4 pass, 0 fail", { taskId: "t-csv", ms: 2400 });
-  s.tool(tempe, "submit_review", "fail: 2 notes", "Review failed: quotes inside fields are not doubled; a newline breaks the row", { taskId: "t-csv", ok: true });
+  // The engine opens a review task under the reviewed one; the reviewer works it.
+  s.task("t-rev-1", {
+    title: "Review: Add a CSV serializer for daily sales rows",
+    role: "reviewer",
+    parentId: "t-csv",
+    spec: "Check the serializer against its acceptance checks and run the report tests.",
+    acceptance: ["Header row matches the report columns", "Fields with commas, quotes or newlines are quoted"],
+    createdBy: mochi,
+    priority: 4,
+  });
+  s.update("t-rev-1", { status: "running", assigneeId: tempe });
+  s.status(tempe, "working", "review", "Reviewing csv.ts", "t-rev-1");
+  s.tool(tempe, "fs_read", "src/report/csv.ts lines 1 to 31", "Quote only wraps fields with commas", { taskId: "t-rev-1" });
+  s.tool(tempe, "shell_run", "bun test src/report", "4 pass, 0 fail", { taskId: "t-rev-1", ms: 2400 });
+  s.tool(tempe, "submit_review", "fail: 2 notes", "Review failed: quotes inside fields are not doubled; a newline breaks the row", { taskId: "t-rev-1", ok: true });
+  s.update("t-rev-1", { status: "done", resultSummary: "fail: quotes inside fields are not doubled; a newline breaks the row" });
   s.say(tempe, "A name like Kopi \"Tubruk\" comes out as three columns. Double the quotes and quote newlines too.", mochi);
   s.decision("orch.loop_exit", { exit: "another_round", meets_ask: false }, "Second review round, fix task to Mochi", 0.71);
+  // A failed review calls a short sync at the table before the fix.
+  s.meeting("m-sync", "sync", "Sync: the review sent csv.ts back", [kopi, mochi, tempe], [
+    "What round 1 found",
+    "The fix, and who checks it",
+  ]);
+  s.status(kopi, "working", "plan", "Running the sync", null, "calm");
+  s.wait(2600).endMeeting("m-sync", "sync", [
+    "Embedded quotes are not doubled, and a newline splits a row",
+  ], [
+    "Mochi writes the failing tests first, then fixes quoteField",
+    "Tempe reviews round 2 as soon as the tests pass",
+  ], kopi);
+  s.status(kopi, "waiting", "wait", "Watching the fix", null, "calm");
   s.task("t-fix", {
     title: "Fix quoting of quotes and newlines in CSV fields",
     role: "engineer",
@@ -383,17 +692,28 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.update("t-fix", { status: "running", assigneeId: mochi });
   s.status(tempe, "waiting", "wait", "Waiting on the fix", "t-csv", "calm");
   s.status(mochi, "working", "code", "Fixing field quoting", "t-fix", "focused");
-  s.tool(mochi, "fs_edit", "src/report/csv.test.ts +12 lines", "2 failing tests added", { taskId: "t-fix" });
-  s.file("src/report/csv.test.ts", "update", 1690, mochi);
+  s.tool(mochi, "fs_edit", "src/report/csv.test.ts +8 lines", "2 failing tests added", { taskId: "t-fix" });
+  s.file("src/report/csv.test.ts", "update", 0, mochi, CSV_TEST);
   s.tool(mochi, "fs_edit", "src/report/csv.ts quoteField()", "Quotes doubled, CR and LF quoted", { taskId: "t-fix" });
-  s.file("src/report/csv.ts", "update", 1960, mochi);
+  s.file("src/report/csv.ts", "update", 0, mochi, CSV_TS);
   s.status(mochi, "working", "run", "Running the report tests", "t-fix");
   s.tool(mochi, "shell_run", "bun test src/report", "6 pass, 0 fail", { taskId: "t-fix", ms: 2400 });
   s.update("t-fix", { status: "done", resultSummary: "Quotes doubled, CR and LF quoted, 2 tests added" });
   s.handoff("h-3", "t-csv", mochi, tempe, "reviewer", "Quoting fixed, 6 tests pass.");
-  s.status(tempe, "working", "review", "Second review of csv.ts", "t-csv");
-  s.tool(tempe, "fs_read", "src/report/csv.ts lines 18 to 40", "quoteField handles all four cases", { taskId: "t-csv" });
-  s.tool(tempe, "submit_review", "pass", "Review passed", { taskId: "t-csv" });
+  s.task("t-rev-2", {
+    title: "Review: Add a CSV serializer for daily sales rows, round 2",
+    role: "reviewer",
+    parentId: "t-csv",
+    spec: "Re-check quoting after the fix and run the report tests.",
+    acceptance: ["Quotes doubled", "CR and LF quoted"],
+    createdBy: mochi,
+    priority: 4,
+  });
+  s.update("t-rev-2", { status: "running", assigneeId: tempe });
+  s.status(tempe, "working", "review", "Second review of csv.ts", "t-rev-2");
+  s.tool(tempe, "fs_read", "src/report/csv.ts lines 6 to 12", "quoteField handles all four cases", { taskId: "t-rev-2" });
+  s.tool(tempe, "submit_review", "pass", "Review passed", { taskId: "t-rev-2" });
+  s.update("t-rev-2", { status: "done", resultSummary: "pass: quoteField handles commas, quotes, CR and LF" });
   s.decision("orch.loop_exit", { exit: "exit_done", meets_ask: true }, "Review loop closed after round 2", 0.9);
   s.update("t-csv", { status: "done", attempts: 2, resultSummary: "RFC 4180 serializer, 6 tests, passed review in round 2" });
   s.status(tempe, "done", "celebrate", "Review passed", null, "proud");
@@ -425,12 +745,15 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.status(onde, "working", "code", "Writing 3 fixture days", "t-test");
   s.status(cilok, "working", "scan", "Scanning the diff", "t-scan");
   s.tool(mochi, "fs_edit", "src/pages/report.tsx +18 lines", "Export button added to the toolbar", { taskId: "t-wire" });
-  s.file("src/pages/report.tsx", "update", 5230, mochi);
+  s.file("src/pages/report.tsx", "update", 0, mochi, REPORT_TSX);
   s.tool(onde, "fs_write", "src/report/fixtures/*.json (3 files)", "3 fixtures created", { taskId: "t-test" });
-  s.file("src/report/fixtures/empty-day.json", "create", 64, onde);
-  s.file("src/report/fixtures/normal-day.json", "create", 2210, onde);
-  s.file("src/report/fixtures/quoted-names.json", "create", 1480, onde);
+  s.file("src/report/fixtures/empty-day.json", "create", 0, onde, FIXTURE_EMPTY);
+  s.file("src/report/fixtures/normal-day.json", "create", 0, onde, FIXTURE_NORMAL);
+  s.file("src/report/fixtures/quoted-names.json", "create", 0, onde, FIXTURE_QUOTED);
   s.tool(cilok, "scan_secrets", "diff of 6 files", "0 secrets found", { taskId: "t-scan" });
+  s.ask("rq-install", mochi, kopi, "May I add date-fns 4.1.0 to format the export file name?", "t-wire");
+  s.status(mochi, "waiting", "ask", "Asking Kopi about date-fns", "t-wire", "calm");
+  s.wait(1200).decide("rq-install", kopi, "Yes, pin 4.1.0. The install itself still needs the owner's yes.", true, "t-wire");
   const approval: ApprovalDTO = {
     id: DEMO_APPROVAL_ID,
     runId: DEMO_RUN_ID,
@@ -467,14 +790,19 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
     severity: "low",
   }, cilok);
   s.decision("sec.severity", { severity: "low" }, "Low: dev dependency, not in the shipped bundle", null, false, 12);
+  s.ask("rq-block", cilok, kopi, "Should the low advisory block the run?", "t-scan");
+  s.status(cilok, "waiting", "ask", "Asking Kopi about the advisory", "t-scan", "calm");
+  s.wait(1400).decide("rq-block", kopi, "No. It is a dev dependency and never ships. Log it and move on.", false, "t-scan");
   s.update("t-scan", { status: "done", resultSummary: "No secrets; 1 low advisory in a dev dependency" });
   s.status(cilok, "done", "celebrate", "Scan clean", null, "calm");
   s.wait(4000).emit("approval.resolved", { id: DEMO_APPROVAL_ID, status: "approved" });
   s.emit("automation.action", { capability: "shell", action: "run", target: "bun add date-fns@4.1.0", risk: "destructive", outcome: "ok" }, mochi);
   s.status(mochi, "working", "run", "Installing date-fns", "t-wire");
   s.tool(mochi, "shell_run", "bun add date-fns@4.1.0", "Installed date-fns 4.1.0", { taskId: "t-wire", ms: 3000 });
-  s.file("package.json", "update", 1120, mochi);
+  s.file("package.json", "update", 0, mochi, PACKAGE_JSON);
   s.file("bun.lock", "update", 48_210, mochi);
+  s.ask("rq-suite", onde, kopi, "Run the full suite now, or after Mochi's install lands?", "t-test");
+  s.wait(900).decide("rq-suite", kopi, "After the install. One full run on the final lockfile.", true, "t-test");
   s.tool(mochi, "shell_run", "bun run typecheck", "0 errors", { taskId: "t-wire", ms: 2600 });
   s.update("t-wire", { status: "done", resultSummary: "Export downloads sales-YYYY-MM-DD.csv" });
   s.status(mochi, "done", "celebrate", "Export wired", null, "proud");
@@ -483,7 +811,19 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.update("t-test", { status: "done", resultSummary: "3 fixtures, 31 tests pass" });
   s.status(onde, "done", "celebrate", "Tests pass", null, "proud");
 
-  // Kopi closes the run.
+  // Wrap-up at the table, then Kopi closes the run.
+  s.meeting("m-wrapup", "wrapup", "Wrap-up: CSV export", [kopi, mochi, klepon, tempe, onde, cilok], [
+    "What shipped",
+    "What to watch",
+  ]);
+  s.status(kopi, "working", "plan", "Running the wrap-up", null, "calm");
+  s.wait(3000).endMeeting("m-wrapup", "wrapup", [
+    "Export downloads sales-YYYY-MM-DD.csv, 31 tests pass",
+    "One review round was needed for quoting",
+  ], [
+    "Keep the quoting lesson for the engineer role",
+    "Watch the low advisory in the dev dependency",
+  ], kopi);
   s.status(kopi, "working", "plan", "Writing the report", null, "calm");
   s.tool(kopi, "list_tasks", "run tasks", "6 of 6 done", { input: 5200 });
   s.say(kopi, "Export ships: 6 tasks done, one review round, one install you approved, one low advisory to watch.");
@@ -491,7 +831,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.status(kopi, "done", "celebrate", "Run complete", null, "proud");
   s.emit("run.status", { status: "done", reason: null });
 
-  return { events: s.events, calls: s.calls, approval };
+  return { events: s.events, calls: s.calls, approval, versions: s.versions };
 }
 
 const built = build();
@@ -508,100 +848,76 @@ export const DEMO_WARM_SEQ = (() => {
   return hit ? hit.seq : 1;
 })();
 
-export const DEMO_FILES: FileNodeDTO[] = [
-  {
-    path: "src",
-    name: "src",
-    dir: true,
-    size: 0,
-    mtime: DEMO_T0,
-    children: [
-      {
-        path: "src/pages",
-        name: "pages",
-        dir: true,
-        size: 0,
-        mtime: DEMO_T0,
-        children: [{ path: "src/pages/report.tsx", name: "report.tsx", dir: false, size: 5230, mtime: DEMO_T0 }],
-      },
-      {
-        path: "src/report",
-        name: "report",
-        dir: true,
-        size: 0,
-        mtime: DEMO_T0,
-        children: [
-          { path: "src/report/csv.ts", name: "csv.ts", dir: false, size: 1960, mtime: DEMO_T0 },
-          { path: "src/report/csv.test.ts", name: "csv.test.ts", dir: false, size: 1690, mtime: DEMO_T0 },
-          { path: "src/report/daily.ts", name: "daily.ts", dir: false, size: 3120, mtime: DEMO_T0 },
-        ],
-      },
-    ],
-  },
-  { path: "package.json", name: "package.json", dir: false, size: 1120, mtime: DEMO_T0 },
-];
+/** Every version of every file the crew wrote, oldest first. */
+const VERSIONS: ReadonlyMap<string, ReadonlyArray<{ ts: number; content: string | null; by: string; deleted: boolean }>> = built.versions;
 
-const CSV_TS = `// RFC 4180 CSV for the daily sales report. Money stays in cents in the
-// data and is formatted only here, at the edge.
-import type { DailySalesRow } from "./daily";
-
-const HEADER = ["time", "item", "qty", "unit_price", "total", "cashier"];
-
-/** Quote a field that holds a comma, a quote, CR or LF; double inner quotes. */
-export function quoteField(value: string): string {
-  if (!/[",\\r\\n]/.test(value)) return value;
-  return \`"\${value.replaceAll('"', '""')}"\`;
-}
-
-function rupiah(cents: number): string {
-  return (cents / 100).toFixed(2);
-}
-
-export function toCsv(rows: DailySalesRow[]): string {
-  const lines = [HEADER.join(",")];
-  for (const r of rows) {
-    lines.push(
-      [r.time, r.item, String(r.qty), rupiah(r.unitCents), rupiah(r.totalCents), r.cashier]
-        .map(quoteField)
-        .join(","),
-    );
+/** The final text of each file, for tests and the landing. */
+export const DEMO_FILE_CONTENT: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  for (const [path, content] of Object.entries(BASE_FILES)) if (content !== null) out[path] = content;
+  for (const [path, list] of VERSIONS) {
+    const last = list[list.length - 1];
+    if (last && last.content !== null) out[path] = last.content;
   }
-  return lines.join("\\r\\n") + "\\r\\n";
+  return out;
+})();
+
+/** One file as the workspace held it at `at` (fixture time); null when it did not exist yet. */
+function fileAt(path: string, at: number): { content: string | null; size: number } | null {
+  const list = VERSIONS.get(path) ?? [];
+  let hit: { ts: number; content: string | null; deleted: boolean } | null = null;
+  for (const v of list) if (v.ts <= at) hit = v;
+  if (hit?.deleted) return null;
+  if (hit) return { content: hit.content, size: hit.content?.length ?? sizeOf(path) };
+  if (path in BASE_FILES) {
+    const base = BASE_FILES[path] ?? null;
+    return { content: base, size: base?.length ?? sizeOf(path) };
+  }
+  return null;
 }
-`;
 
-const CSV_TEST = `import { describe, expect, test } from "bun:test";
-import { quoteField, toCsv } from "./csv";
+function sizeOf(path: string): number {
+  let bytes = 0;
+  for (const e of DEMO_EVENTS) if (e.type === "file.changed" && (e as MengaiEvent<"file.changed">).data.path === path) bytes = (e as MengaiEvent<"file.changed">).data.bytes;
+  return bytes || 4096;
+}
 
-describe("toCsv", () => {
-  test("empty day is a header row only", () => {
-    expect(toCsv([])).toBe("time,item,qty,unit_price,total,cashier\\r\\n");
-  });
+/** The workspace tree at `at`, folders first, then files, each by name. */
+export function demoFiles(at: number = Number.POSITIVE_INFINITY): FileNodeDTO[] {
+  const paths = new Set<string>([...Object.keys(BASE_FILES), ...VERSIONS.keys()]);
+  const root: FileNodeDTO[] = [];
+  const dirs = new Map<string, FileNodeDTO>();
+  const dirOf = (path: string): FileNodeDTO[] => {
+    const cut = path.lastIndexOf("/");
+    if (cut < 0) return root;
+    const dirPath = path.slice(0, cut);
+    let dir = dirs.get(dirPath);
+    if (!dir) {
+      dir = { path: dirPath, name: dirPath.slice(dirPath.lastIndexOf("/") + 1), dir: true, size: 0, mtime: DEMO_T0, children: [] };
+      dirs.set(dirPath, dir);
+      dirOf(dirPath).push(dir);
+    }
+    return dir.children!;
+  };
+  for (const path of [...paths].sort()) {
+    const f = fileAt(path, at);
+    if (!f) continue;
+    dirOf(path).push({ path, name: path.slice(path.lastIndexOf("/") + 1), dir: false, size: f.size, mtime: DEMO_T0 });
+  }
+  const sort = (list: FileNodeDTO[]) => {
+    list.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
+    for (const n of list) if (n.children) sort(n.children);
+  };
+  sort(root);
+  return root;
+}
 
-  test("quotes a comma", () => {
-    expect(quoteField("Teh, manis")).toBe('"Teh, manis"');
-  });
+/** The final tree, for tests. */
+export const DEMO_FILES: FileNodeDTO[] = demoFiles();
 
-  test('doubles quotes in Kopi "Tubruk"', () => {
-    expect(quoteField('Kopi "Tubruk"')).toBe('"Kopi ""Tubruk"""');
-  });
-
-  test("quotes a newline in a note", () => {
-    expect(quoteField("no sugar\\nextra ice")).toBe('"no sugar\\nextra ice"');
-  });
-});
-`;
-
-export const DEMO_FILE_CONTENT: Record<string, string> = {
-  "src/report/csv.ts": CSV_TS,
-  "src/report/csv.test.ts": CSV_TEST,
-  "src/report/daily.ts": `export interface DailySalesRow {\n  time: string;\n  item: string;\n  qty: number;\n  unitCents: number;\n  totalCents: number;\n  cashier: string;\n}\n`,
-  "src/pages/report.tsx": `import { toCsv } from "../report/csv";\nimport { format } from "date-fns";\n\nexport function exportDay(day: Date, rows: Parameters<typeof toCsv>[0]) {\n  const blob = new Blob([toCsv(rows)], { type: "text/csv" });\n  const a = document.createElement("a");\n  a.href = URL.createObjectURL(blob);\n  a.download = \`sales-\${format(day, "yyyy-MM-dd")}.csv\`;\n  a.click();\n  URL.revokeObjectURL(a.href);\n}\n`,
-  "package.json": `{\n  "name": "warung-kas",\n  "private": true,\n  "dependencies": {\n    "date-fns": "4.1.0",\n    "react": "19.3.0"\n  }\n}\n`,
-};
-
-export function demoFile(path: string): FileContent {
-  const content = DEMO_FILE_CONTENT[path];
-  if (content === undefined) return { path, content: "", truncated: false, size: 0, binary: true };
-  return { path, content, truncated: false, size: content.length, binary: false };
+export function demoFile(path: string, at: number = Number.POSITIVE_INFINITY): FileContent {
+  const f = fileAt(path, at);
+  if (!f) return { path, content: "", truncated: false, size: 0, binary: false };
+  if (f.content === null) return { path, content: "", truncated: false, size: f.size, binary: true };
+  return { path, content: f.content, truncated: false, size: f.content.length, binary: false };
 }

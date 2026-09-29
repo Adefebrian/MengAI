@@ -1,16 +1,17 @@
 // Run header (JEV ui.component_recipe core.page_header, plain spacing): the
 // goal as the page title, one meta line (status icon plus word, the
-// stream, tasks done, crew size), the budget as a meter with its tabular
-// figure, and the run controls. Stop asks first; Pause never does.
+// stream, the project, crew size, the start clock), and the run controls.
+// The budget and progress live in the status strip right under it. Stop
+// asks first; Pause never does.
 import type { ProjectDTO } from "@mengai/shared";
-import { Meter, ProductIcon, Sheet, StatusPill } from "@mengai/ui/src/product";
+import { ProductIcon, Sheet, StatusPill } from "@mengai/ui/src/product";
 import { useState } from "react";
 import type { Connection, RunState } from "../../store/runStore";
 import { tokensUsed } from "../../store/runStore";
 import { fmtClock, fmtInt, fmtUsd } from "../format";
-import { useAction } from "../hooks";
+import { useAction, useMedia } from "../hooks";
 import { RUN_STATUS, isFinished } from "../status";
-import { taskCounts } from "./derive";
+import { clip } from "./office";
 
 const CONNECTION: Record<Connection, { word: string; icon: "refresh" | "checkCircle" | "infoCircle" | "clock" | "alertCircle" } | null> = {
   idle: null,
@@ -38,20 +39,24 @@ export function RunHeader({
 }) {
   const run = state.run!;
   const look = RUN_STATUS[run.status];
-  const counts = taskCounts(state);
   const used = tokensUsed(run.usage);
-  const share = run.budgetTokens > 0 ? used / run.budgetTokens : 0;
   const conn = CONNECTION[state.connection];
   const act = useAction();
   const [confirm, setConfirm] = useState(false);
   const finished = isFinished(run.status);
   const crew = state.agentOrder.length;
+  // The goal is the page title; a long one is cut at a word so it stays a
+  // title (two lines on a desk, three on a phone), whole in its tooltip and
+  // for assistive tech.
+  const desktop = useMedia("(min-width: 1024px)");
+  const phone = !useMedia("(min-width: 640px)");
+  const shortGoal = clip(run.goal, phone ? 60 : desktop ? 100 : 84);
 
   return (
     <header className="run-head">
       <div className="run-head-text">
-        <h1 className="app-title run-goal" title={run.goal}>
-          {run.goal}
+        <h1 className="app-title run-goal" title={run.goal} aria-label={shortGoal === run.goal ? undefined : run.goal}>
+          {shortGoal}
         </h1>
         <p className="run-meta">
           <StatusPill tone={look.tone} icon={look.icon}>
@@ -63,12 +68,14 @@ export function RunHeader({
               <span>{conn.word}</span>
             </span>
           ) : null}
-          {project ? <span className="run-meta-item">{project.name}</span> : null}
+          {project ? (
+            <span className="run-meta-item">
+              <ProductIcon name="folder" size={16} />
+              <span>{project.name}</span>
+            </span>
+          ) : null}
           <span className="run-meta-item">
-            <span className="tnum">{counts.done} of {counts.total}</span>&nbsp;tasks done
-          </span>
-          <span className="run-meta-item">
-            <span className="tnum">{crew}</span>&nbsp;{crew === 1 ? "cat" : "cats"}
+            <span className="tnum">{crew}</span>&nbsp;{crew === 1 ? "cat" : "cats"} on the crew
           </span>
           {run.startedAt ? (
             <span className="run-meta-item">
@@ -80,15 +87,6 @@ export function RunHeader({
         {run.statusReason && run.status !== "paused" ? <p className="run-note">{run.statusReason}</p> : null}
       </div>
       <div className="run-head-side">
-        <Meter
-          label="Budget used"
-          value={share}
-          valueText={`${fmtInt(used)} of ${fmtInt(run.budgetTokens)} tokens`}
-          tone={share >= 0.9 ? "danger" : share >= 0.75 ? "warning" : "ink"}
-        />
-        <p className="run-cost">
-          <span className="tnum">{fmtUsd(run.usage.costUsd)}</span> of <span className="tnum">{fmtUsd(run.budgetUsd)}</span> spent
-        </p>
         {!finished && !replaying ? (
           <div className="run-actions">
             {run.status === "paused" ? (

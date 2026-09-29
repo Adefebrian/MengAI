@@ -48,6 +48,8 @@ export function taskCounts(state: RunState): { done: number; total: number; revi
   for (const id of state.taskOrder) {
     const t = state.tasks[id];
     if (!t || t.status === "cancelled") continue;
+    // A review task rides under the task it reviews; the count is the work.
+    if (t.role === "reviewer" && t.parentId && state.tasks[t.parentId]) continue;
     total += 1;
     if (t.status === "done") done += 1;
     if (t.status === "review") review += 1;
