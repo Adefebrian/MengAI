@@ -55,7 +55,7 @@ export function Timeline({ state }: { state: RunState }) {
   const leave = { opacity: 0, transition: off ? T.reduced : T.baseExit };
   return (
     <div className="timeline">
-      <ol className="timeline-list" aria-label="Run timeline, newest first, grouped by cat" aria-live="polite" aria-relevant="additions">
+      <ol className="timeline-list" tabIndex={0} data-lenis-prevent="" aria-label="Run timeline, newest first, grouped by cat" aria-live="polite" aria-relevant="additions">
         <AnimatePresence initial={false}>
           {groups.map((g) => (
             <motion.li key={g.key} className="tl-group" initial={enter} animate={shown} exit={leave}>
