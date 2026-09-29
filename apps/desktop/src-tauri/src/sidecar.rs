@@ -2,8 +2,8 @@
 //!
 //! Contract (docs/architecture.md section 17): env MENGAI_MODE=local,
 //! MENGAI_DATA_DIR, MENGAI_WEB_DIR, MENGAI_HANDS_BIN, MENGAI_MIGRATIONS_DIR
-//! (the bundled folder holding sqlite/*.sql; a compiled sidecar cannot find
-//! migrations on its own), optional MENGAI_PORT;
+//! (the bundled folder holding sqlite/*.sql; the sidecar embeds the same SQL
+//! and uses this folder as an explicit override), optional MENGAI_PORT;
 //! exactly one stdout line `{"event":"ready","port":n,"launchToken":..,"controlToken":..}`;
 //! exits on SIGTERM or stdin close. The shell sends SIGTERM on quit and kills
 //! the process group after 3 s.

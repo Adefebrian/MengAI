@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mengai-cats-preview",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["packages/cats/preview/serve.ts", "4191"],
+      "port": 4191
+    },
+    {
+      "name": "mengai-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 4190
+    }
+  ]
+}

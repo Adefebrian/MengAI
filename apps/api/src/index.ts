@@ -1,9 +1,10 @@
 // Server entrypoint (self-hosted web). Validates env, applies migrations,
-// wires the platform and listens. Importing this file has no side effects:
-// the listen only happens when it is run directly.
+// wires every module through core/container.ts and listens. Importing this
+// file has no side effects: the listen only happens when it is run directly.
 import { loadEnv } from "@mengai/config";
-import { bootstrap, type Platform } from "./core/bootstrap";
+import { bootstrap, type BootstrapOptions, type Platform } from "./core/bootstrap";
 import { buildConfig, type BootConfig } from "./core/config";
+import { envFlag } from "./core/container";
 import { UPLOAD_BODY_LIMIT_BYTES } from "./core/hardening";
 import { createAppLogger } from "./core/logger";
 
@@ -29,8 +30,8 @@ export function serve(platform: Platform, boot: BootConfig): ReturnType<typeof B
   });
 }
 
-export async function startServer(boot: BootConfig): Promise<ServerHandle> {
-  const platform = await bootstrap({ boot });
+export async function startServer(boot: BootConfig, opts: Pick<BootstrapOptions, "demo" | "logger"> = {}): Promise<ServerHandle> {
+  const platform = await bootstrap({ boot, ...opts });
   const server = serve(platform, boot);
   platform.ctx.logger.log("info", "api listening", { host: boot.host, port: server.port, mode: boot.app.mode });
   let stopping: Promise<void> | null = null;
@@ -55,7 +56,7 @@ if (import.meta.main) {
   } else {
     const boot = buildConfig(env);
     try {
-      const handle = await startServer(boot);
+      const handle = await startServer(boot, { demo: envFlag(process.env.MENGAI_DEMO) });
       const exit = () => void handle.stop().finally(() => process.exit(0));
       process.on("SIGTERM", exit);
       process.on("SIGINT", exit);

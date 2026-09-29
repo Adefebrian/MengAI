@@ -74,7 +74,7 @@ export async function assertRealSidecar(path: string): Promise<void> {
   if (!isMachO(head)) throw new Error(`sidecar at ${path} is not a Mach-O executable`);
 }
 
-/** The compiled sidecar cannot find migrations on its own; the bundle must carry them (MENGAI_MIGRATIONS_DIR). */
+/** The sidecar embeds these migrations; the bundle also carries the folder, passed as the MENGAI_MIGRATIONS_DIR override. */
 export function assertMigrations(dir: string = sqliteMigrationsDir): string[] {
   if (!existsSync(dir)) throw new Error(`sqlite migrations missing at ${dir}; the app cannot create its database without them`);
   const files = [...new Bun.Glob("*.sql").scanSync({ cwd: dir, onlyFiles: true })].sort();
