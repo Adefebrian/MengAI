@@ -3,7 +3,7 @@
 // five tasks with dependencies, the engineer writes files, the designer drafts
 // copy after a handoff to the researcher, the reviewer rejects once and then
 // approves, QA runs a harmless echo, and the lead writes the final report.
-// No model is called and no key is needed. Each reply waits 700 to 1400 ms so
+// No model is called and no key is needed. Each reply waits 2.2 to 4.2 s so
 // the crew is visibly alive.
 //
 // The router is stateless per request: the role comes from the system prompt
@@ -22,7 +22,7 @@ export const DEMO_PROJECT_NAME = "Whisker Cafe";
 export const DEMO_GOAL =
   "Build a one page landing site for Whisker Cafe, a calm cafe with twelve resident cats: a tagline, menu highlights and visit details, reviewed and smoke checked before launch.";
 /** default pause before each scripted reply, ms */
-export const DEMO_PACE_MS: readonly [number, number] = [700, 1400];
+export const DEMO_PACE_MS: readonly [number, number] = [2200, 4200];
 
 export interface DemoOptions {
   /** pause range per reply in ms (tests use a few ms) */
