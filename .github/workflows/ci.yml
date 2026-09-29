@@ -6,8 +6,9 @@ on:
   pull_request:
 
 jobs:
-  build:
-    runs-on: [self-hosted]
+  bun:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,3 +26,30 @@ jobs:
 
       - name: Module boundary check
         run: bun run check:boundaries
+
+      - name: Dependency audit
+        run: bun audit --audit-level=high
+
+  rust:
+    name: Rust check (desktop shell and native helper)
+    runs-on: macos-14
+    if: ${{ hashFiles('apps/desktop/src-tauri/Cargo.toml', 'services/hands/Cargo.toml') != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check desktop shell
+        if: ${{ hashFiles('apps/desktop/src-tauri/Cargo.toml') != '' }}
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      - name: Check and test native helper
+        if: ${{ hashFiles('services/hands/Cargo.toml') != '' }}
+        run: |
+          cargo check --manifest-path services/hands/Cargo.toml
+          cargo test --manifest-path services/hands/Cargo.toml

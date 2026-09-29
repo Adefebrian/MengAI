@@ -1,0 +1,30 @@
+MengAI
+Copyright 2026 Adefebrian
+
+This product is built and maintained by Adefebrian (https://github.com/adefebrian).
+Any redistribution or derivative work must keep this notice and the credit
+"Built by Adefebrian" wherever attribution notices normally appear.
+
+Lineage and attribution
+-----------------------
+MengAI is a from-scratch rewrite that started from the "catcomp" project
+(internally "Briworkers"): a multi-agent AI orchestration tool whose agents
+were visualised as cats in an office. No source code from that project is
+included in MengAI; its concepts (a crew of AI agents shown as cats, an
+orchestrator that hires, delegates, reviews and reports) are credited here
+as required by the original project's license, which permits modification
+and upgrades as long as credit is kept.
+
+Original project: catcomp / Briworkers (author: Brian, JAL Group).
+If the upstream distribution carries a license notice of its own, that
+notice applies to the concepts credited above and is to be kept alongside
+this file.
+
+Third-party components
+----------------------
+Fonts: Geist and Geist Mono, SIL Open Font License 1.1
+(packages/ui/src/fonts/OFL.txt).
+The JAL Core design system foundation comes from the JAL-AIDev template
+(JAL Group) and is used under its terms.
+Runtime and build dependencies are listed in the package manifests and
+Cargo manifests of this repository, each under its own license.
