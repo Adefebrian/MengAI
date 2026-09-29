@@ -67,6 +67,13 @@ export interface OfficeProps {
   onSelect?: (agentId: string) => void;
   /** "hero" is the compact landing version, "full" the run page */
   variant?: "full" | "hero";
+  /**
+   * The kind of company, which dresses the floor: "studio" is a software
+   * studio (desks with code monitors, a server rack), "fund" is a hedge fund
+   * trading floor (multi-monitor desks with price charts and order books, a
+   * ticker board, a risk committee room). Defaults to "studio".
+   */
+  theme?: "studio" | "fund";
   /** forces still poses and instant moves (reduced motion is detected automatically too) */
   still?: boolean;
   /** accessible summary of what the crew is doing right now */
