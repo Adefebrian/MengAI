@@ -1,8 +1,8 @@
 // The workbench views (sections/Workbench.tsx): what the app shows while
-// the company works. The code editor types Mochi's real change line by line
+// the company works. The code editor types Cemong's real change line by line
 // when it scrolls into view (under 5 s, once per visit, every line shown at
 // once under reduced motion); the timeline fills in step with it. Beside
-// them, Kopi's decision log and the minutes of the last sync. Sample data.
+// them, Oyen's decision log and the minutes of the last sync. Sample data.
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { usePrefersReducedMotion } from "@mengai/ui";
 import { AskIcon, CheckIcon } from "../icons";
@@ -33,13 +33,18 @@ export const EXPORT_CODE = [
   '    ? `"${field.replaceAll(\'"\', \'""\')}"`',
   "    : field;",
   "}",
+  "",
+  "/** The file name for one day of sales. */",
+  "export function fileName(day: string): string {",
+  "  return `sales-${day}.csv`;",
+  "}",
 ];
 
-/** One line per LINE_MS while typing: the rest of the file lands in about 2 s. */
-const LINE_MS = 120;
-/** The file already holds its imports and the header when the tile opens;
- *  Mochi is writing the function. */
-export const START_LINES = 5;
+/** One line per LINE_MS while typing: the new function lands in about 1 s. */
+const LINE_MS = 200;
+/** The file already holds the export and its quoting when the tile opens;
+ *  Cemong is adding the last function, so the editor is never an empty pane. */
+export const START_LINES = 22;
 
 /** Lines typed so far: 0 until the editor is in view, then up to the whole file. */
 export function useTyping(ref: RefObject<HTMLElement | null>, total = EXPORT_CODE.length): number {
@@ -104,9 +109,9 @@ export function EditorView({ typed }: { typed: number }) {
   return (
     <div className="lp-editor">
       <div className="lp-editor-head">
-        <CrewCat id="mochi" activity={done ? "run" : "code"} />
+        <CrewCat id="cemong" activity={done ? "run" : "code"} />
         <span className="lp-row-text">
-          <span className="lp-view-strong">{done ? "Mochi saved the file" : "Mochi is writing"}</span>
+          <span className="lp-view-strong">{done ? "Cemong saved the file" : "Cemong is writing"}</span>
           <span className="kit-num lp-view-muted lp-clip" title={EXPORT_FILE}>
             {EXPORT_FILE}
           </span>
@@ -134,11 +139,11 @@ export function EditorView({ typed }: { typed: number }) {
 }
 
 const EVENTS = [
-  { at: 0, time: "10:12", who: "kopi", what: "planned 6 tasks" },
-  { at: 1, time: "10:13", who: "mochi", what: "opened export.ts" },
-  { at: 8, time: "10:14", who: "mochi", what: "edited export.ts" },
-  { at: 16, time: "10:15", who: "mochi", what: "ran bun test, 12 passed" },
-  { at: 22, time: "10:16", who: "mochi", what: "handed the export to Tempe" },
+  { at: 0, time: "10:12", who: "oyen", what: "planned 6 tasks" },
+  { at: 1, time: "10:13", who: "cemong", what: "opened export.ts" },
+  { at: 8, time: "10:14", who: "cemong", what: "edited export.ts" },
+  { at: 16, time: "10:15", who: "cemong", what: "ran bun test, 12 passed" },
+  { at: 27, time: "10:16", who: "cemong", what: "handed the export to Tempe" },
 ];
 
 export function TimelineView({ typed }: { typed: number }) {
@@ -165,12 +170,12 @@ const DECISIONS = [
   { who: "klepon", ask: "Label it Export CSV?", ok: true },
   { who: "tempe", ask: "Review before tests?", ok: true },
   { who: "cilok", ask: "Scan the new route?", ok: true },
-  { who: "mochi", ask: "Add a new package?", ok: false },
+  { who: "cemong", ask: "Add a new package?", ok: false },
 ];
 
 export function DecisionsView() {
   return (
-    <ol className="lp-rows" aria-label="Kopi's decisions">
+    <ol className="lp-rows" aria-label="Oyen's decisions">
       {DECISIONS.map((d) => (
         <li key={d.ask} className="lp-row">
           <span className="lp-row-text">
@@ -189,7 +194,7 @@ export function DecisionsView() {
 }
 
 export function MinutesView() {
-  const seats = ["kopi", "mochi", "klepon", "onde"];
+  const seats = ["oyen", "cemong", "klepon", "onde"];
   return (
     <div className="lp-minutes">
       <ul className="lp-seats" aria-label="At the sync">
@@ -208,6 +213,14 @@ export function MinutesView() {
         <li className="lp-row lp-row-icon">
           <CheckIcon size={16} color="currentColor" />
           <span className="lp-view-strong">Onde runs the tests next</span>
+        </li>
+        <li className="lp-row lp-row-icon">
+          <CheckIcon size={16} color="currentColor" />
+          <span className="lp-view-strong">Header row: date, item, qty, total</span>
+        </li>
+        <li className="lp-row lp-row-icon">
+          <CheckIcon size={16} color="currentColor" />
+          <span className="lp-view-strong">Tempe reviews it once more</span>
         </li>
       </ol>
     </div>

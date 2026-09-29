@@ -1,6 +1,6 @@
 // What you watch in the app (kit.bento.lead-left, JEV 0.98; tier 2 through
 // mu.R10 typing, choreography reveal): the code editor typing a real change
-// as the lead tile, the live timeline, Kopi's decision log and the minutes
+// as the lead tile, the live timeline, Oyen's decision log and the minutes
 // of the last sync. The editor and the timeline share one typing clock.
 import { useRef } from "react";
 import { BentoGrid, BentoTile } from "@mengai/ui";
@@ -18,7 +18,7 @@ export function WorkbenchSection() {
       title="Watch every line get written"
       lead={
         <>
-          The app shows the office and the work behind it: the file a cat is typing, every event in order, each call Kopi made and the minutes of every meeting.{" "}
+          The app shows the office and the work behind it: the file a cat is typing, every event in order, each call Oyen made and the minutes of every meeting.{" "}
           <a href={WEB_APP_URL}>Open the app</a> to watch a sample run.
         </>
       }
@@ -32,7 +32,7 @@ export function WorkbenchSection() {
           </div>
         }
         title="The code, as it is written"
-        body="Mochi types the change in your own project, and you read every line as it lands."
+        body="Cemong types the change in your own project, and you read every line as it lands."
       />
       <BentoTile
         area="b"
@@ -53,7 +53,7 @@ export function WorkbenchSection() {
             <DecisionsView />
           </div>
         }
-        title="What Kopi decided"
+        title="What Oyen decided"
         body="Each request, and who answered it."
       />
       <BentoTile

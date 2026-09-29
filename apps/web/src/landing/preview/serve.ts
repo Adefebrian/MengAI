@@ -3,6 +3,7 @@
 //   /          the landing
 //   /app*      a plain stub, so the landing's app links resolve
 //   /fonts/*   the vendored faces from packages/ui/src/fonts
+//   /brand/*   the MengAI paw logo from packages/ui/src/brand
 //   bun apps/web/src/landing/preview/serve.ts [port] [outdir]
 // Each load of / rebuilds the bundle, so a reload shows the latest edit.
 import { mkdir, rm } from "node:fs/promises";
@@ -11,6 +12,7 @@ import { join } from "node:path";
 
 const here = import.meta.dir;
 const fonts = join(here, "..", "..", "..", "..", "..", "packages", "ui", "src", "fonts");
+const brand = join(here, "..", "..", "..", "..", "..", "packages", "ui", "src", "brand");
 const port = Number(process.argv[2] ?? process.env.PORT ?? 4310);
 const outdir = process.argv[3] ?? join(tmpdir(), "mengai-landing-preview");
 
@@ -50,6 +52,9 @@ const server = Bun.serve({
     }
     if (/^\/fonts\/[A-Za-z0-9-]+\.woff2$/.test(pathname)) {
       return new Response(Bun.file(join(fonts, pathname.slice("/fonts/".length))), { headers: { "content-type": "font/woff2" } });
+    }
+    if (/^\/brand\/mengai-logo(-\d+)?\.png$/.test(pathname)) {
+      return new Response(Bun.file(join(brand, pathname.slice("/brand/".length))), { headers: { "content-type": "image/png" } });
     }
     if (/^\/[A-Za-z0-9._-]+\.(js|css|map)$/.test(pathname)) {
       const file = Bun.file(join(outdir, pathname.slice(1)));

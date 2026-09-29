@@ -1,36 +1,75 @@
-// Plays the scripted story (script.ts) on one timer: the current step, the
-// loop count, and the queue of one-shot beats the Office scene drains
-// through onBeatDone. The clock runs only while the hero is on screen, the
-// tab is visible, and the visitor has not paused it. Under reduced motion
-// the story rests on its poster step until the visitor presses play, and
-// the scene then moves instantly (still).
+// Plays a scripted story on one timer: the current step, the play count,
+// and the queue of one-shot beats the Office scene drains through
+// onBeatDone. One player serves both stories on the page: the hero's day
+// (script.ts, loops) and the lifecycle (lifecycle.ts, plays once and rests
+// on its last step until the visitor asks for a replay).
+//
+// The clock runs only while the story's element is on screen, the tab is
+// visible, and the visitor has not paused it. Under reduced motion a story
+// rests on its poster step until the visitor presses play or picks a
+// scene, and the scene then moves instantly (still). A paused story is
+// still too, so pause stops every walk and loop in the office (WCAG
+// 2.2.2), not only the clock.
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { OfficeBeat } from "@mengai/cats";
 import { usePrefersReducedMotion } from "@mengai/ui";
-import { POSTER_STEP, STEPS, STORY_MS, beatsFor } from "./script";
+import { POSTER_STEP, START_STEP, STEPS, STORY_MS, beatsFor } from "./script";
 
 /** A beat the scene never reports done leaves the queue after this long. */
-export const BEAT_MAX_MS = 7_000;
+export const BEAT_MAX_MS = 9_000;
 
 export type StoryChoice = "auto" | "play" | "pause";
 
+/** What a player needs from a script: the step times, the loop, the beats. */
+export interface StoryScript {
+  steps: readonly { at: number }[];
+  /** one loop (or the one play), in ms */
+  total: number;
+  start: number;
+  /** the still under reduced motion */
+  poster: number;
+  /** true: wrap to the first step; false: rest on the last step */
+  loop: boolean;
+  beats: (index: number, play: number) => OfficeBeat[];
+}
+
+export const HERO_SCRIPT: StoryScript = {
+  steps: STEPS,
+  total: STORY_MS,
+  start: START_STEP,
+  poster: POSTER_STEP,
+  loop: true,
+  beats: beatsFor,
+};
+
 export interface StoryPlayer {
   index: number;
-  loop: number;
+  /** Counts every loop and every jump; beat ids and the caption key use it. */
+  play: number;
   beats: OfficeBeat[];
   /** The clock is moving right now. */
   running: boolean;
   /** The visitor sees a pause control (true) or a play control (false). */
   playing: boolean;
-  /** Scene moves are instant: reduced motion. */
+  /** A one-play story reached its last step. */
+  ended: boolean;
+  /** Scene moves are instant: reduced motion, or the visitor paused. */
   still: boolean;
+  /** Pause or play; after the end of a one-play story, play it again. */
   toggle: () => void;
+  /** Plays the story from one step, whatever it was doing. */
+  jump: (index: number) => void;
   done: (beatId: string) => void;
 }
 
-/** Delay from `elapsed` ms into the loop until the step after `index` starts. */
-export function nextDelay(index: number, elapsed: number): number {
-  const nextAt = index + 1 < STEPS.length ? STEPS[index + 1]!.at : STORY_MS;
+/** The step a story opens on: its start, or the poster under reduced motion. */
+export function openingStep(reduced: boolean, script: StoryScript = HERO_SCRIPT): number {
+  return reduced ? script.poster : script.start;
+}
+
+/** Delay from `elapsed` ms into the story until the step after `index` starts. */
+export function nextDelay(index: number, elapsed: number, script: StoryScript = HERO_SCRIPT): number {
+  const nextAt = index + 1 < script.steps.length ? script.steps[index + 1]!.at : script.total;
   return Math.max(0, nextAt - elapsed);
 }
 
@@ -39,9 +78,12 @@ function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) setOn(e.isIntersecting);
-    }, { threshold: 0.15 });
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) setOn(e.isIntersecting);
+      },
+      { threshold: 0.15 },
+    );
     io.observe(el);
     return () => io.disconnect();
   }, [ref]);
@@ -58,32 +100,37 @@ function usePageVisible(): boolean {
   return visible;
 }
 
-export function useStory(ref: RefObject<HTMLElement | null>): StoryPlayer {
+export function useStory(ref: RefObject<HTMLElement | null>, script: StoryScript = HERO_SCRIPT): StoryPlayer {
   const reduced = usePrefersReducedMotion();
   const onScreen = useOnScreen(ref);
   const pageVisible = usePageVisible();
   const [choice, setChoice] = useState<StoryChoice>("auto");
-  const [position, setPosition] = useState({ index: POSTER_STEP, loop: 0 });
+  const [position, setPosition] = useState(() => ({ index: openingStep(reduced, script), play: 0, ended: false }));
   const [queue, setQueue] = useState<{ beat: OfficeBeat; born: number }[]>([]);
-  const elapsed = useRef(STEPS[POSTER_STEP]!.at);
+  const elapsed = useRef(script.steps[position.index]!.at);
   const emitted = useRef<string | null>(null);
 
+  const { index, play, ended } = position;
   const wantsPlay = choice === "play" || (choice === "auto" && !reduced);
-  const running = wantsPlay && onScreen && pageVisible;
+  const running = wantsPlay && onScreen && pageVisible && !ended;
 
-  // Enter a step: queue its beats once per loop.
-  const { index, loop } = position;
+  // Enter a step: queue its beats once per play. A new play (a loop or a
+  // jump) starts a fresh queue.
+  const lastPlay = useRef(play);
   useEffect(() => {
     if (!running) return;
-    const key = `${loop}:${index}`;
+    const key = `${play}:${index}`;
     if (emitted.current === key) return;
     emitted.current = key;
     const born = Date.now();
-    const next = beatsFor(index, loop).map((beat) => ({ beat, born }));
-    setQueue((q) => (index === 0 ? next : [...q, ...next]));
-  }, [running, index, loop]);
+    const next = script.beats(index, play).map((beat) => ({ beat, born }));
+    const fresh = lastPlay.current !== play;
+    lastPlay.current = play;
+    setQueue((q) => (fresh ? next : [...q, ...next]));
+  }, [running, index, play, script]);
 
-  // The one timer: advance to the next step, or wrap to a new loop.
+  // The one timer: advance to the next step, wrap to a new loop, or rest
+  // on the last step of a one-play story.
   useEffect(() => {
     if (!running) return;
     const since = Date.now();
@@ -92,29 +139,35 @@ export function useStory(ref: RefObject<HTMLElement | null>): StoryPlayer {
     const timer = setTimeout(() => {
       fired = true;
       const nextIndex = index + 1;
-      if (nextIndex < STEPS.length) {
-        elapsed.current = STEPS[nextIndex]!.at;
-        setPosition({ index: nextIndex, loop });
-      } else {
+      if (nextIndex < script.steps.length) {
+        elapsed.current = script.steps[nextIndex]!.at;
+        setPosition({ index: nextIndex, play, ended: false });
+      } else if (script.loop) {
         elapsed.current = 0;
-        setPosition({ index: 0, loop: loop + 1 });
+        setPosition({ index: 0, play: play + 1, ended: false });
+      } else {
+        elapsed.current = script.total;
+        setPosition({ index, play, ended: true });
       }
-    }, nextDelay(index, start));
+    }, nextDelay(index, start, script));
     return () => {
       clearTimeout(timer);
       // Paused or scrolled away mid-step: keep the time already played.
-      if (!fired) elapsed.current = Math.min(start + (Date.now() - since), STORY_MS - 1);
+      if (!fired) elapsed.current = Math.min(start + (Date.now() - since), script.total - 1);
     };
-  }, [running, index, loop]);
+  }, [running, index, play, script]);
 
   // Beats the scene never reports done still leave the queue.
   useEffect(() => {
     if (queue.length === 0) return;
     const oldest = Math.min(...queue.map((q) => q.born));
-    const timer = setTimeout(() => {
-      const now = Date.now();
-      setQueue((q) => q.filter((x) => now - x.born < BEAT_MAX_MS));
-    }, Math.max(0, oldest + BEAT_MAX_MS - Date.now()));
+    const timer = setTimeout(
+      () => {
+        const now = Date.now();
+        setQueue((q) => q.filter((x) => now - x.born < BEAT_MAX_MS));
+      },
+      Math.max(0, oldest + BEAT_MAX_MS - Date.now()),
+    );
     return () => clearTimeout(timer);
   }, [queue]);
 
@@ -122,18 +175,34 @@ export function useStory(ref: RefObject<HTMLElement | null>): StoryPlayer {
     setQueue((q) => q.filter((x) => x.beat.id !== beatId));
   }, []);
 
+  const jump = useCallback(
+    (to: number) => {
+      const target = Math.max(0, Math.min(to, script.steps.length - 1));
+      elapsed.current = script.steps[target]!.at;
+      setChoice("play");
+      setPosition((p) => ({ index: target, play: p.play + 1, ended: false }));
+    },
+    [script],
+  );
+
   const toggle = useCallback(() => {
+    if (ended) {
+      jump(script.start);
+      return;
+    }
     setChoice(() => (wantsPlay ? "pause" : "play"));
-  }, [wantsPlay]);
+  }, [ended, jump, script.start, wantsPlay]);
 
   return {
     index,
-    loop,
+    play,
     beats: queue.map((q) => q.beat),
     running,
-    playing: wantsPlay,
-    still: reduced,
+    playing: wantsPlay && !ended,
+    ended,
+    still: reduced || !wantsPlay,
     toggle,
+    jump,
     done,
   };
 }

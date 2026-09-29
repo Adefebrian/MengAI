@@ -1,69 +1,68 @@
-// Bring your own API key (custom.divided: JEV ui.component_recipe picked
-// kit.feature-grid.rows at 0.50 with low confidence and the JAL Core
-// divided-section spec as runner-up, so the spec). Three groups between
-// hairline dividers: where the key lives, which providers, which model.
-// The provider list is the real preset list from @mengai/shared.
-import { useId } from "react";
+// Bring your own API key (kit.feature-grid.rows). JEV ui.region_gate keys
+// kept (relevance 2.98, container rows 0.54); ui.component_recipe
+// kit.feature-grid.rows (0.29, low confidence, the top pick kept: the
+// runner-up is not the JAL Core component spec); motion.intensity 0.89,
+// tier 1. Six promises, one per row, each with the value it comes down to:
+// where the key lives, which providers, which model, which tools, and the
+// two trading safety defaults. The provider count is the real preset list
+// from @mengai/shared.
 import { DEFAULT_CHAT_MODEL, PROVIDER_PRESETS } from "@mengai/shared";
-import { Section, SectionHead } from "@mengai/ui";
+import { FeatureGrid, type Feature } from "@mengai/ui";
+import { ActivityIcon, ChartBarIcon, CodeIcon, KeyIcon, RefreshIcon, UserCheckIcon } from "../icons";
 
 /** Chat providers a cat can run on (media and judge presets excluded). */
 export const CHAT_PROVIDERS = PROVIDER_PRESETS.filter((p) => p.caps.includes("chat") && p.protocol !== "jev").map((p) => p.label);
+/** The named presets, without the two custom compatible endpoints. */
+export const NAMED_PROVIDERS = PROVIDER_PRESETS.filter((p) => p.caps.includes("chat") && p.protocol !== "jev" && !p.id.startsWith("custom")).map((p) => p.label);
+
+export const KEY_PROMISES: Feature[] = [
+  {
+    title: "Your keys stay in your keychain",
+    body: "On the Mac a key lives in the macOS Keychain, on your server it is sealed with AES-256-GCM. A cat borrows it for one request and never sees it in a log.",
+    icon: <KeyIcon size={20} color="currentColor" />,
+    meta: "Keychain",
+  },
+  {
+    title: "Any provider you already pay",
+    body: `${NAMED_PROVIDERS.slice(0, 6).join(", ")} and ${NAMED_PROVIDERS.length - 6} more presets, or any OpenAI or Anthropic compatible endpoint, local models included. MengAI never resells a token.`,
+    icon: <RefreshIcon size={20} color="currentColor" />,
+    meta: `${NAMED_PROVIDERS.length} presets`,
+  },
+  {
+    title: `Any model, ${DEFAULT_CHAT_MODEL} by default`,
+    body: `Every cat starts on ${DEFAULT_CHAT_MODEL}. Give Oyen a deeper model and a busy desk a faster one: fast, balanced and deep tiers map to any model id.`,
+    icon: <ActivityIcon size={20} color="currentColor" />,
+    meta: DEFAULT_CHAT_MODEL,
+  },
+  {
+    title: "Your own tools, over MCP and APIs",
+    body: "Connect external MCP servers and the APIs your company already uses. Their keys sit in the same keychain, never in a prompt.",
+    icon: <CodeIcon size={20} color="currentColor" />,
+    meta: "MCP and APIs",
+  },
+  {
+    title: "Paper trading until you say live",
+    body: "A fund starts on paper: every order is simulated, with no real money, until you switch live trading on. Only you can flip that switch.",
+    icon: <ChartBarIcon size={20} color="currentColor" />,
+    meta: "Paper first",
+  },
+  {
+    title: "Live orders wait for your yes",
+    body: "Each live order asks for your approval, unless you set hard limits: a cap per order and per day that no cat can cross.",
+    icon: <UserCheckIcon size={20} color="currentColor" />,
+    meta: "Your approval",
+  },
+];
 
 export function KeysSection() {
-  const headId = useId();
-  const groups = [
-    {
-      title: "Your key stays in your keychain",
-      body: (
-        <>
-          On the Mac, keys live in the macOS Keychain. On your own server they are sealed with <span className="lp-nowrap">AES-256-GCM</span>. A key leaves
-          only inside the request to your provider, and it is scrubbed from every log and tool output.
-        </>
-      ),
-      value: "macOS Keychain",
-      extra: null,
-    },
-    {
-      title: "Any provider",
-      body: "Pick a preset, or point MengAI at any OpenAI or Anthropic compatible endpoint, local models included.",
-      value: `${CHAT_PROVIDERS.length} presets`,
-      extra: (
-        <ul className="lp-providers" aria-label="Provider presets">
-          {CHAT_PROVIDERS.map((label) => (
-            <li key={label}>{label}</li>
-          ))}
-        </ul>
-      ),
-    },
-    {
-      title: `Any model, ${DEFAULT_CHAT_MODEL} by default`,
-      body: `Every cat starts on ${DEFAULT_CHAT_MODEL}. Map the fast, balanced and deep tiers to any model id you like, and give a role its own model when it needs one.`,
-      value: DEFAULT_CHAT_MODEL,
-      extra: null,
-    },
-  ];
   return (
-    <Section id="keys" tone="layer" composition="custom" variant="divided" labelledBy={headId}>
-      <SectionHead
-        id={headId}
-        title="Bring your own API key"
-        lead="MengAI never resells tokens. You plug in a key from the provider you already pay, and it stays yours."
-      />
-      <ul className="lp-divided">
-        {groups.map((g) => (
-          <li key={g.title} className="lp-divided-row" data-motion="rise">
-            <h3 className="kit-title">{g.title}</h3>
-            <div className="lp-divided-body">
-              <p className="kit-body">{g.body}</p>
-              {g.extra}
-            </div>
-            <p className="lp-divided-value">
-              <span className="kit-num">{g.value}</span>
-            </p>
-          </li>
-        ))}
-      </ul>
-    </Section>
+    <FeatureGrid
+      id="keys"
+      tone="layer"
+      variant="rows"
+      title="Bring your own API key"
+      lead="The cats work on your keys, your models and your tools. Nothing is resold, and nothing leaves the vault except the call itself."
+      items={KEY_PROMISES}
+    />
   );
 }

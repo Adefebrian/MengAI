@@ -1,49 +1,50 @@
 // MengAI landing at "/": a professional SaaS page that sells an autonomous
 // AI agent company where every agent is a living cat. Composed from the
 // JAL Core kit. The direction contract for this surface is direction.md in
-// this folder (the new-hire handbook form on D5 knobs, JEV
-// ui.direction_screen re-roll 1, pool of one, key abaae16c).
+// this folder (the new-hire handbook form on D5 knobs).
 //
 // Ledger (composition.variant, in page order), validatePageRecipe gives []:
-//   masthead.split     the claim beside the live office (Opening move)
-//   custom.steps       how the company runs itself, pinned from 1024
-//   bento.lead-left    the editor, the timeline, decisions and minutes
-//   custom.divided     bring your own API key
-//   bento.lead-right   the measured token numbers around the chart
-//   feature-grid.cells privacy and security
-//   faq.open           plain answers
-//   cta-band.split     the close, with the credit and the license
-// JEV ui.region_gate dropped the footer region (relevance 1.01), so the
-// credit and license live in the close.
+//   masthead.left        the claim over the living office (JEV 0.33, measured)
+//   custom.lifecycle     one goal grows a whole company, studio or fund
+//   bento.lead-left      the editor, the timeline, decisions and minutes
+//   feature-grid.rows    bring your own API key, tools and trading safety
+//   bento.lead-right     the measured token numbers around the chart
+//   feature-grid.cells   privacy and security
+//   faq.split            questions, answered plainly
+//   cta-band.split       the close
+//   footer.inline        logo, product links, open source, credit, license
 import { useEffect } from "react";
 import { AppShell, Masthead, Page, type AppShellDestination, type RecipeEntry } from "@mengai/ui";
+import { Brand } from "./brand";
 import { HeroOffice } from "./hero/HeroOffice";
 import { CodeIcon, DownloadIcon, KeyIcon, PlayIcon, ShieldIcon, UsersIcon } from "./icons";
 import { DOWNLOAD_URL, WEB_APP_URL } from "./links";
 import { CloseSection } from "./sections/Close";
-import { CompanySection } from "./sections/Company";
 import { KeysSection } from "./sections/Keys";
+import { LifecycleSection } from "./sections/Lifecycle";
 import { QuestionsSection } from "./sections/Questions";
 import { SecuritySection } from "./sections/Security";
+import { SiteFooter } from "./sections/SiteFooter";
 import { TokensSection } from "./sections/Tokens";
 import { WorkbenchSection } from "./sections/Workbench";
 import "./landing.css";
 
 export const LANDING_LEDGER: RecipeEntry[] = [
-  "masthead.split",
-  "custom.steps",
+  "masthead.left",
+  "custom.lifecycle",
   "bento.lead-left",
-  "custom.divided",
+  "feature-grid.rows",
   "bento.lead-right",
   "feature-grid.cells",
-  "faq.open",
+  "faq.split",
   "cta-band.split",
+  "footer.inline",
 ];
 
-/** JEV ui.tagline t5 (0.68). */
-export const TAGLINE = "A company of cats that ships your code.";
+/** JEV ui.tagline h1 (0.49, low confidence, the top pick kept). */
+export const TAGLINE = "Hire a whole company of AI cats.";
 
-export const LEAD = "Kopi, the CEO cat, plans your goal. The crew builds at their own desks, meets and reviews every change before it reaches you.";
+export const LEAD = "Give Oyen, the CEO cat, one goal. Oyen plans it, hires the cats it needs, and the crew builds, reviews and ships it while you watch.";
 
 export const BYOK = {
   title: "Bring your own API key.",
@@ -57,7 +58,7 @@ const DESTINATIONS: AppShellDestination[] = [
   { id: "security", label: "Security", href: "#security", icon: <ShieldIcon size={24} color="currentColor" /> },
 ];
 
-const TITLE = "MengAI: a company of cats that ships your code";
+const TITLE = "MengAI: hire a whole company of AI cats";
 
 export function Landing() {
   useEffect(() => {
@@ -73,7 +74,7 @@ export function Landing() {
       <Page direction="D5" rhythm="default" motion="quiet">
         <AppShell
           title="MengAI"
-          brand={<span className="lp-mark">MengAI</span>}
+          brand={<Brand />}
           brandHref="#top"
           destinations={DESTINATIONS}
           current=""
@@ -83,7 +84,7 @@ export function Landing() {
         >
           <Masthead
             id="top"
-            variant="split"
+            variant="left"
             title={TAGLINE}
             lead={LEAD}
             actions={
@@ -103,15 +104,16 @@ export function Landing() {
                 </p>
               </>
             }
-            media={<HeroOffice />}
+            proof={<HeroOffice />}
           />
-          <CompanySection />
+          <LifecycleSection />
           <WorkbenchSection />
           <KeysSection />
           <TokensSection />
           <SecuritySection />
           <QuestionsSection />
           <CloseSection />
+          <SiteFooter />
         </AppShell>
       </Page>
     </div>

@@ -1,9 +1,10 @@
 /* MengAI landing. Styles for the landing's own parts only: every kit
-   composition keeps kit.css. Tokens by name only; the five type roles of
-   the kit (display, heading, title 19, body 16, meta 13) and nothing else.
-   Direction: D5 calm_productivity knobs with the product accent (see
-   direction.md in this folder). No gradients, no shadows, no side lines,
-   transform and opacity only, reduced motion rests every part. */
+   composition keeps kit.css, and every control keeps its JAL Core spec in
+   ui.css (jal-segmented, jal-icon-btn). Tokens by name only; the five type
+   roles of the kit (display, heading, title 19, body 16, meta 13) and
+   nothing else. Direction: D5 calm_productivity knobs with the product
+   accent (see direction.md in this folder). No gradients, no shadows, no
+   side lines, transform and opacity only, reduced motion rests every part. */
 
 /* ---------------------------------------------------------------------
  * Direction knob delta: one accent product-wide. D5 names red-orange; the
@@ -15,16 +16,29 @@
   --color-accent-contrast: var(--color-surface);
   --kit-link: var(--color-accent);
   /* D5 sets -0.01em; -0.025em (inside the -0.01 to -0.04 range) keeps the
-     39-character headline on two lines in the five-column text measure. */
+     headline on two lines in the five-column text measure. */
   --tracking-display: -0.025em;
 }
 
+/* The mark: the paw logo at 28 px beside the wordmark, header and footer. */
 .lp .lp-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
   font-size: var(--text-1);
   line-height: var(--line-1);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-title);
   color: var(--color-ink);
+}
+
+.lp .lp-mark-logo {
+  display: block;
+  flex: none;
+  /* the wordmark's own line box, so the mark and the word share one height */
+  inline-size: var(--line-1);
+  block-size: var(--line-1);
 }
 
 /* Shared helpers */
@@ -71,9 +85,15 @@
 }
 
 /* ---------------------------------------------------------------------
- * Hero office: the frame, then the story bar under it.
+ * Hero office: the living office (the Office scene draws its own floor
+ * plate, so no frame around it; JEV ui.region_gate plain_spacing), then
+ * the story bar under it.
  * ------------------------------------------------------------------- */
 .lp .lp-hero-office {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-inside);
+  margin: 0;
   min-width: 0;
 }
 
@@ -83,11 +103,6 @@
   align-items: center;
   column-gap: var(--space-12px);
   min-width: 0;
-}
-
-.lp .lp-story-toggle {
-  inline-size: var(--control-h);
-  padding: 0;
 }
 
 .lp .lp-story-text {
@@ -121,268 +136,501 @@
 }
 
 /* ---------------------------------------------------------------------
- * DeskFloor: the flat office plan (the landing's rendition of Office).
- * Rooms are surface cells with one full hairline on the layer-1 floor.
+ * Lifecycle: the tracker, the full floor, then the head card beside the
+ * scene list (1024 and up) or under it.
  * ------------------------------------------------------------------- */
-.lp .lp-floor {
-  box-sizing: border-box;
+.lp .lp-life-stage {
+  grid-column: 1 / -1;
   display: grid;
-  inline-size: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-group);
   min-width: 0;
-  padding: var(--space-8px);
-  background: var(--color-layer-1);
 }
 
-.lp .lp-floor-plan {
+/* The company switch: two 44 px segments in one control boundary. */
+.lp .lp-kinds {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  /* On a phone the first desk row leads, so the opening handoff between
-     Mochi and Tempe is inside the first screen. */
-  grid-template-areas:
-    "d1 d2 d3"
-    "ceo ceo ceo"
-    "meet meet meet"
-    "d4 d5 pantry";
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  inline-size: 100%;
+  max-inline-size: 400px;
+  min-width: 0;
+  background: var(--color-border-control);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--kit-radius-control);
+}
+
+.lp .lp-kind {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: var(--space-8px);
+  inline-size: 100%;
+  min-width: 0;
+  block-size: var(--control-h);
+  padding: 0 var(--space-8px);
+  background: var(--color-surface);
+  border: 0;
+  border-radius: 0;
+  color: var(--color-ink);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.lp .lp-kind:first-child {
+  border-start-start-radius: calc(var(--kit-radius-control) - 1px);
+  border-end-start-radius: calc(var(--kit-radius-control) - 1px);
+}
+
+.lp .lp-kind:last-child {
+  border-start-end-radius: calc(var(--kit-radius-control) - 1px);
+  border-end-end-radius: calc(var(--kit-radius-control) - 1px);
+}
+
+.lp .lp-kind-icon {
+  display: none;
+}
+
+.lp .lp-kind[aria-pressed="true"] {
+  background: var(--color-layer-2);
+  font-weight: var(--weight-semibold);
+}
+
+/* The base JAL button paints every enabled button with the primary ink on
+   hover and press: the segments override the fill and the border in both
+   states and take the state layer instead. */
+.lp .lp-kind:enabled:hover,
+.lp .lp-kind:enabled:active {
+  background: var(--color-surface);
+  border-color: transparent;
+  color: var(--color-ink);
+  transform: none;
+}
+
+@media (hover: hover) {
+  .lp .lp-kind[aria-pressed="false"]:enabled:hover {
+    background: var(--state-hover);
+  }
+}
+
+.lp .lp-kind[aria-pressed="false"]:enabled:active {
+  background: var(--state-pressed);
+}
+
+.lp .lp-kind[aria-pressed="true"]:enabled:hover,
+.lp .lp-kind[aria-pressed="true"]:enabled:active {
+  background: var(--color-layer-2);
+}
+
+.lp .lp-kind:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (min-width: 640px) {
+  .lp .lp-kind {
+    padding: 0 var(--space-16px);
+  }
+  .lp .lp-kind-icon {
+    display: inline-flex;
+  }
+}
+
+/* The tracker: a divided section, a hairline above and below. */
+.lp .lp-track {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-related);
+  padding-block: var(--kit-gap-related);
+  min-width: 0;
+  border-block: 1px solid var(--color-border);
+}
+
+.lp .lp-track-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-width: 0;
+}
+
+.lp .lp-track-meta {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-12px);
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+/* The status line keeps room for its longest caption (90 characters at
+   most), so a new scene never moves the floor under it: three body lines
+   on a phone, two title lines from 640, one from 1024. */
+.lp .lp-track-status {
+  margin: 0;
+  min-block-size: calc(3 * var(--line-0));
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  text-wrap: pretty;
+  animation: lp-fade-in var(--dur-200) var(--ease-standard);
+}
+
+@media (min-width: 640px) {
+  .lp .lp-track-status {
+    min-block-size: calc(2 * var(--line-1));
+    font-size: var(--text-1);
+    line-height: var(--line-1);
+    letter-spacing: var(--tracking-title);
+  }
+}
+
+@media (min-width: 1024px) {
+  .lp .lp-track-status {
+    min-block-size: var(--line-1);
+  }
+}
+
+/* Seven stage cells, one row at every width: icons only below 768, the
+   label and the state word from 768. State is an icon plus a word on a
+   tonal fill or a status surface inside a full hairline, never a stripe. */
+.lp .lp-cells {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-4px);
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
-.lp .lp-floor-room {
+.lp .lp-cell {
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4px);
+  display: grid;
+  place-items: center;
+  min-block-size: var(--space-40px);
   min-width: 0;
-  padding: var(--space-8px);
+  padding: var(--space-8px) var(--space-4px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-4);
+  border-radius: var(--kit-radius-control);
+  color: var(--color-ink-muted);
+}
+
+.lp .lp-cell-icon {
+  display: inline-flex;
+  color: var(--color-ink-subtle);
+  animation: lp-fade-in var(--dur-150) var(--ease-standard);
+}
+
+.lp .lp-cell-text {
+  display: none;
+}
+
+.lp .lp-cell-label {
+  color: var(--color-ink);
+  font-weight: var(--weight-medium);
+}
+
+.lp .lp-cell[data-state="done"] {
+  background: var(--color-layer-1);
+}
+
+.lp .lp-cell[data-state="done"] .lp-cell-icon {
+  color: var(--color-success);
+}
+
+.lp .lp-cell[data-state="now"] {
+  border-color: var(--color-ink);
+}
+
+.lp .lp-cell[data-state="now"] .lp-cell-icon {
+  color: var(--kit-link);
+}
+
+.lp .lp-cell[data-state="back"] {
+  background: var(--color-warning-surface);
+  border-color: var(--color-warning-border);
+}
+
+.lp .lp-cell[data-state="back"] .lp-cell-icon,
+.lp .lp-cell[data-state="back"] .lp-cell-state {
+  color: var(--color-warning);
+}
+
+@media (min-width: 768px) {
+  .lp .lp-cells {
+    gap: var(--space-8px);
+  }
+  .lp .lp-cell {
+    grid-template-rows: auto auto;
+    place-items: start;
+    align-content: start;
+    row-gap: var(--space-8px);
+    padding: var(--space-12px);
+  }
+  .lp .lp-cell-text {
+    display: grid;
+    row-gap: var(--space-2px);
+    min-width: 0;
+    font-size: var(--text-n1);
+    line-height: var(--line-n1);
+    overflow-wrap: anywhere;
+  }
+  .lp .lp-cell[data-state="now"] .lp-cell-label {
+    font-weight: var(--weight-semibold);
+  }
+}
+
+.lp .lp-life-office {
+  min-width: 0;
+}
+
+/* The head card and the scene list. */
+.lp .lp-life-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-group);
+  align-items: start;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .lp .lp-life-panels {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    column-gap: var(--kit-gutter);
+  }
+}
+
+.lp .lp-head {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-related);
+  min-width: 0;
+  padding: var(--kit-inset);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-card);
+}
+
+.lp .lp-head-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-width: 0;
+}
+
+.lp .lp-head-title {
+  display: grid;
+  min-width: 0;
+}
+
+.lp .lp-head-status,
+.lp .lp-head-note {
+  margin: 0;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
 }
 
-.lp .lp-floor-who {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-4px);
-  min-width: 0;
-}
-
-.lp .lp-floor-seat {
-  display: inline-flex;
-  flex: none;
-}
-
-.lp .lp-floor-chair {
-  box-sizing: border-box;
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  inline-size: var(--space-48px);
-  block-size: var(--space-48px);
-  color: var(--color-ink-subtle);
-}
-
-.lp .lp-floor-name {
+.lp .lp-head-rows {
   display: grid;
+  margin: 0;
   min-width: 0;
-  max-inline-size: 100%;
+  border-block-start: 1px solid var(--color-border);
 }
 
-.lp .lp-floor-strong {
+.lp .lp-head-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-4px);
+  padding-block: var(--space-12px);
+  min-width: 0;
+  border-block-end: 1px solid var(--color-border);
+}
+
+@media (min-width: 640px) {
+  .lp .lp-head-row {
+    grid-template-columns: var(--space-96px) minmax(0, 1fr);
+    column-gap: var(--kit-gutter);
+  }
+}
+
+.lp .lp-head-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-8px);
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-0);
   font-weight: var(--weight-medium);
-  color: var(--color-ink);
-}
-
-.lp .lp-floor-muted {
   color: var(--color-ink-muted);
 }
 
-.lp .lp-floor-name > .lp-floor-muted,
-.lp .lp-floor-line,
-.lp .lp-floor-file {
-  display: none;
+.lp .lp-new {
+  font-weight: var(--weight-semibold);
+  color: var(--kit-link);
 }
 
-.lp .lp-floor-line,
-.lp .lp-floor-file,
-.lp .lp-floor-clip,
-.lp .lp-floor-chip-text,
-.lp .lp-floor-task {
-  min-width: 0;
+.lp .lp-head-value {
+  display: grid;
+  row-gap: var(--space-2px);
   margin: 0;
+  min-width: 0;
+}
+
+.lp .lp-head-text {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  color: var(--color-ink);
+}
+
+/* A value the story just changed fades in (opacity only, so it never
+   crosses the evidence line under it on the way in). */
+.lp .lp-head-row[data-fresh] .lp-head-text {
+  animation: lp-fade-in var(--dur-200) var(--ease-standard);
+}
+
+.lp .lp-head-evidence {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+/* The scene list: rows of 44 px buttons in one bordered container, the
+   rules between them drawn by the list's own gap, the current scene on
+   the tonal layer-2 fill. */
+.lp .lp-scenes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--kit-gap-related);
+  min-width: 0;
+}
+
+.lp .lp-scene-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-card);
+}
+
+.lp .lp-scene-list > li {
+  display: grid;
+  min-width: 0;
+}
+
+.lp .lp-scene {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: var(--space-48px) minmax(0, 1fr);
+  justify-items: start;
+  align-items: center;
+  column-gap: var(--space-12px);
+  inline-size: 100%;
+  block-size: var(--control-h);
+  padding: 0 var(--space-16px);
+  background: var(--color-surface);
+  border: 0;
+  border-radius: 0;
+  color: var(--color-ink-muted);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-regular);
+  text-align: start;
+}
+
+.lp .lp-scene-clock {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp .lp-scene-name {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.lp .lp-floor-file {
-  font-family: var(--kit-font-mono);
-  color: var(--color-ink-subtle);
-}
-
-.lp .lp-floor-slot {
-  display: flex;
-  align-items: center;
-  flex: none;
-  block-size: var(--space-32px);
-  margin-block-start: auto;
-  min-width: 0;
-}
-
-.lp .lp-floor-chip,
-.lp .lp-floor-task {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4px);
-  max-inline-size: 100%;
-  min-width: 0;
-  padding: var(--space-2px) var(--space-8px);
-  border-radius: var(--radius-4);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-}
-
-.lp .lp-floor-task {
-  display: block;
+.lp .lp-scene[aria-current="step"] {
   background: var(--color-layer-2);
-  color: var(--color-ink-muted);
+  color: var(--color-ink);
+  font-weight: var(--weight-semibold);
 }
 
-.lp .lp-floor-chip {
+/* The base JAL button paints every enabled button with the primary ink on
+   hover and press: the scene rows override the fill and the border in
+   both states and take the state layer instead. */
+.lp .lp-scene:enabled:hover,
+.lp .lp-scene:enabled:active {
   background: var(--color-surface);
-  border: 1px solid var(--color-border-strong);
+  border-color: transparent;
   color: var(--color-ink);
+  transform: none;
 }
 
-.lp .lp-floor-chip[data-tone="approved"],
-.lp .lp-floor-chip[data-tone="passed"] {
-  background: var(--color-success-surface);
-  border-color: var(--color-success-border);
-  color: var(--color-success);
+@media (hover: hover) {
+  .lp .lp-scene:not([aria-current="step"]):enabled:hover {
+    background: var(--state-hover);
+  }
 }
 
-.lp .lp-floor-roomname {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4px);
-  min-width: 0;
-  margin: 0;
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
+.lp .lp-scene:not([aria-current="step"]):enabled:active {
+  background: var(--state-pressed);
 }
 
-/* The meeting table and the pantry counter: one flat layer-2 surface the
-   cats sit at, filling what the room has left. */
-.lp .lp-floor-table {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: center;
-  justify-content: center;
-  gap: var(--space-4px);
-  flex: 1 1 auto;
-  min-width: 0;
-  min-block-size: var(--space-48px);
-  padding: var(--space-4px);
-  border-radius: var(--radius-4);
+.lp .lp-scene[aria-current="step"]:enabled:hover,
+.lp .lp-scene[aria-current="step"]:enabled:active {
   background: var(--color-layer-2);
 }
 
-.lp .lp-floor-notes {
-  display: grid;
-  align-content: center;
-  flex: 1 1 auto;
-  margin: 0;
-  padding: var(--space-4px) var(--space-8px);
-  list-style: none;
-  min-width: 0;
-  border-radius: var(--radius-4);
-  background: var(--color-layer-2);
-  color: var(--color-ink);
-}
-
-.lp .lp-floor-foot {
-  margin-block-start: auto;
-}
-
-/* The CEO office: Kopi beside the whiteboard, the answer slot under both. */
-.lp .lp-floor-ceo {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: var(--space-12px);
-  row-gap: var(--space-4px);
-  align-items: start;
-}
-
-.lp .lp-floor-ceo > .lp-floor-slot {
-  grid-column: 1 / -1;
-}
-
-.lp .lp-floor-board {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.lp .lp-floor-board > li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: var(--space-8px);
-  min-width: 0;
-  color: var(--color-ink);
-}
-
-.lp .lp-floor-board > li[data-status="done"] {
-  color: var(--color-ink-subtle);
-}
-
-.lp .lp-floor-status {
-  color: var(--color-ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.lp .lp-floor-board > li[data-status="done"] .lp-floor-status {
-  color: var(--color-ink-subtle);
-}
-
-
-@media (min-width: 640px) {
-  .lp .lp-floor {
-    padding: var(--space-12px);
-  }
-  .lp .lp-floor-plan {
-    grid-template-areas:
-      "ceo ceo meet"
-      "d1 d2 d3"
-      "d4 d5 pantry";
-    gap: var(--space-8px);
-  }
-  .lp .lp-floor-room {
-    padding: var(--space-12px);
-  }
-  .lp .lp-floor-who {
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-8px);
-  }
-  .lp .lp-floor-name > .lp-floor-muted,
-  .lp .lp-floor-line,
-  .lp .lp-floor-file {
-    display: block;
-  }
+.lp .lp-scene:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
 }
 
 /* ---------------------------------------------------------------------
- * Live views (company steps and workbench tiles): rows between hairlines,
+ * Secondary actions: the base button paints the border ink on hover and
+ * press (button:enabled:hover and .btn:hover set border-color, and
+ * .btn-secondary only resets the fill). The landing's secondary actions
+ * keep their own hairline in every state.
+ * ------------------------------------------------------------------- */
+@media (hover: hover) {
+  .lp .btn-secondary:not(:disabled):not([aria-disabled="true"]):hover {
+    background: var(--state-hover);
+    border-color: var(--color-border-strong);
+    color: var(--color-ink);
+  }
+}
+
+.lp .btn-secondary:not(:disabled):not([aria-disabled="true"]):active {
+  background: var(--state-pressed);
+  border-color: var(--color-border-strong);
+  color: var(--color-ink);
+}
+
+/* ---------------------------------------------------------------------
+ * Live views (the workbench tiles): rows between hairlines,
  * a cat at the start of a row, tabular mono for times and files.
  * ------------------------------------------------------------------- */
 .lp .lp-view {
@@ -557,234 +805,6 @@
 }
 
 /* ---------------------------------------------------------------------
- * Company: five steps beside one stage, pinned from 1024.
- * ------------------------------------------------------------------- */
-.lp .lp-steps {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: subgrid;
-  column-gap: var(--kit-gutter);
-  row-gap: var(--kit-gap-group);
-  min-width: 0;
-  --lp-steps-top: calc(var(--shell-header-h, 57px) + var(--kit-gap-group));
-  --lp-steps-h: calc(100svh - var(--lp-steps-top) - var(--kit-gap-group));
-  --lp-steps-step: 56svh;
-}
-
-.lp .lp-steps-track,
-.lp .lp-steps-pin {
-  display: none;
-}
-
-.lp .lp-steps-flow {
-  grid-column: 1 / -1;
-  display: grid;
-  row-gap: var(--kit-gap-group);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.lp .lp-steps-note {
-  grid-column: 1 / -1;
-  margin: 0;
-}
-
-.lp .lp-flow-step {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--kit-gap-inside);
-  align-content: start;
-  min-width: 0;
-}
-
-.lp .lp-flow-step > .kit-media {
-  margin-block-start: var(--kit-gap-inside);
-}
-
-.lp .lp-step-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8px);
-  margin: 0;
-  min-width: 0;
-}
-
-.lp .lp-step-icon {
-  display: inline-flex;
-  flex: none;
-  color: var(--kit-link);
-}
-
-@media (min-width: 640px) {
-  .lp .lp-flow-step {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-    column-gap: var(--kit-gutter);
-    align-items: start;
-  }
-  .lp .lp-flow-step > .lp-step-title,
-  .lp .lp-flow-step > .kit-body {
-    grid-column: 1;
-  }
-  .lp .lp-flow-step > .kit-media {
-    grid-column: 2;
-    grid-row: 1 / span 3;
-    margin-block-start: 0;
-  }
-}
-
-@media (min-width: 1024px) {
-  .lp .lp-steps-flow {
-    display: none;
-  }
-  .lp .lp-steps-track {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    display: grid;
-    visibility: hidden;
-    pointer-events: none;
-  }
-  .lp .lp-steps-marker {
-    block-size: var(--lp-steps-step);
-  }
-  .lp .lp-steps-marker:first-child {
-    block-size: calc(50svh - var(--lp-steps-top) + var(--lp-steps-step));
-  }
-  .lp .lp-steps-track::after {
-    content: "";
-    block-size: calc(50svh - var(--kit-gap-group));
-  }
-  .lp .lp-steps-pin {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    display: grid;
-    grid-template-columns: subgrid;
-    column-gap: var(--kit-gutter);
-    align-items: center;
-    align-self: start;
-    position: sticky;
-    top: var(--lp-steps-top);
-    min-block-size: var(--lp-steps-h);
-    min-width: 0;
-  }
-  .lp .lp-steps-nav {
-    grid-column: 1 / span 5;
-    position: relative;
-    min-width: 0;
-  }
-  .lp .lp-steps-thumb {
-    position: absolute;
-    inset-inline: 0;
-    top: 0;
-    block-size: var(--lp-thumb-h, 0px);
-    transform: translateY(var(--lp-thumb-y, 0px));
-    border-radius: var(--kit-radius-control);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    opacity: 0;
-    pointer-events: none;
-    transition: transform var(--dur-300) var(--ease-standard);
-  }
-  .lp .lp-steps-nav[data-thumb] > .lp-steps-thumb {
-    opacity: 1;
-  }
-  .lp .lp-steps-list {
-    position: relative;
-    display: grid;
-    row-gap: var(--space-4px);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    min-width: 0;
-  }
-  .lp .lp-step {
-    min-width: 0;
-  }
-  .lp .lp-steps-stage {
-    grid-column: 7 / -1;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    min-width: 0;
-  }
-  .lp .lp-steps-frame {
-    grid-area: 1 / 1;
-    min-width: 0;
-    opacity: 0;
-    visibility: hidden;
-    transition:
-      opacity var(--dur-300-exit) var(--ease-standard),
-      visibility 0s linear var(--dur-300-exit);
-  }
-  .lp .lp-steps-frame[data-active] {
-    opacity: 1;
-    visibility: visible;
-    transition:
-      opacity var(--dur-300) var(--ease-standard),
-      visibility 0s;
-  }
-}
-
-/* The step buttons: text rows, not filled buttons. The active step reads
-   in ink on the surface thumb; the others stay on screen in ink-subtle. */
-.lp .lp-step-button {
-  box-sizing: border-box;
-  display: grid;
-  row-gap: var(--space-4px);
-  justify-items: start;
-  inline-size: 100%;
-  block-size: auto;
-  min-block-size: var(--control-h);
-  padding: var(--space-12px) var(--space-16px);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--kit-radius-control);
-  color: var(--color-ink);
-  text-align: start;
-  white-space: normal;
-  font-weight: var(--weight-regular);
-}
-
-.lp .lp-step-button .kit-title,
-.lp .lp-step-button .kit-body {
-  transition: color var(--dur-150) var(--ease-standard);
-}
-
-.lp .lp-step:not([data-active]) .lp-step-button .kit-title,
-.lp .lp-step:not([data-active]) .lp-step-button .kit-body,
-.lp .lp-step:not([data-active]) .lp-step-button .lp-step-icon {
-  color: var(--color-ink-subtle);
-}
-
-/* The base JAL button paints every enabled button with the primary ink on
-   hover and press. Step buttons are text rows, so they opt out of that fill
-   in every state; only the inactive rows get their own faint hover tint. */
-.lp .lp-step-button:enabled:hover,
-.lp .lp-step-button:enabled:active {
-  background: transparent;
-  border-color: transparent;
-  color: var(--color-ink);
-}
-
-@media (hover: hover) {
-  .lp .lp-step:not([data-active]) .lp-step-button:hover {
-    background: color-mix(in oklab, var(--color-ink) 4%, transparent);
-  }
-  .lp .lp-step:not([data-active]) .lp-step-button:hover .kit-title {
-    color: var(--color-ink);
-  }
-}
-
-.lp .lp-step-button:active {
-  transform: none;
-}
-
-.lp .lp-step-button:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
-}
-
-/* ---------------------------------------------------------------------
  * Bento views: in flow inside the tile's visual, so a view sets its own
  * height and nothing inside it is ever cut off.
  * ------------------------------------------------------------------- */
@@ -870,10 +890,19 @@
   color: var(--color-ink-subtle);
 }
 
-/* Only typed lines exist; the file's full height is reserved up front, so
-   nothing below the editor moves while it types. */
+/* Only typed lines exist. Below 1024 the editor sits in its own row, so
+   the file's full height is reserved up front and nothing below it moves
+   while it types. From 1024 the editor is the lead tile: the grid row
+   heights come from the tiles beside it and the editor pane fills them,
+   with the whole file inside, so it needs no reserve of its own. */
 .lp .lp-code > code {
   min-block-size: calc(var(--lp-lines, 1) * var(--line-n1));
+}
+
+@media (min-width: 1024px) {
+  .lp .lp-code > code {
+    min-block-size: 0;
+  }
 }
 
 .lp .lp-code-line {
@@ -909,96 +938,6 @@
     grid-template-columns: auto minmax(0, 1fr);
     column-gap: var(--kit-gutter);
     align-items: start;
-  }
-}
-
-/* ---------------------------------------------------------------------
- * Keys: three groups between hairline dividers.
- * ------------------------------------------------------------------- */
-.lp .lp-divided {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: subgrid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-  border-block-end: 1px solid var(--color-border);
-}
-
-.lp .lp-divided-row {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: subgrid;
-  column-gap: var(--kit-gutter);
-  row-gap: var(--kit-gap-inside);
-  align-items: start;
-  padding-block: var(--kit-inset);
-  min-width: 0;
-  border-block-start: 1px solid var(--color-border);
-}
-
-.lp .lp-divided-row > * {
-  grid-column: 1 / -1;
-  min-width: 0;
-}
-
-.lp .lp-divided-body {
-  display: grid;
-  row-gap: var(--kit-gap-related);
-  min-width: 0;
-}
-
-.lp .lp-divided-value {
-  margin: 0;
-  font-size: var(--text-1);
-  line-height: var(--line-1);
-  color: var(--color-ink);
-}
-
-.lp .lp-providers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4px);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.lp .lp-providers > li {
-  padding: var(--space-4px) var(--space-8px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-4);
-  background: var(--color-surface);
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
-@media (min-width: 640px) {
-  .lp .lp-divided-row > .kit-title {
-    grid-column: 1 / span 3;
-  }
-  .lp .lp-divided-row > .lp-divided-body,
-  .lp .lp-divided-row > .lp-divided-value {
-    grid-column: 4 / -1;
-  }
-}
-
-@media (min-width: 1024px) {
-  .lp .lp-divided-row > .kit-title {
-    grid-column: 1 / span 4;
-  }
-  .lp .lp-divided-row > .lp-divided-body {
-    grid-column: 5 / span 5;
-    grid-row: 1;
-  }
-  .lp .lp-divided-row > .lp-divided-value {
-    grid-column: 10 / -1;
-    grid-row: 1;
-    justify-self: end;
-    text-align: end;
   }
 }
 
@@ -1079,40 +1018,18 @@
 }
 
 /* ---------------------------------------------------------------------
- * The close: the proof rail, then the credit and the license.
- * ------------------------------------------------------------------- */
-.lp .lp-close-proof {
-  display: grid;
-  row-gap: var(--kit-gap-related);
-  min-width: 0;
-}
-
-.lp .lp-credit {
-  margin: 0;
-}
-
-.lp .lp-credit a {
-  white-space: nowrap;
-  color: var(--kit-link);
-  text-decoration-thickness: 1px;
-  text-underline-offset: var(--space-4px);
-}
-
-/* ---------------------------------------------------------------------
  * Reduced motion: every part rests at its final state.
  * ------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   .lp .lp-story-caption,
+  .lp .lp-track-status,
   .lp .lp-code-line,
-  .lp .lp-timeline > .lp-row {
+  .lp .lp-timeline > .lp-row,
+  .lp .lp-cell-icon,
+  .lp .lp-head-row[data-fresh] .lp-head-text {
     animation: none;
   }
-  .lp .lp-bar,
-  .lp .lp-steps-thumb,
-  .lp .lp-steps-frame,
-  .lp .lp-steps-frame[data-active],
-  .lp .lp-step-button .kit-title,
-  .lp .lp-step-button .kit-body {
+  .lp .lp-bar {
     transition: none;
   }
 }
