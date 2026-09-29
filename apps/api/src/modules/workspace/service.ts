@@ -10,6 +10,7 @@ import { badRequest, HttpError, notFound } from "../../lib/http";
 import { redact } from "../../lib/redact";
 import { currentFileOrigin } from "./origin";
 import { escapeError, IGNORED_DIRS, isInside, lexicalInside, realRoot, resolveJailed, toRel, touchesGit } from "./jail";
+import { compileMatcher } from "./pattern";
 
 export const READ_CAP_BYTES = 64 * 1024;
 export const WRITE_CAP_BYTES = 5 * 1024 * 1024;
@@ -20,8 +21,22 @@ const MAX_LIST_NODES = 2000;
 const MAX_LIST_DEPTH = 6;
 const SEARCH_MAX_FILE = 1024 * 1024;
 const SEARCH_MAX_LINE = 2000;
-const SEARCH_MAX_FILES = 5000;
 const SEARCH_MAX_LIMIT = 200;
+
+/** search bounds; exported so tests can shrink them */
+export const SEARCH_LIMITS = {
+  maxFiles: 5000,
+  /** the whole scan stops after this and returns the hits found so far */
+  timeBudgetMs: 1500,
+  /** longest stretch of synchronous matching before yielding to the event loop */
+  sliceMs: 20,
+};
+
+export type SearchHit = { path: string; line: number; text: string };
+/** a plain array of hits; `stopped` says why a scan ended before covering every file */
+export type SearchHits = SearchHit[] & { stopped?: "time_budget" | "file_cap" };
+
+const yieldToLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
 const DIGEST_MAX_CHARS = 1200;
 const NOISE_FILES = new Set([".DS_Store"]);
 
@@ -95,15 +110,6 @@ function capLines(lines: string[], cap: number): { text: string; truncated: bool
     used += len;
   }
   return { text: out.join("\n"), truncated: false };
-}
-
-function compileMatcher(pattern: string): (line: string) => boolean {
-  try {
-    const re = new RegExp(pattern);
-    return (line) => re.test(line);
-  } catch {
-    return (line) => line.includes(pattern);
-  }
 }
 
 export function createWorkspaceService(ctx: Pick<ModuleContext, "events" | "logger">): WorkspaceService {
@@ -361,7 +367,7 @@ export function createWorkspaceService(ctx: Pick<ModuleContext, "events" | "logg
       return { removed: true };
     },
 
-    async search(root, pattern, glob, limit = 50) {
+    async search(root, pattern, glob, limit = 50): Promise<SearchHits> {
       const rootReal = await realRoot(root);
       if (typeof pattern !== "string" || pattern.length === 0) throw badRequest("pattern must not be empty");
       if (pattern.length > 500) throw badRequest("pattern is too long");
@@ -370,9 +376,13 @@ export function createWorkspaceService(ctx: Pick<ModuleContext, "events" | "logg
       const matcherGlob = new Bun.Glob(g);
       const baseOnly = !g.includes("/");
       const max = Math.max(1, Math.min(SEARCH_MAX_LIMIT, Math.floor(limit) || 50));
-      const test = compileMatcher(pattern);
-      const results: Array<{ path: string; line: number; text: string }> = [];
+      // literal by default; regex only when it passes the safety check (pattern.ts)
+      const matcher = compileMatcher(pattern);
+      const results: SearchHits = [];
       let scanned = 0;
+      const started = performance.now();
+      let sliceStart = started;
+      const outOfTime = () => performance.now() - started > SEARCH_LIMITS.timeBudgetMs;
 
       const visit = async (dirAbs: string): Promise<boolean> => {
         let entries;
@@ -383,6 +393,10 @@ export function createWorkspaceService(ctx: Pick<ModuleContext, "events" | "logg
         }
         entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
         for (const e of entries) {
+          if (outOfTime()) {
+            results.stopped = "time_budget";
+            return true;
+          }
           const abs = join(dirAbs, e.name);
           if (e.isDirectory()) {
             if (IGNORED_DIRS.has(e.name)) continue;
@@ -393,16 +407,28 @@ export function createWorkspaceService(ctx: Pick<ModuleContext, "events" | "logg
           if (!e.isFile()) continue;
           const rel = toRel(rootReal, abs);
           if (!matcherGlob.match(rel) && !(baseOnly && matcherGlob.match(e.name))) continue;
-          if (++scanned > SEARCH_MAX_FILES) return true;
+          if (++scanned > SEARCH_LIMITS.maxFiles) {
+            results.stopped = "file_cap";
+            return true;
+          }
           const file = Bun.file(abs);
           if (file.size > SEARCH_MAX_FILE) continue;
           const bytes = await file.bytes().catch(() => null);
+          sliceStart = performance.now();
           if (!bytes || looksBinary(bytes)) continue;
           const lines = new TextDecoder("utf-8", { fatal: false }).decode(bytes).split("\n");
           for (let i = 0; i < lines.length; i++) {
+            if (matcher.regex && performance.now() - sliceStart > SEARCH_LIMITS.sliceMs) {
+              if (outOfTime()) {
+                results.stopped = "time_budget";
+                return true;
+              }
+              await yieldToLoop();
+              sliceStart = performance.now();
+            }
             const line = lines[i]!;
             if (line.length > SEARCH_MAX_LINE) continue;
-            if (!test(line)) continue;
+            if (!matcher.test(line)) continue;
             results.push({ path: rel, line: i + 1, text: line.trim().slice(0, 200) });
             if (results.length >= max) return true;
           }
@@ -410,6 +436,9 @@ export function createWorkspaceService(ctx: Pick<ModuleContext, "events" | "logg
         return false;
       };
       await visit(rootReal);
+      if (results.stopped === "time_budget") {
+        log.log("warn", "fs_search stopped at its time budget", { budgetMs: SEARCH_LIMITS.timeBudgetMs, scanned, hits: results.length, regex: matcher.regex });
+      }
       return results;
     },
 

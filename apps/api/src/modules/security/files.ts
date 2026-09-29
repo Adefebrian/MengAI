@@ -92,6 +92,8 @@ export interface TextRead {
   text: string;
   /** true when the workspace could only serve part of the file */
   partial: boolean;
+  /** set (with empty text) when the file is over maxBytes and oversize is "partial" */
+  tooLarge?: true;
 }
 
 function lineCount(text: string): number {
@@ -110,8 +112,8 @@ function isTooLarge(err: unknown): boolean {
  * Full text of one workspace file. Truncated reads are completed page by
  * page with 1-based line ranges, advancing by the lines each page actually
  * returned (the workspace caps every read by bytes). Returns null for binary
- * files. A file over maxBytes returns null, or an empty partial read when
- * `oversize` is "partial" (lockfiles: the caller must report the gap). A
+ * files. A file over maxBytes returns null, or an empty partial read marked
+ * tooLarge when `oversize` is "partial" (the caller must report the gap). A
  * head-only file (the workspace answers 413 past its head) returns what could
  * be read, marked partial.
  */
@@ -125,7 +127,7 @@ export async function readWorkspaceText(
 ): Promise<TextRead | null> {
   const first = await ws.read(root, path);
   if (first.binary) return null;
-  if (first.size > maxBytes) return opts.oversize === "partial" ? { text: "", partial: true } : null;
+  if (first.size > maxBytes) return opts.oversize === "partial" ? { text: "", partial: true, tooLarge: true } : null;
   if (!first.truncated) return { text: first.content, partial: false };
   const parts: string[] = [];
   let bytes = 0;

@@ -329,7 +329,86 @@ describe("security scan service", () => {
     // oversize known from the listing: the file is not read at all
     expect(s.workspace.reads).not.toContain("package-lock.json");
     const direct = await readWorkspaceText(s.workspace, "/ws", "package-lock.json", 10, undefined, { oversize: "partial" });
-    expect(direct).toEqual({ text: "", partial: true });
+    expect(direct).toEqual({ text: "", partial: true, tooLarge: true });
+  });
+
+  test("files skipped for size or encoding are reported, never dropped silently", async () => {
+    const saved = { text: SCAN_LIMITS.textFileBytes, config: SCAN_LIMITS.configFileBytes };
+    SCAN_LIMITS.textFileBytes = 200;
+    SCAN_LIMITS.configFileBytes = 100;
+    try {
+      const big = `export const pad = "${"x".repeat(300)}";\n`;
+      const mid = `const note = "${"y".repeat(120)}";\n`;
+      const files = { "src/big.ts": big, "src/mid.ts": mid, "src/ok.ts": "export {}\n", "poetry.lock": "\0\0binary lock" };
+      const s = await setup({ files });
+      const { findings } = await s.mod.service.scan({ projectId: "p1", root: "/ws", kinds: ["deps", "secrets", "config"], network: false });
+      const gaps = findings.filter((f) => f.rule === "scan.file_too_large");
+      expect(gaps.map((f) => [f.kind, f.severity]).sort()).toEqual([
+        ["config", "info"],
+        ["secrets", "info"],
+      ]);
+      const secretsGap = gaps.find((f) => f.kind === "secrets")!;
+      expect(secretsGap.detail).toContain("1 file(s) over the 200 byte limit");
+      expect(secretsGap.detail).toContain("src/big.ts");
+      const configGap = gaps.find((f) => f.kind === "config")!;
+      expect(configGap.detail).toContain("src/big.ts");
+      expect(configGap.detail).toContain("src/mid.ts");
+      expect(configGap.detail).not.toContain("src/ok.ts");
+      // a lockfile the workspace serves as binary is a reported gap too
+      const lock = findings.find((f) => f.rule === "deps.lockfile_partial")!;
+      expect(lock.file).toBe("poetry.lock");
+      expect(lock.detail).toContain("could not be read as text");
+    } finally {
+      SCAN_LIMITS.textFileBytes = saved.text;
+      SCAN_LIMITS.configFileBytes = saved.config;
+    }
+  });
+
+  test("ignore rules apply to secrets in every kind combination; uncovered .env files are still reported", async () => {
+    const key = "sk-" + "proj-" + "Q1w2E3r4T5y6U7i8O9p0".repeat(2);
+    const other = "sk-" + "proj-" + "Z9x8C7v6B5n4M3l2K1j0".repeat(2);
+    const files = {
+      ".git/HEAD": "ref: refs/heads/main\n",
+      // anchored at the root, so the nested apps/api/.env is not covered
+      ".gitignore": "/.env\n/.env.*\n!/.env.shared\n",
+      ".env": `OPENAI_API_KEY=${key}\n`,
+      ".env.local": `OPENAI_API_KEY=${key}\n`,
+      ".env.shared": `OPENAI_API_KEY=${other}\n`,
+      "apps/api/.gitignore": "dist\n",
+      "apps/api/.env": `OPENAI_API_KEY=${other}\n`,
+      "package-lock.json": LOCK,
+    };
+    for (const kinds of [["secrets"], ["deps", "secrets"], ["secrets", "review"]] as const) {
+      const s = await setup({ files });
+      const { findings } = await s.mod.service.scan({ projectId: "p1", root: "/ws", kinds: [...kinds], network: false });
+      const secretFiles = findings.filter((f) => f.kind === "secrets").map((f) => f.file).sort();
+      // .env and .env.local are ignored; the negated .env.shared and the uncovered nested .env are not
+      expect(secretFiles).toEqual(["apps/api/.env", ".env.shared"].sort());
+    }
+    // with config requested, the uncovered .env files also get env.not_ignored
+    const s = await setup({ files });
+    const { findings } = await s.mod.service.scan({ projectId: "p1", root: "/ws", kinds: ["secrets", "config"], network: false });
+    expect(findings.filter((f) => f.rule === "env.not_ignored").map((f) => f.file).sort()).toEqual(["apps/api/.env", ".env.shared"].sort());
+  });
+
+  test("an accepted dummy key never hides a different real key on the same line", async () => {
+    // a fixture key the owner accepted, then a live key pasted over it on the same line
+    const dummy = "sk-" + "proj-" + "Dm7yK2eQ9vL4wX1zR8tN";
+    const real = "sk-" + "proj-" + "Hq3uP6sJ0cB5fG2mW9aE";
+    const files: Record<string, string> = { "src/ai.ts": `const client = new OpenAI({ apiKey: "${dummy}" });\n` };
+    const s = await setup({ files });
+    const first = await s.mod.service.scan({ projectId: "p1", root: "/ws", kinds: ["secrets"], network: false });
+    expect(first.findings.map((f) => f.rule)).toEqual(["secret.openai_key"]);
+    await s.mod.service.setFindingStatus(first.findings[0]!.id, "accepted");
+    const again = await s.mod.service.scan({ projectId: "p1", root: "/ws", kinds: ["secrets"], network: false });
+    expect(again.findings[0]!.status).toBe("accepted");
+    files["src/ai.ts"] = `const client = new OpenAI({ apiKey: "${real}" });\n`;
+    const swapped = await s.mod.service.scan({ projectId: "p1", root: "/ws", kinds: ["secrets"], network: false });
+    expect(swapped.findings).toHaveLength(1);
+    expect(swapped.findings[0]!.status).toBe("open");
+    expect(swapped.findings[0]!.severity).toBe("critical");
+    const rows = await s.ctx.db.query<{ fingerprint: string; status: string }>`select fingerprint, status from findings`;
+    expect(new Set(rows.map((r) => r.fingerprint)).size).toBe(2);
   });
 
   test("secrets in files ignored by git are not reported; env.not_ignored needs a git repo", async () => {

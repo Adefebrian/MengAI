@@ -6,7 +6,9 @@ import type { ModuleContext } from "../../core/module";
 import type { WorkspaceService } from "../../core/services";
 import { HttpError } from "../../lib/http";
 import { captureEvents, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
-import { createWorkspaceModule, runWithFileOrigin } from "./index";
+import { createWorkspaceModule, runWithFileOrigin, type SearchHits } from "./index";
+import { compileMatcher, regexSafety } from "./pattern";
+import { SEARCH_LIMITS } from "./service";
 
 const made: string[] = [];
 async function tmp(prefix: string): Promise<string> {
@@ -269,5 +271,68 @@ describe("list, search, digest", () => {
     expect(d).not.toContain("index.js");
     const empty = await tmp("empty");
     expect(await ws.digest(empty)).toBe("Empty workspace.");
+  });
+});
+
+describe("search pattern safety", () => {
+  test("regex only when the safety check passes, literal otherwise", () => {
+    for (const bad of ["(a+)+b", "(a*)*", "(a|aa)*c", "(?:x*y){2,}", "(\\w+\\s?)+$", "(a)\\1", "(?<n>a)\\k<n>", "a{1,5000}", "\\s*\\s*\\s*\\s*x", "x".repeat(201)]) {
+      expect(regexSafety(bad).ok).toBe(false);
+    }
+    expect(regexSafety("foo\\(\\)")).toEqual({ ok: true, variable: 0 });
+    expect(regexSafety("colou?r")).toEqual({ ok: true, variable: 1 });
+    expect(regexSafety("function\\s+\\w+")).toEqual({ ok: true, variable: 2 });
+    expect(regexSafety("[a-z(+*]+\\d{2}(ab)+")).toEqual({ ok: true, variable: 2 });
+    expect(regexSafety("(?<=x)(?:ab)+(?=y)")).toEqual({ ok: true, variable: 1 });
+    // invalid regex is literal
+    expect(compileMatcher("foo(").regex).toBe(false);
+    expect(compileMatcher("foo(").test("call foo( here")).toBe(true);
+    // literal text always matches, even when the regex reading would not
+    const m = compileMatcher("a.b");
+    expect(m.regex).toBe(true);
+    expect(m.test("a.b")).toBe(true);
+    expect(m.test("axb")).toBe(true);
+    // a regex with 3 variable quantifiers is not tried on long lines
+    const three = compileMatcher("\\w+\\s*\\w+\\(");
+    expect(three.test("call foo(x)")).toBe(true);
+    expect(three.test(`${" ".repeat(200)}call foo(x)`)).toBe(false);
+  });
+
+  test("catastrophic patterns cannot hold the event loop", async () => {
+    await writeFile(join(root, "a.txt"), `${"a".repeat(1999)}\n`.repeat(50));
+    await writeFile(join(root, "s.txt"), `${" ".repeat(1900)}\n`.repeat(50));
+    const started = performance.now();
+    expect(await ws.search(root, "(a+)+b")).toEqual([]);
+    expect(await ws.search(root, "\\s*\\s*\\s*x")).toEqual([]);
+    expect(await ws.search(root, "\\s*\\s*x")).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(1500);
+    // the safe regex path still works
+    await writeFile(join(root, "c.txt"), "color\ncolour\ncolr\n");
+    expect((await ws.search(root, "colou?r", "c.txt")).map((h) => h.line)).toEqual([1, 2]);
+  });
+
+  test("the scan stops at its time budget and yields while matching", async () => {
+    const saved = { ...SEARCH_LIMITS };
+    SEARCH_LIMITS.timeBudgetMs = 150;
+    try {
+      // two variable quantifiers: tried on lines up to 500 chars, each such line costs milliseconds
+      // 1500 lines stay under the 1 MB per-file cap; unbounded they would take about 25 s
+      await writeFile(join(root, "slow.txt"), `${" ".repeat(499)}\n`.repeat(1500));
+      let ticks = 0;
+      const timer = setInterval(() => ticks++, 5);
+      const started = performance.now();
+      const hits: SearchHits = await ws.search(root, "\\s*\\s*x");
+      const elapsed = performance.now() - started;
+      clearInterval(timer);
+      expect(hits).toEqual([]);
+      expect(hits.stopped).toBe("time_budget");
+      expect(elapsed).toBeLessThan(1500);
+      expect(ticks).toBeGreaterThan(2);
+      // a finished scan has no stop marker
+      const done: SearchHits = await ws.search(root, "nothing-here", "*.md");
+      expect(done.stopped).toBeUndefined();
+    } finally {
+      Object.assign(SEARCH_LIMITS, saved);
+    }
   });
 });

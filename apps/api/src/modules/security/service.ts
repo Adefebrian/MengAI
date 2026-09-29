@@ -80,6 +80,22 @@ function lockfileGap(file: string, detail: string): RawFinding {
   return { ...notice("deps.lockfile_partial", "deps", "Lockfile too large to audit completely", detail, "Split the workspace or audit this lockfile in CI with a dedicated tool."), file, key: `partial ${file}` };
 }
 
+const GAP_PATHS_SHOWN = 10;
+
+/** One info notice per scanner kind for every file it skipped for size: a gap is never silent. */
+function sizeGap(kind: ScanKind, what: string, limit: number, paths: string[]): RawFinding {
+  const shown = paths.slice(0, GAP_PATHS_SHOWN).join(", ");
+  const more = paths.length > GAP_PATHS_SHOWN ? ` and ${paths.length - GAP_PATHS_SHOWN} more` : "";
+  return notice(
+    "scan.file_too_large",
+    kind,
+    `Files too large to scan for ${what}`,
+    // "for secrets: <path>" would read as an assignment to redact(), so the list leads with "Files"
+    `${paths.length} file(s) over the ${limit} byte limit were not scanned for ${what}. Files ${shown}${more}.`,
+    "Exclude generated or vendored output from the workspace, or review these files by hand.",
+  );
+}
+
 function depFinding(m: OsvMatch): RawFinding {
   const { pkg, vuln } = m;
   const aliases = vuln.aliases.length ? ` Aliases: ${vuln.aliases.join(", ")}.` : "";
@@ -153,7 +169,8 @@ export function createSecurityService(ctx: ModuleContext, deps: SecurityDeps): S
     if (walked.truncated) {
       raw.push(notice("scan.truncated", scan.kinds[0]!, "Workspace is larger than the scan limit", `Only the first ${walked.files.length} files were scanned.`, "Scan a smaller folder or exclude generated output."));
     }
-    // secrets report committed credentials only, so git ignore rules matter to both kinds
+    // secrets report committed credentials only, so git ignore rules matter to both kinds;
+    // they are loaded before any file is scanned, whatever other kinds ride along
     const needGit = want.has("config") || want.has("secrets");
     const git = needGit ? await readGitMeta(deps.workspace, input.root) : { isRepo: false, exclude: null };
     const ignores = needGit ? await loadIgnores(input.root, walked.files, git.exclude, signal) : [];
@@ -162,14 +179,18 @@ export function createSecurityService(ctx: ModuleContext, deps: SecurityDeps): S
     const pkgSeen = new Set<string>();
     const lockfiles: string[] = [];
     let pkgCapped = false;
+    const tooLarge = { secrets: [] as string[], config: [] as string[] };
 
     for (const f of walked.files) {
       if (signal.aborted) throw new Error("aborted");
       const name = baseName(f.path);
       const ignored = needGit && isIgnored(f.path, ignores);
       const lock = want.has("deps") && isLockfile(name);
-      // a gitignored file (a local .env) is never committed: not a leak (JEV sec.false_positive, real 0.21)
-      const sec = want.has("secrets") && !ignored && shouldScanForSecrets(f.path) && f.size <= SCAN_LIMITS.textFileBytes;
+      // a gitignored file (a local .env) is never committed: not a leak (JEV sec.false_positive, real 0.21);
+      // a .env that no rule covers is scanned like any other file
+      const secWanted = want.has("secrets") && !ignored && shouldScanForSecrets(f.path);
+      const sec = secWanted && f.size <= SCAN_LIMITS.textFileBytes;
+      if (secWanted && !sec) tooLarge.secrets.push(f.path);
       const docker = want.has("config") && isDockerfile(f.path);
       const compose = want.has("config") && isComposeFile(f.path);
       // code rules skip test paths: unreachable test code is closed by the sec.false_positive precheck
@@ -181,6 +202,7 @@ export function createSecurityService(ctx: ModuleContext, deps: SecurityDeps): S
         continue;
       }
       if (!lock && !sec && !docker && !compose && !source) continue;
+      const reviewed = docker || compose || source;
       const cap = lock ? SCAN_LIMITS.lockfileBytes : SCAN_LIMITS.textFileBytes;
       const tooBig = `${f.path} is ${f.size} bytes, over the ${SCAN_LIMITS.lockfileBytes} byte audit limit, so its packages were not checked.`;
       if (lock && f.size > cap) {
@@ -190,13 +212,22 @@ export function createSecurityService(ctx: ModuleContext, deps: SecurityDeps): S
       }
       let read: Awaited<ReturnType<typeof readWorkspaceText>>;
       try {
-        read = await readWorkspaceText(deps.workspace, input.root, f.path, cap, signal, { oversize: lock ? "partial" : "skip" });
+        read = await readWorkspaceText(deps.workspace, input.root, f.path, cap, signal, { oversize: "partial" });
       } catch (err) {
         if (signal.aborted) throw err;
         if (lock) raw.push(lockfileGap(f.path, `${f.path} could not be read (${redact(clip(message(err), 160))}), so its packages were not checked.`));
         continue;
       }
-      if (read === null) continue;
+      if (read === null) {
+        if (lock) raw.push(lockfileGap(f.path, `${f.path} could not be read as text, so its packages were not checked.`));
+        continue;
+      }
+      if (read.tooLarge && !lock) {
+        // over the text cap at read time (the listing size can be stale)
+        if (sec) tooLarge.secrets.push(f.path);
+        if (reviewed) tooLarge.config.push(f.path);
+        continue;
+      }
       const text = read.text;
       if (lock) {
         if (read.partial) raw.push(lockfileGap(f.path, text ? `${f.path} could only be read in part, so some packages were not checked.` : tooBig));
@@ -216,8 +247,10 @@ export function createSecurityService(ctx: ModuleContext, deps: SecurityDeps): S
         if (docker) raw.push(...reviewDockerfile(f.path, text, { tag }));
         if (compose) raw.push(...reviewCompose(f.path, text, { tag }));
         if (source) raw.push(...reviewSource(f.path, text));
-      }
+      } else if (reviewed) tooLarge.config.push(f.path);
     }
+    if (tooLarge.secrets.length) raw.push(sizeGap("secrets", "secrets", SCAN_LIMITS.textFileBytes, tooLarge.secrets));
+    if (tooLarge.config.length) raw.push(sizeGap("config", "config issues", SCAN_LIMITS.configFileBytes, tooLarge.config));
 
     if (pkgCapped || pkgs.length > SCAN_LIMITS.maxPackages) {
       raw.push(notice("deps.packages_capped", "deps", "Too many packages to audit in one scan", `Only the first ${SCAN_LIMITS.maxPackages} distinct packages were checked.`, "Scan each workspace package on its own."));

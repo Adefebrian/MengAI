@@ -1,11 +1,19 @@
 // macOS runner: every agent command runs under sandbox-exec with a profile
 // generated per call. The profile denies by default, allows reading the OS
-// and toolchains, allows writes only inside writablePaths (the workspace,
-// whose .mengai/tmp is TMPDIR), denies the owner's credential directories
-// and the app data dir, protects .git/hooks and .git/config (a hook planted
-// there would later run outside the sandbox), and allows network only when
+// and toolchains, allows writes only strictly inside writablePaths (the
+// workspace, whose .mengai/tmp is TMPDIR): the root entry itself is never
+// writable, so it cannot be removed, renamed or swapped for a symlink. It
+// denies the owner's credential directories and the app data dir, protects
+// git metadata that runs code outside the sandbox (hooks and config under
+// any .git folder at any depth, including submodule and worktree gitdirs)
+// and denies creating, removing or renaming any .git entry, so hooks cannot
+// be staged under another name and swapped in. Network is allowed only when
 // the request says so. Paths reach the profile as -D parameters, never as
-// interpolated text, so a path can never inject profile rules.
+// interpolated text, so a path can never inject profile rules; the git rules
+// are fixed regexes with no path in them.
+//
+// The shared exec core (runner-plain.ts) also refuses a symlinked root and
+// re-checks every root's realpath right before spawn and right after exit.
 //
 // Fail closed: when sandbox-exec is missing or cannot apply a profile (for
 // example when the host process is already sandboxed), exec() throws a
@@ -108,6 +116,21 @@ export interface SeatbeltProfile {
 }
 
 const list = (names: string[]) => names.map((n) => `(subpath (param "${n}"))`).join(" ");
+const literals = (names: string[]) => names.map((n) => `(literal (param "${n}"))`).join(" ");
+
+/**
+ * Git metadata that later runs code outside the sandbox, matched at any depth
+ * so renaming or nesting a .git folder never escapes the rule: hooks and
+ * config (config.worktree too) in any gitdir, including .git/modules/<name>
+ * and .git/worktrees/<name>. .git itself (folder or gitdir file) cannot be
+ * created, removed or renamed, which also blocks staging a fake gitdir under
+ * another name and moving it into place.
+ */
+const GIT_DIR = String.raw`/\.git/((modules|worktrees)/[^/]+/)*`;
+export const GIT_RULES = [
+  String.raw`(deny file-write* (regex #"${GIT_DIR}hooks(/|$)") (regex #"${GIT_DIR}config(\.worktree)?$"))`,
+  String.raw`(deny file-write* (regex #"/\.git$"))`,
+];
 
 /** Builds the SBPL profile plus its parameters. Later rules win in SBPL, so order matters. */
 export function buildSeatbeltProfile(input: {
@@ -129,8 +152,6 @@ export function buildSeatbeltProfile(input: {
   const creds = add("CRED", [...HOME_CREDENTIALS.map((c) => join(input.home, c)), ...SYSTEM_DENY]);
   const data = add("DATA", [input.dataDir]);
   const ws = add("WS", input.writable);
-  const gitHooks = add("GIT_HOOKS", input.writable.map((w) => join(w, ".git", "hooks")));
-  const gitConfig = add("GIT_CONFIG", input.writable.map((w) => join(w, ".git", "config")));
 
   const lines = [
     "(version 1)",
@@ -152,8 +173,9 @@ export function buildSeatbeltProfile(input: {
     // that lives under the data dir still works while the db and vault do not
     `(deny file-read* file-write* ${list(data)})`,
     `(allow file-read* file-write* ${list(ws)})`,
-    `(deny file-write* ${list(gitHooks)})`,
-    `(deny file-write* ${gitConfig.map((n) => `(literal (param "${n}"))`).join(" ")})`,
+    // strictly inside: the root entry itself cannot be unlinked, renamed, replaced or re-moded
+    `(deny file-write* ${literals(ws)})`,
+    ...GIT_RULES,
     // credentials last: nothing above can reopen them
     `(deny file-read* file-write* ${list(creds)})`,
     '(allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper") (literal "/dev/urandom") (literal "/dev/random"))',
