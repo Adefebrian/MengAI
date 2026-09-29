@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Main window baseline for local content. The sidecar origin (http://127.0.0.1:<port>) is remote to Tauri and gets its only grant, allow-pick-folder, at runtime for the exact port (src/window.rs). No shell, fs or opener permission is ever exposed to the page.",
+  "windows": ["main"],
+  "platforms": ["macOS"],
+  "permissions": ["core:default"]
+}

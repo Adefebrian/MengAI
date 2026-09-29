@@ -1,0 +1,11 @@
+# built sidecar and its debug placeholder (bun build --compile output, about 60 MB)
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+# copied in by scripts/build.ts and scripts/dev.ts
+src-tauri/resources/web/*
+!src-tauri/resources/web/.gitkeep
+src-tauri/resources/hands/*
+!src-tauri/resources/hands/README.md
+# tauri generated
+src-tauri/gen/schemas
+src-tauri/target/

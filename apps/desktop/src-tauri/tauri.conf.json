@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MengAI",
+  "mainBinaryName": "MengAI",
+  "version": "0.1.0",
+  "identifier": "id.mengai.app",
+  "build": {},
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self'",
+        "img-src": "'self' data: blob:",
+        "font-src": "'self'",
+        "media-src": "'self' blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'self'",
+        "frame-ancestors": "'none'"
+      },
+      "capabilities": ["main"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "DeveloperTool",
+    "shortDescription": "AI agent crew, shown as living cats",
+    "longDescription": "MengAI runs a crew of AI agents on your own Mac with your own model keys.",
+    "copyright": "Copyright 2026 Adefebrian. Built by Adefebrian. Licensed under Apache-2.0.",
+    "license": "Apache-2.0",
+    "publisher": "Adefebrian",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "externalBin": ["binaries/mengai-api"],
+    "resources": {
+      "resources/web/": "web/",
+      "resources/hands/": "hands/",
+      "../../../migrations/sqlite/": "migrations/sqlite/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist",
+      "signingIdentity": null
+    }
+  }
+}
