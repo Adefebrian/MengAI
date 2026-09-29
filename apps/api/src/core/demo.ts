@@ -1,18 +1,31 @@
 // Demo crew (MENGAI_DEMO=1). A scripted LlmRouter that plays one believable
-// crew run through the real orchestrator, tools and workspace: the lead plans
-// five tasks with dependencies, the engineer writes files, the designer drafts
-// copy after a handoff to the researcher, the reviewer rejects once and then
-// approves, QA runs a harmless echo, and the lead writes the final report.
-// No model is called and no key is needed. Each reply waits 2.2 to 4.2 s so
-// the crew is visibly alive.
+// company day through the real orchestrator, tools and workspace, so one run
+// shows every scenario the office scene choreographs:
+// - the lead (the CEO cat) reads the workspace, publishes five tasks and
+//   holds the kickoff meeting, then deals each task to the cat that takes it
+// - the engineer grows index.html and styles.css over five steps (the code
+//   editor shows the files being written), then wires the copy in
+// - the designer hands tagline research to the researcher, who reads the
+//   crew's notes and writes them up, then asks the CEO about the tagline;
+//   the CEO approves and the designer drafts the copy in two steps
+// - the reviewer rejects the scaffold once, the crew meets in a sync, the
+//   engineer fixes it, the review passes and the CEO signs it off
+// - QA runs two tests (a placeholder search and a smoke check)
+// - a cat with nothing queued takes a coffee break; the crew holds a wrap-up
+//   meeting and the lead writes the final report
+// - opt in (securityScan): a security cat scans for secrets and config
+// No model is called and no key is needed. Each reply waits 2.2 to 4.2 s and
+// each meeting holds 6 to 10 s, so the crew is visibly alive.
 //
 // The router is stateless per request: the role comes from the system prompt
 // (it is exactly ContextService.charter(role)), the task from the task packet,
 // and the step from the number of assistant turns already in the prompt.
+// The CEO decision is its own small call (runs CEO_SYSTEM), answered here.
 // Token metering and the prompt cache are simulated by the evals module's
 // ScriptedProvider, so the usage panels move like a real run.
 import { AGENT_ROLES, type AgentRole, type ProviderModel } from "@mengai/shared";
 import { ScriptedProvider, type ScriptedTurn } from "../modules/evals";
+import { CEO_SYSTEM, packetQuestion, type CompanyPace } from "../modules/runs";
 import { LlmError, type ChatRequest, type ChatResult, type LlmProvider, type LlmRouter, type Logger } from "./ports";
 import type { ProjectsService, RunsService } from "./services";
 
@@ -23,12 +36,19 @@ export const DEMO_GOAL =
   "Build a one page landing site for Whisker Cafe, a calm cafe with twelve resident cats: a tagline, menu highlights and visit details, reviewed and smoke checked before launch.";
 /** default pause before each scripted reply, ms */
 export const DEMO_PACE_MS: readonly [number, number] = [2200, 4200];
+/** default meeting hold, ms: long enough to watch the crew walk in, sit and walk back */
+export const DEMO_MEETING_MS: readonly [number, number] = [6000, 10_000];
 
 export interface DemoOptions {
   /** pause range per reply in ms (tests use a few ms) */
   paceMs?: readonly [number, number];
   /** create the demo project and start one run when no project exists (default true) */
   seed?: boolean;
+}
+
+export interface DemoScriptOptions {
+  /** add a security cat that scans for secrets and config before launch (default false) */
+  securityScan?: boolean;
 }
 
 // ------------------------------------------------------------------ script
@@ -45,9 +65,12 @@ const TITLE = {
   smoke: "Smoke check the page",
   readme: "Write the project README",
   research: "Collect tagline references",
+  security: "Scan the page for secrets",
 } as const;
 
-const HTML = `<!doctype html>
+// index.html grows in three steps: skeleton, hero, then menu and visit
+const SECTIONS_MARK = "    <!-- sections -->";
+const HTML_TOP = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -61,12 +84,14 @@ const HTML = `<!doctype html>
     <nav><a href="#menu">Menu</a> <a href="#visit">Visit</a></nav>
   </header>
   <main>
-    <section class="hero">
+`;
+const HTML_HERO = `    <section class="hero">
       <h1 id="tagline">Tagline goes here</h1>
       <p class="lede">Hero line goes here</p>
       <img class="hero-art" src="assets/hero.svg">
     </section>
-    <section id="menu" class="menu">
+`;
+const HTML_MENU_VISIT = `    <section id="menu" class="menu">
       <h2>On the menu</h2>
       <ul id="highlights"><li>Highlight one</li><li>Highlight two</li><li>Highlight three</li></ul>
     </section>
@@ -74,19 +99,25 @@ const HTML = `<!doctype html>
       <h2>Visit us</h2>
       <p>Open daily, 8 to 18. Twelve resident cats, all adopted.</p>
     </section>
-  </main>
+`;
+const HTML_BOTTOM = `  </main>
   <footer>Whisker Cafe. Coffee, calm and cats.</footer>
 </body>
 </html>
 `;
+/** index.html once the scaffold is done (placeholders until the copy is wired in) */
+export const DEMO_HTML = HTML_TOP + HTML_HERO + HTML_MENU_VISIT + HTML_BOTTOM;
 
-const CSS = `:root { --ink: #1d1d1f; --paper: #ffffff; --accent: #c2410c; --muted: #6b6b70; }
+// styles.css grows in two steps: base, then sections and focus states
+const CSS_MARK = "/* sections */\n";
+const CSS_BASE = `:root { --ink: #1d1d1f; --paper: #ffffff; --accent: #c2410c; --muted: #6b6b70; }
 * { box-sizing: border-box; }
 body { margin: 0; font: 17px/1.55 system-ui, sans-serif; color: var(--ink); background: var(--paper); }
 .top { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; }
 .brand { font-weight: 700; color: var(--ink); text-decoration: none; }
 nav a { margin-left: 16px; color: var(--muted); }
-.hero, .menu, .visit { max-width: 960px; margin: 0 auto; padding: 48px 24px; }
+`;
+const CSS_SECTIONS = `.hero, .menu, .visit { max-width: 960px; margin: 0 auto; padding: 48px 24px; }
 .hero h1 { font-size: clamp(36px, 6vw, 64px); line-height: 1.05; margin: 0 0 16px; }
 .lede { font-size: 20px; color: var(--muted); max-width: 36ch; }
 .hero-art { width: 100%; max-width: 480px; margin-top: 24px; }
@@ -95,20 +126,25 @@ nav a { margin-left: 16px; color: var(--muted); }
 a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 footer { padding: 32px 24px; color: var(--muted); text-align: center; }
 `;
+export const DEMO_CSS = CSS_BASE + CSS_SECTIONS;
 
-const COPY = `# Whisker Cafe copy
+// copy.md grows in two steps: tagline and hero, then highlights and visit
+const COPY_MARK = "<!-- more -->\n";
+const COPY_HEAD = `# Whisker Cafe copy
 
 Tagline: Slow coffee. Soft paws.
 
 Hero: Twelve resident cats, one quiet room, and coffee we roast ourselves.
 
-Menu highlights
+`;
+const COPY_REST = `Menu highlights
 - House latte, roasted in small batches every Monday
 - Matcha for the cats who do not do coffee
 - Pastries baked each morning, crumbs shared with no one
 
 Visit: open daily, 8 to 18. Book a slot and a cat will find you.
 `;
+export const DEMO_COPY = COPY_HEAD + COPY_REST;
 
 const TAGLINES = `# Tagline references
 
@@ -164,8 +200,8 @@ const PLAN_TASKS = [
     title: TITLE.smoke,
     role: "qa",
     deps: ["wire"],
-    spec: "Check that the page files are in place and report anything missing.",
-    acceptance: ["A smoke check ran and its real output is in the summary"],
+    spec: "Test the page: no placeholder text is left, and the page files are in place. Report anything missing.",
+    acceptance: ["The tests ran and their real output is in the summary"],
   },
   {
     key: "readme",
@@ -177,13 +213,25 @@ const PLAN_TASKS = [
   },
 ];
 
-const FINAL_REPORT = [
-  "Whisker Cafe landing page is ready.",
-  "Delivered: index.html and styles.css (semantic, mobile first), copy.md with the tagline and menu highlights, notes/taglines.md, README.md.",
-  "Review: rejected once for a missing alt text and meta description, fixed, then approved.",
-  "QA: smoke check passed.",
-  "Open: swap the placeholder hero art for a real photo. Add your own model key in Settings to give the crew your own goals.",
-].join(" ");
+const SECURITY_TASK = {
+  key: "security",
+  title: TITLE.security,
+  role: "security",
+  deps: ["wire"],
+  spec: "Scan the workspace for committed secrets and risky config before launch.",
+  acceptance: ["A secret scan and a config scan ran", "Anything found is listed with where it is"],
+};
+
+function finalReport(security: boolean): string {
+  return [
+    "Whisker Cafe landing page is ready.",
+    "Delivered: index.html and styles.css (semantic, mobile first), copy.md with the tagline and menu highlights, notes/taglines.md, README.md.",
+    "Review: rejected once for a missing alt text and meta description, talked through in a sync, fixed, then approved.",
+    "QA: no placeholder text left and the smoke check passed.",
+    ...(security ? ["Security: no committed secrets and no risky config."] : []),
+    "Open: swap the placeholder hero art for a real photo. Add your own model key in Settings to give the crew your own goals.",
+  ].join(" ");
+}
 
 const ROLE_BY_TOOL: Array<[string, AgentRole]> = [
   ["create_tasks", "lead"],
@@ -233,17 +281,27 @@ function readTurn(req: ChatRequest, roleBySystem: Map<string, AgentRole>): TurnI
   return { role, title, step, round, planning };
 }
 
-function leadSteps(planning: boolean): Step[] {
+function leadSteps(planning: boolean, security: boolean): Step[] {
   if (!planning) {
     return [
-      { say: "Everyone is back on their cushions. Checking the board before I write it up.", calls: [call("list_tasks")] },
-      { calls: [finish(FINAL_REPORT)] },
+      { say: "Good wrap-up, crew. Checking the board once more before I write to the owner.", calls: [call("list_tasks")] },
+      { calls: [finish(finalReport(security))] },
     ];
   }
+  const tasks = security ? [...PLAN_TASKS, SECURITY_TASK] : PLAN_TASKS;
   return [
-    { say: "Demo crew on duty. Every step in this run is scripted, no model is called. Reading the workspace first.", calls: [call("fs_list", { path: "." })] },
-    { say: "Empty workspace. Five tasks: engineer and designer start together, then the copy goes in, then QA and the README.", calls: [call("create_tasks", { tasks: PLAN_TASKS })] },
-    { calls: [finish("Plan: 5 tasks. Scaffold and copy run in parallel, the engineer wires the copy in, then QA smoke checks and the README lands. The scaffold goes through review.")] },
+    { say: "Morning, crew. This is the demo run: every step is scripted and no model is called. Reading the workspace first.", calls: [call("fs_list", { path: "." })] },
+    {
+      say: `Empty workspace. ${tasks.length} tasks on the board: scaffold and copy start together, then the copy goes in, then QA${security ? ", security" : ""} and the README. Kickoff in the meeting room.`,
+      calls: [call("create_tasks", { tasks })],
+    },
+    {
+      calls: [
+        finish(
+          `Plan: ${tasks.length} tasks. Scaffold and copy run in parallel, the engineer wires the copy in, then QA tests the page${security ? ", security scans it" : ""} and the README lands. The scaffold goes through review.`,
+        ),
+      ],
+    },
   ];
 }
 
@@ -251,7 +309,7 @@ function engineerSteps(title: string): Step[] {
   if (title.startsWith(`Fix: ${TITLE.scaffold}`)) {
     return [
       {
-        say: "Fair catch. Adding the alt text first.",
+        say: "Fair catch in the sync. Adding the alt text first.",
         calls: [call("fs_edit", { path: "index.html", find: '<img class="hero-art" src="assets/hero.svg">', replace: '<img class="hero-art" src="assets/hero.svg" alt="A ginger cat asleep next to a latte">' })],
       },
       {
@@ -269,8 +327,11 @@ function engineerSteps(title: string): Step[] {
   }
   if (title === TITLE.scaffold) {
     return [
-      { say: "Paws on the keyboard. Starting with the page skeleton.", calls: [call("fs_write", { path: "index.html", content: HTML })] },
-      { say: "Structure is in. Styles next, mobile first.", calls: [call("fs_write", { path: "styles.css", content: CSS })] },
+      { say: "Paws on the keyboard. Page skeleton first.", calls: [call("fs_write", { path: "index.html", content: HTML_TOP + SECTIONS_MARK + "\n" + HTML_BOTTOM })] },
+      { say: "Skeleton holds. Hero section next.", calls: [call("fs_edit", { path: "index.html", find: SECTIONS_MARK, replace: HTML_HERO + SECTIONS_MARK })] },
+      { say: "Menu highlights and visit details.", calls: [call("fs_edit", { path: "index.html", find: SECTIONS_MARK + "\n", replace: HTML_MENU_VISIT })] },
+      { say: "Structure is in. Base styles, mobile first.", calls: [call("fs_write", { path: "styles.css", content: CSS_BASE + CSS_MARK })] },
+      { say: "Section styles and visible focus states.", calls: [call("fs_edit", { path: "styles.css", find: CSS_MARK, replace: CSS_SECTIONS })] },
       { calls: [finish("Created index.html (header, hero, menu, visit, footer) and styles.css (mobile first, one accent color, visible focus).", ["index.html", "styles.css"])] },
     ];
   }
@@ -301,6 +362,9 @@ function engineerSteps(title: string): Step[] {
   return [{ calls: [finish("Done.")] }];
 }
 
+/** The designer's question for the CEO (the demo CEO approves it). */
+export const DEMO_QUESTION = "Tagline pick from the research: Slow coffee. Soft paws. Can I build the copy around it?";
+
 function designerSteps(title: string): Step[] {
   if (title !== TITLE.copy) return [{ calls: [finish("Done.")] }];
   return [
@@ -316,14 +380,17 @@ function designerSteps(title: string): Step[] {
         }),
       ],
     },
-    { say: "Pattern one it is. Two short beats, like a slow blink.", calls: [call("fs_write", { path: "copy.md", content: COPY })] },
+    { say: "The research is in. Checking the pick with the lead before I commit to it.", calls: [call("ask_human", { question: DEMO_QUESTION })] },
+    { say: "Approved. Headline and hero line first. Two short beats, like a slow blink.", calls: [call("fs_write", { path: "copy.md", content: COPY_HEAD + COPY_MARK })] },
+    { say: "Menu highlights and visit details.", calls: [call("fs_edit", { path: "copy.md", find: COPY_MARK, replace: COPY_REST })] },
     { calls: [finish("copy.md has the tagline (Slow coffee. Soft paws.), the hero line, three menu highlights and visit details.", ["copy.md"])] },
   ];
 }
 
 function researcherSteps(): Step[] {
   return [
-    { say: "Network tools are off for this run, so I am working from the crew's notes.", calls: [call("fs_write", { path: "notes/taglines.md", content: TAGLINES })] },
+    { say: "Network tools are off for this run, so I am reading the crew's notes first.", calls: [call("recall", { query: "cafe tagline patterns" })] },
+    { say: "Nothing on file yet. Writing up five patterns from what I know.", calls: [call("fs_write", { path: "notes/taglines.md", content: TAGLINES })] },
     { calls: [finish("Five tagline patterns in notes/taglines.md. Pick: two short beats (Slow coffee. Soft paws.).", ["notes/taglines.md"])] },
   ];
 }
@@ -333,7 +400,7 @@ function reviewerSteps(round: number): Step[] {
     return [
       { say: "Nose to the markup.", calls: [call("fs_read", { path: "index.html" })] },
       {
-        say: "Two things before this ships.",
+        say: "Two things before this ships. Calling a quick sync.",
         calls: [call("submit_review", { verdict: "fail", notes: ["The hero image has no alt text", "The page has no meta description for search and link previews"] })],
       },
     ];
@@ -344,18 +411,30 @@ function reviewerSteps(round: number): Step[] {
   ];
 }
 
+/** The one shell command of the run: QA's smoke check (a harmless echo). */
+export const DEMO_SMOKE = "echo 'smoke check: index.html, styles.css and copy.md are in place'";
+
 function qaSteps(): Step[] {
   return [
     { say: "Sniffing around the workspace.", calls: [call("fs_list", { path: "." })] },
-    { say: "Running the smoke check.", calls: [call("shell_run", { command: "echo 'smoke check: index.html, styles.css and copy.md are in place'" })] },
-    { calls: [finish("Smoke check passed: index.html, styles.css and copy.md are in place, the echo check exited 0.")] },
+    { say: "Test one: no placeholder text left anywhere.", calls: [call("fs_search", { pattern: "goes here" })] },
+    { say: "Test two: the smoke check.", calls: [call("shell_run", { command: DEMO_SMOKE })] },
+    { calls: [finish("Tests passed: no placeholder text left in the workspace, and the smoke check found index.html, styles.css and copy.md (exit 0).")] },
   ];
 }
 
-function stepsFor(t: TurnInfo): Step[] {
+function securitySteps(): Step[] {
+  return [
+    { say: "Checking under the rug before launch.", calls: [call("scan_secrets")] },
+    { say: "Secrets are clean. The config next.", calls: [call("scan_config")] },
+    { calls: [finish("No committed secrets and no risky config in the page files.")] },
+  ];
+}
+
+function stepsFor(t: TurnInfo, opts: DemoScriptOptions): Step[] {
   switch (t.role) {
     case "lead":
-      return leadSteps(t.planning);
+      return leadSteps(t.planning, opts.securityScan === true);
     case "engineer":
       return engineerSteps(t.title);
     case "designer":
@@ -366,6 +445,8 @@ function stepsFor(t: TurnInfo): Step[] {
       return reviewerSteps(t.round);
     case "qa":
       return qaSteps();
+    case "security":
+      return securitySteps();
     default:
       return [{ calls: [finish("Done.")] }];
   }
@@ -376,15 +457,26 @@ const REFLECTION = JSON.stringify({
   tags: ["html", "review", "accessibility"],
 });
 
+/** The CEO's scripted decisions: the tagline gets a yes with a note, anything else a plain yes. */
+function ceoTurn(req: ChatRequest): ScriptedTurn {
+  const first = req.messages[0];
+  const question = first ? packetQuestion(textOf(first.content)) : "";
+  const answer = /tagline/i.test(question)
+    ? "Approved. Two short beats sound like the room. Keep the hero line under twelve words."
+    : "Approved. Go with your best call and say why in your summary.";
+  return { text: JSON.stringify({ decision: "approve", answer }) };
+}
+
 /** The scripted reply for one request (exported for tests). */
-export function demoTurn(req: ChatRequest, roleBySystem: Map<string, AgentRole>): ScriptedTurn {
+export function demoTurn(req: ChatRequest, roleBySystem: Map<string, AgentRole>, opts: DemoScriptOptions = {}): ScriptedTurn {
+  if (req.system === CEO_SYSTEM) return ceoTurn(req);
   const t = readTurn(req, roleBySystem);
   if (!t.role) {
     // memory reflection (JSON) or step compaction: short, well formed answers
     if (req.responseFormat === "json") return { text: REFLECTION };
     return { text: "Earlier steps: files written and checked, nothing open." };
   }
-  const steps = stepsFor(t);
+  const steps = stepsFor(t, opts);
   const s = steps[Math.min(t.step, steps.length - 1)]!;
   // past the end of a script: finish again instead of looping on a tool
   const calls = t.step >= steps.length ? [finish("Done.")] : s.calls;
@@ -407,23 +499,34 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export interface DemoRouterOptions {
+export interface DemoRouterOptions extends DemoScriptOptions {
   /** ContextService.charter: the exact system prompt of each role */
   charter(role: AgentRole): string;
   paceMs?: readonly [number, number];
+  /** meeting hold range in ms; default DEMO_MEETING_MS, scaled with a custom paceMs */
+  meetingMs?: readonly [number, number];
 }
 
 const DEMO_MODELS: ProviderModel[] = [{ id: DEMO_MODEL, label: "MengAI demo crew (scripted)", contextWindow: 128_000, caps: ["chat", "tools"] }];
 
-export function createDemoRouter(opts: DemoRouterOptions): LlmRouter {
+/** Meeting hold that keeps the default ratio to the reply pace (6 to 10 s at the 2.2 to 4.2 s default). */
+export function demoMeetingMs(paceMs?: readonly [number, number]): readonly [number, number] {
+  if (!paceMs) return DEMO_MEETING_MS;
+  const lo = Math.max(0, Math.min(paceMs[0], paceMs[1]));
+  const hi = Math.max(lo, paceMs[0], paceMs[1]);
+  return [Math.round((lo * DEMO_MEETING_MS[0]) / DEMO_PACE_MS[0]), Math.round((hi * DEMO_MEETING_MS[1]) / DEMO_PACE_MS[1])];
+}
+
+export function createDemoRouter(opts: DemoRouterOptions): LlmRouter & CompanyPace {
   const roleBySystem = new Map<string, AgentRole>(AGENT_ROLES.map((r) => [opts.charter(r), r] as const));
   const [lo, hi] = opts.paceMs ?? DEMO_PACE_MS;
   const min = Math.max(0, Math.min(lo, hi));
   const max = Math.max(min, lo, hi);
+  const script: DemoScriptOptions = { securityScan: opts.securityScan };
   const scripted = new ScriptedProvider({
     id: DEMO_PROVIDER_ID,
     protocol: "openai_chat",
-    script: (req) => demoTurn(req, roleBySystem),
+    script: (req) => demoTurn(req, roleBySystem, script),
     models: DEMO_MODELS,
   });
   const provider: LlmProvider = {
@@ -442,6 +545,8 @@ export function createDemoRouter(opts: DemoRouterOptions): LlmRouter {
   return {
     resolve: async () => ({ provider, model: DEMO_MODEL, contextWindow: 128_000 }),
     configured: async () => true,
+    // the runs engine reads this hint: demo meetings hold long enough to watch
+    company: { meetingMs: opts.meetingMs ?? demoMeetingMs(opts.paceMs) },
   };
 }
 

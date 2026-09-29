@@ -20,6 +20,8 @@ import {
   type HandoffDTO,
   type HumanMessageBody,
   type LessonDTO,
+  type MeetingDTO,
+  type MeetingKind,
   type RunDTO,
   type Severity,
   type TaskDTO,
@@ -46,7 +48,23 @@ import {
   resolveDeps,
   submitReviewArgs,
   updateTaskArgs,
+  type PlannedTask,
 } from "./controls";
+import {
+  CEO_SYSTEM,
+  COMPANY,
+  MEETING_TITLE,
+  ceoPacket,
+  kickoffText,
+  meetingHoldMs,
+  meetingLine,
+  ownerOnly,
+  parseCeoReply,
+  syncText,
+  wrapupText,
+  type CeoVerdict,
+  type SyncNext,
+} from "./company";
 import { LIMITS, OUTPUT_CAP, RepeatGuard, TITLES, bounded, moodFor, roleCap } from "./policy";
 import type { RunsDeps } from "./ports";
 import { emptyUsage, progressOf, type RunsRepo } from "./repo";
@@ -125,7 +143,8 @@ interface Brief {
 
 export interface EngineHooks {
   onSeq(runId: string, seq: number): void;
-  onClosed(runId: string): void;
+  /** the run ended in this process; its meetings are handed over for later snapshots */
+  onClosed(runId: string, meetings: MeetingDTO[]): void;
 }
 
 export interface EngineInit {
@@ -137,6 +156,8 @@ export interface EngineInit {
   root: string;
   maxConcurrent: number;
   hooks: EngineHooks;
+  /** hydrate: meetings rebuilt from the event log, when the service has one */
+  meetings?: MeetingDTO[];
 }
 
 const TERMINAL_TASK: ReadonlySet<TaskStatus> = new Set(["done", "failed", "blocked", "cancelled"]);
@@ -157,6 +178,22 @@ function abortable<T>(signal: AbortSignal, register: (resolve: (v: T) => void) =
       signal.removeEventListener("abort", onAbort);
       resolve(v);
     });
+  });
+}
+
+/** setTimeout that rejects with the signal's reason on abort and clears its timer. */
+function sleepFor(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -207,6 +244,13 @@ export class RunEngine {
   private readonly runAbort = new AbortController();
   private resumeWaiters: Array<() => void> = [];
   private pendingLeadNotes: string[] = [];
+  private readonly meetings: MeetingDTO[] = [];
+  /** cats sitting in a meeting right now: agent id -> meeting id */
+  private readonly seated = new Map<string, string>();
+  /** kickoff and wrap-up hold every dispatch until the meeting ends */
+  private holds = 0;
+  private kickedOff = false;
+  private wrapping = false;
 
   private ticking = false;
   private dirty = false;
@@ -319,6 +363,10 @@ export class RunEngine {
       }
       if (t.kind === "fix") target.reworked = true;
     }
+    // a meeting cut by the restart is over: nobody is in the room any more
+    const at = init.ctx.clock.now();
+    for (const m of init.meetings ?? []) e.meetings.push(m.endedAt === null ? { ...m, endedAt: at } : m);
+    e.kickedOff = e.meetings.some((m) => m.kind === "kickoff") || [...e.tasks.values()].some((t) => t.kind === "plan" && t.dto.status === "done");
     const lastEnded = [...e.tasks.values()]
       .filter((t) => t.dto.endedAt !== null)
       .sort((x, y) => (y.dto.endedAt ?? 0) - (x.dto.endedAt ?? 0))[0];
@@ -362,6 +410,10 @@ export class RunEngine {
 
   handoffList(): HandoffDTO[] {
     return [...this.handoffs.values()].sort((x, y) => x.createdAt - y.createdAt);
+  }
+
+  meetingList(): MeetingDTO[] {
+    return this.meetings.map((m) => ({ ...m, agentIds: [...m.agentIds], agenda: [...m.agenda], notes: [...m.notes] }));
   }
 
   overBudget(): boolean {
@@ -420,7 +472,7 @@ export class RunEngine {
     this.run.endedAt = now;
     await this.repo.setRunStatus(this.run.id, "stopped", reason, now, now);
     await this.emit("run.status", { status: "stopped", reason });
-    this.hooks.onClosed(this.run.id);
+    this.hooks.onClosed(this.run.id, this.meetingList());
   }
 
   /** Process shutdown: abort work without changing statuses (boot recovery pauses the run). */
@@ -829,7 +881,8 @@ export class RunEngine {
   }
 
   private async schedule(): Promise<void> {
-    if (this.run.status !== "running" || this.finishing) return;
+    // a kickoff or wrap-up holds the floor: nobody starts work until it ends (it kicks on the way out)
+    if (this.run.status !== "running" || this.finishing || this.holds > 0) return;
     const now = this.ctx.clock.now();
     for (const t of [...this.tasks.values()]) {
       if (t.dto.status !== "queued" && !this.isDepBlocked(t)) continue;
@@ -865,11 +918,13 @@ export class RunEngine {
   private async pickAgent(t: LiveTask): Promise<LiveAgent | null> {
     if (t.dto.assigneeId) {
       const owner = this.agents.get(t.dto.assigneeId);
-      if (owner && alive(owner) && owner.dto.role === t.dto.role) return owner.busy ? null : owner;
+      if (owner && alive(owner) && owner.dto.role === t.dto.role) return owner.busy || this.seated.has(owner.dto.id) ? null : owner;
     }
     const pool = [...this.agents.values()].filter((a) => a.dto.role === t.dto.role && alive(a));
-    const idle = pool.find((a) => !a.busy);
+    const idle = pool.find((a) => !a.busy && !this.seated.has(a.dto.id));
     if (idle) return idle;
+    // a cat of this role is in a meeting: wait for it to come back instead of hiring another
+    if (pool.some((a) => !a.busy && this.seated.has(a.dto.id))) return null;
     if (pool.length < roleCap(t.dto.role)) return this.spawnAgent(t.dto.role, t);
     return null;
   }
@@ -914,6 +969,20 @@ export class RunEngine {
     }
     if (this.lastEvent === "lead_failed") return this.finishRun("failed", bounded(`Lead task failed: ${this.leadFailure ?? "unknown"}`, 400));
     if (this.finalReports >= LIMITS.finalReportsCap) return this.finishRun("done", "final report limit reached");
+    if (this.wrapping) return;
+    const lead = this.lead();
+    const crew = [...this.agents.values()].filter((a) => alive(a) && a !== lead);
+    if (lead && crew.length > 0) {
+      // the whole crew meets before the lead writes the report; the meeting counts as a live loop
+      this.wrapping = true;
+      this.track(this.wrapupThenReport(lead, crew));
+      return;
+    }
+    await this.createFinalReport();
+    this.dirty = true;
+  }
+
+  private async createFinalReport(): Promise<void> {
     this.finalReports++;
     const lead = this.lead();
     const t = this.makeTask({
@@ -930,7 +999,19 @@ export class RunEngine {
       kind: "final",
     });
     await this.insertTask(t);
-    this.dirty = true;
+  }
+
+  /** Tracks a background promise like a task loop: completion waits for it, the scheduler wakes after it. */
+  private track(work: Promise<void>): void {
+    const p: Promise<void> = work
+      .catch((e) => {
+        if (!(e instanceof Halt)) this.log.log("error", "company step failed", { error: redact(errMsg(e)) });
+      })
+      .finally(() => {
+        this.loops.delete(p);
+        this.kick();
+      });
+    this.loops.add(p);
   }
 
   private async finishRun(status: "done" | "failed", reason: string | null): Promise<void> {
@@ -947,7 +1028,7 @@ export class RunEngine {
     await this.emitUsage();
     await this.emit("run.status", { status, reason });
     if (status === "done") await this.learn();
-    this.hooks.onClosed(this.run.id);
+    this.hooks.onClosed(this.run.id, this.meetingList());
   }
 
   /** Post-run learning: run digest, lesson outcomes, reflection on failed or reworked work, promotion. */
@@ -1023,9 +1104,16 @@ export class RunEngine {
     }
     a.busy = false;
     a.waiting = false;
-    if (alive(a) && !TERMINAL_RUN.has(this.run.status) && this.run.status !== "stopping") {
-      await this.setAgent(a, { status: "idle", currentTaskId: null, statusText: VOICE.idle });
+    if (alive(a) && !TERMINAL_RUN.has(this.run.status) && this.run.status !== "stopping" && !this.seated.has(a.dto.id)) {
+      await this.setAgent(a, { status: "idle", currentTaskId: null, statusText: this.idleLine(a) });
     }
+  }
+
+  /** The line of a cat between tasks: the CEO keeps watch, a cat with nothing queued takes a coffee break. */
+  private idleLine(a: LiveAgent): string {
+    if (a.dto.role === "lead") return VOICE.ceoIdle;
+    const next = [...this.tasks.values()].some((t) => t.dto.role === a.dto.role && (t.dto.status === "queued" || t.dto.status === "ready"));
+    return next ? VOICE.idle : VOICE.coffee;
   }
 
   private async beginTask(a: LiveAgent, t: LiveTask): Promise<void> {
@@ -1037,6 +1125,11 @@ export class RunEngine {
     await this.saveTask(t, { status: "running", assigneeId: a.dto.id, attempts: t.dto.attempts + 1, startedAt: t.dto.startedAt ?? now });
     a.cleanSteps = 0;
     await this.setAgent(a, { status: "thinking", currentTaskId: t.dto.id, statusText: thinkingLine(a.dto.role, t.dto.title, 0, false) });
+    // the CEO deals each planned task to the cat that picks it up
+    const lead = this.lead();
+    if (t.kind === "work" && t.dto.attempts === 1 && lead && lead !== a && t.dto.createdBy === lead.dto.id) {
+      await this.emit("agent.say", { text: clip(`${a.dto.name}, ${t.dto.title} is yours.`, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, t.dto.id);
+    }
     if (t.handoffId) {
       const h = this.handoffs.get(t.handoffId);
       if (h && h.toAgentId !== a.dto.id) {
@@ -1083,6 +1176,16 @@ export class RunEngine {
     await this.saveTask(t, { status: "done", resultSummary: result, endedAt: now });
     await this.markPass(a);
     if (t.kind === "final") this.lastEvent = "final_done";
+    else if (t.kind === "work") await this.signOff(t, a, "delivery");
+  }
+
+  /** The CEO approves a delivery or a passed review with one short line to the cat that did it. */
+  private async signOff(t: LiveTask, owner: LiveAgent | undefined, how: "delivery" | "review"): Promise<void> {
+    const lead = this.lead();
+    if (!lead || !owner || owner === lead) return;
+    const text = how === "review" ? `Approved: ${t.dto.title}. Nice work, ${owner.dto.name}.` : `Signed off: ${t.dto.title}. Thanks, ${owner.dto.name}.`;
+    await this.emit("agent.say", { text: clip(text, LIMITS.sayChars), to: owner.dto.id }, lead.dto.id, t.dto.id);
+    if (!lead.busy && !this.seated.has(lead.dto.id)) await this.setAgent(lead, { statusText: VOICE.signedOff(t.dto.title) });
   }
 
   private async startReview(target: LiveTask, summary: string, ownerId: string | null): Promise<void> {
@@ -1133,11 +1236,15 @@ export class RunEngine {
         resultSummary: bounded(`${target.dto.resultSummary ?? ""}\nReview passed (round ${target.rounds}).`, LIMITS.resultChars),
       });
       if (owner) await this.markPass(owner);
+      await this.signOff(target, owner, "review");
       return;
     }
     target.reworked = true;
     if (owner) await this.markFail(owner);
-    if (target.rounds < LIMITS.maxReviewRounds) return this.createFix(target, notes, rt, false);
+    if (target.rounds < LIMITS.maxReviewRounds) {
+      if (!(await this.syncMeeting(reviewer, target, owner, notes, "fix"))) return;
+      return this.createFix(target, notes, rt, false);
+    }
 
     const counts = new Map<string, number>();
     for (const round of target.reviewNotes) {
@@ -1155,6 +1262,9 @@ export class RunEngine {
     } catch (e) {
       this.log.log("warn", "loopExit failed, escalating", { error: redact(errMsg(e)) });
     }
+    const fixable = (next === "another_round" || next === "change_approach") && target.rounds < LIMITS.hardReviewRounds;
+    const sync: SyncNext = next === "exit_done" ? "exit_done" : fixable ? (next === "change_approach" ? "change_approach" : "fix") : "escalate";
+    if (!(await this.syncMeeting(reviewer, target, owner, notes, sync))) return;
     if (next === "exit_done") {
       await this.saveTask(target, {
         status: "done",
@@ -1163,9 +1273,7 @@ export class RunEngine {
       });
       return;
     }
-    if ((next === "another_round" || next === "change_approach") && target.rounds < LIMITS.hardReviewRounds) {
-      return this.createFix(target, notes, rt, next === "change_approach");
-    }
+    if (fixable) return this.createFix(target, notes, rt, next === "change_approach");
     // escalate: block the task (its dependents block) and pause the run for the human
     await this.saveTask(target, {
       status: "blocked",
@@ -1558,6 +1666,183 @@ export class RunEngine {
     }
   }
 
+  // ---------------------------------------------------------- company
+  /**
+   * One meeting: seat everyone, publish meeting.started, hold the room for a
+   * short, readable time, then publish meeting.ended with notes and
+   * decisions. Cats that are not inside a task loop walk back to their desk
+   * afterwards; the caller moves a busy host on. An abort still closes the
+   * room (decision "Cut short") and returns false.
+   */
+  private async holdMeeting(m: {
+    kind: MeetingKind;
+    title: string;
+    host: LiveAgent;
+    attendees: LiveAgent[];
+    presenters: LiveAgent[];
+    agenda: string[];
+    notes: string[];
+    decisions: string[];
+    opening: string;
+    to: string | null;
+    taskId: string | null;
+    signal: AbortSignal;
+    /** hold every dispatch while the meeting runs (kickoff, wrap-up) */
+    global?: boolean;
+  }): Promise<boolean> {
+    if (this.closed || m.signal.aborted) return false;
+    const people = [...new Set([m.host, ...m.attendees])].filter(alive);
+    const dto: MeetingDTO = {
+      id: this.ctx.clock.id(),
+      kind: m.kind,
+      title: bounded(m.title, COMPANY.titleChars),
+      agentIds: people.map((p) => p.dto.id),
+      agenda: m.agenda,
+      notes: [],
+      startedAt: this.ctx.clock.now(),
+      endedAt: null,
+    };
+    this.meetings.push(dto);
+    for (const p of people) this.seated.set(p.dto.id, dto.id);
+    if (m.global) this.holds++;
+    let held = false;
+    let failure: unknown = null;
+    try {
+      await this.emit("meeting.started", { meetingId: dto.id, kind: dto.kind, title: dto.title, agentIds: dto.agentIds, agenda: dto.agenda }, m.host.dto.id, m.taskId);
+      const presenting = new Set(m.presenters.map((p) => p.dto.id));
+      for (const p of people) {
+        const talks = presenting.has(p.dto.id);
+        await this.setAgent(p, { status: talks ? "working" : "waiting", activity: talks ? "review" : "wait", statusText: meetingLine(m.kind) });
+      }
+      if (m.opening) await this.emit("agent.say", { text: clip(m.opening, LIMITS.sayChars), to: m.to }, m.host.dto.id, m.taskId);
+      await sleepFor(meetingHoldMs(this.deps.llm.company?.meetingMs), m.signal);
+      held = true;
+    } catch (e) {
+      if (!m.signal.aborted) failure = e;
+    } finally {
+      dto.notes = m.notes;
+      dto.endedAt = this.ctx.clock.now();
+      for (const p of people) if (this.seated.get(p.dto.id) === dto.id) this.seated.delete(p.dto.id);
+      if (m.global) this.holds--;
+      await this.emit("meeting.ended", { meetingId: dto.id, kind: dto.kind, notes: dto.notes, decisions: held ? m.decisions : ["Cut short"] }, m.host.dto.id, m.taskId);
+    }
+    if (failure) throw failure;
+    if (held && !TERMINAL_RUN.has(this.run.status) && this.run.status !== "stopping") {
+      for (const p of people) {
+        if (!p.busy && alive(p) && !this.seated.has(p.dto.id)) await this.setAgent(p, { status: "idle", statusText: p.dto.role === "lead" ? VOICE.ceoIdle : VOICE.backAtDesk });
+      }
+    }
+    this.kick();
+    return held;
+  }
+
+  /** After the plan: one cat per planned role takes its desk, then the lead walks the crew through the board. */
+  private async kickoff(lead: LiveAgent, plan: LiveTask, created: LiveTask[], signal: AbortSignal): Promise<void> {
+    for (const x of created) {
+      if (x.dto.role === "lead") continue;
+      if ([...this.agents.values()].some((a) => a.dto.role === x.dto.role && alive(a))) continue;
+      await this.spawnAgent(x.dto.role, x);
+    }
+    const crew = [...this.agents.values()].filter((a) => alive(a) && a !== lead && !a.busy && !this.seated.has(a.dto.id));
+    if (crew.length === 0) return;
+    const titleOf = (id: string) => this.tasks.get(id)?.dto.title ?? id;
+    const items = created.map((x) => ({ title: x.dto.title, role: x.dto.role, review: x.dto.review, after: x.dto.deps.map(titleOf) }));
+    // who starts on what: tasks with nothing open before them, dealt in order per role
+    const turn = new Map<AgentRole, number>();
+    const starters = created
+      .filter((x) => x.dto.role !== "lead" && this.depState(x) === "ready")
+      .map((x) => {
+        const i = turn.get(x.dto.role) ?? 0;
+        turn.set(x.dto.role, i + 1);
+        const who = crew.filter((a) => a.dto.role === x.dto.role)[i];
+        return { name: who?.dto.name ?? ROLE_LABEL[x.dto.role], title: x.dto.title };
+      });
+    const text = kickoffText(items, starters);
+    const held = await this.holdMeeting({ kind: "kickoff", title: MEETING_TITLE.kickoff, host: lead, attendees: crew, presenters: [lead], ...text, to: null, taskId: plan.dto.id, signal });
+    if (held) await this.setAgent(lead, { status: "working", activity: "plan", statusText: VOICE.dealing });
+  }
+
+  /** A failed review: reviewer, owner and lead meet on the notes before the fix. False when the run stopped meanwhile. */
+  private async syncMeeting(reviewer: LiveAgent, target: LiveTask, owner: LiveAgent | undefined, notes: string[], next: SyncNext): Promise<boolean> {
+    const lead = this.lead();
+    const free = (x: LiveAgent | undefined): x is LiveAgent => !!x && x !== reviewer && alive(x) && !x.busy && !this.seated.has(x.dto.id);
+    const attendees = [owner, lead].filter(free);
+    if (attendees.length === 0) return true;
+    const text = syncText({ reviewerName: reviewer.dto.name, ownerName: owner?.dto.name ?? null, taskTitle: target.dto.title, notes, round: target.rounds, next });
+    return this.holdMeeting({
+      kind: "sync",
+      title: MEETING_TITLE.sync(target.dto.title),
+      host: reviewer,
+      attendees,
+      presenters: [reviewer],
+      ...text,
+      to: owner?.dto.id ?? null,
+      taskId: target.dto.id,
+      signal: this.runAbort.signal,
+    });
+  }
+
+  /** Every crew task has ended: the whole crew meets, then the lead gets the final report task. */
+  private async wrapupThenReport(lead: LiveAgent, crew: LiveAgent[]): Promise<void> {
+    try {
+      const items = [...this.tasks.values()]
+        .filter((t) => (t.kind === "work" || t.kind === "handoff") && (t.dto.status === "done" || t.dto.status === "failed" || t.dto.status === "blocked"))
+        .sort((x, y) => (x.dto.endedAt ?? 0) - (y.dto.endedAt ?? 0))
+        .map((t) => ({ title: t.dto.title, status: t.dto.status, by: t.dto.assigneeId ? (this.agents.get(t.dto.assigneeId)?.dto.name ?? null) : null }));
+      const text = wrapupText(items, lead.dto.name);
+      const held = await this.holdMeeting({
+        kind: "wrapup",
+        title: MEETING_TITLE.wrapup,
+        host: lead,
+        attendees: crew,
+        presenters: [lead],
+        ...text,
+        to: null,
+        taskId: null,
+        signal: this.runAbort.signal,
+        global: true,
+      });
+      if (held && !this.closed && !this.finishing) await this.createFinalReport();
+    } finally {
+      this.wrapping = false;
+    }
+  }
+
+  /**
+   * The CEO decides a crew question. Owner-only topics skip the model; any
+   * other question gets one fast-tier call capped at 120 output tokens. A
+   * failed or unreadable answer sends the question to the owner.
+   */
+  private async ceoDecide(a: LiveAgent, lead: LiveAgent, t: LiveTask, question: string, signal: AbortSignal): Promise<CeoVerdict> {
+    if (ownerOnly(question)) return { decision: "owner", answer: "" };
+    try {
+      const fast = await this.deps.llm.resolve({ tier: "fast", role: "lead" });
+      const res = await fast.provider.chat({
+        model: fast.model,
+        system: CEO_SYSTEM,
+        messages: [{ role: "user", content: ceoPacket({ goal: this.run.goal, askerName: a.dto.name, askerRole: a.dto.role, taskTitle: t.dto.title, question }) }],
+        maxOutputTokens: COMPANY.ceoOutputTokens,
+        temperature: 0,
+        responseFormat: "json",
+        signal,
+      });
+      await this.recordUsage(lead, t, fast.provider.id, res.model || fast.model, "step", res.usage, res.latencyMs, res.retries, true, null);
+      const v = parseCeoReply(res.text);
+      if (v) return v;
+      this.log.log("warn", "the CEO reply was not a verdict, asking the owner");
+    } catch (e) {
+      if (signal.aborted) throw signal.reason;
+      this.log.log("warn", "CEO decision failed, asking the owner", { error: redact(errMsg(e)) });
+    }
+    return { decision: "owner", answer: "" };
+  }
+
+  private async raise(from: LiveAgent, to: LiveAgent | null, question: string, t: LiveTask): Promise<string> {
+    const requestId = this.ctx.clock.id();
+    await this.emit("request.raised", { requestId, fromAgentId: from.dto.id, toAgentId: to?.dto.id ?? null, question: bounded(question, 600), toOwner: to === null }, from.dto.id, t.dto.id);
+    return requestId;
+  }
+
   // ------------------------------------------------------- tool calls
   private isControl(name: string): boolean {
     return isControlTool(name) || this.deps.tools.isControl(name);
@@ -1755,7 +2040,7 @@ export class RunEngine {
       case "handoff":
         return this.controlHandoff(a, t, call, signal, timer);
       case "create_tasks":
-        return this.controlCreateTasks(a, t, call);
+        return this.controlCreateTasks(a, t, call, signal);
       case "update_task":
         return this.controlUpdateTask(t, call);
       case "list_tasks": {
@@ -1803,20 +2088,85 @@ export class RunEngine {
     }
   }
 
+  /** The lead is the CEO: a crew question reaches the lead first; only the lead's own questions go straight to the owner. */
   private async controlAskHuman(a: LiveAgent, t: LiveTask, call: ToolCall, signal: AbortSignal, timer: TaskTimer): Promise<ControlOut> {
     const p = parseArgs("ask_human", askHumanArgs, call.arguments);
     if (!p.ok) return { output: p.error, ok: false };
     const question = bounded(p.value.question, 1000);
+    const lead = this.lead();
+    if (a.dto.role !== "lead" && lead && lead !== a) return this.askLead(a, lead, t, question, signal, timer);
+    return this.askOwner(a, t, question, signal, timer, null);
+  }
+
+  private async askLead(a: LiveAgent, lead: LiveAgent, t: LiveTask, question: string, signal: AbortSignal, timer: TaskTimer): Promise<ControlOut> {
+    const requestId = await this.raise(a, lead, question, t);
     await this.saveTask(t, { status: "waiting" });
     timer.stop();
     a.waiting = true;
+    await this.setAgent(a, { status: "waiting", activity: "ask", statusText: VOICE.askingLead(lead.dto.name, question) });
+    await this.emit("agent.say", { text: clip(question, LIMITS.sayChars), to: lead.dto.id }, a.dto.id, t.dto.id);
+    this.kick();
+    // an idle CEO visibly weighs the question; a busy one answers without leaving its own task
+    const free = !lead.busy && !this.seated.has(lead.dto.id);
+    if (free) await this.setAgent(lead, { status: "thinking", activity: "think", statusText: VOICE.weighing(a.dto.name) });
+    const settleLead = async (statusText: string) => {
+      if (free && alive(lead) && !lead.busy && !this.seated.has(lead.dto.id) && !TERMINAL_RUN.has(this.run.status)) await this.setAgent(lead, { status: "idle", statusText });
+    };
+    let verdict: CeoVerdict;
+    try {
+      verdict = await this.ceoDecide(a, lead, t, question, signal);
+    } catch (e) {
+      if (this.run.status !== "stopping") await settleLead(VOICE.ceoIdle);
+      throw e;
+    }
+    if (verdict.decision === "owner") {
+      await this.emit("agent.say", { text: clip(`${a.dto.name}, this one is for the owner. I am asking.`, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, t.dto.id);
+      await settleLead(VOICE.escalating(a.dto.name));
+      return this.askOwner(a, t, question, signal, timer, { requestId, lead });
+    }
+    const approved = verdict.decision === "approve";
+    await this.emit("request.decided", { requestId, byAgentId: lead.dto.id, byOwner: false, answer: verdict.answer, approved }, lead.dto.id, t.dto.id);
+    await this.emit("agent.say", { text: clip(verdict.answer, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, t.dto.id);
+    await settleLead(VOICE.answered(a.dto.name));
+    a.waiting = false;
+    timer.start();
+    await this.saveTask(t, { status: "running" });
+    await this.setAgent(a, { status: "working", statusText: VOICE.resumed(t.dto.title) });
+    return { output: `${lead.dto.name} (the lead) ${approved ? "approved" : "declined"}: ${verdict.answer}`, ok: true };
+  }
+
+  /** Waits for the owner. `via`: the lead escalated a crew question, so its request closes with the owner's answer too. */
+  private async askOwner(
+    a: LiveAgent,
+    t: LiveTask,
+    question: string,
+    signal: AbortSignal,
+    timer: TaskTimer,
+    via: { requestId: string; lead: LiveAgent } | null,
+  ): Promise<ControlOut> {
+    const from = via ? via.lead : a;
+    const asked = via ? `${a.dto.name} asks: ${question}` : question;
+    const requestId = await this.raise(from, null, asked, t);
+    if (t.dto.status !== "waiting") await this.saveTask(t, { status: "waiting" });
+    timer.stop();
+    a.waiting = true;
     await this.setAgent(a, { status: "approval", statusText: VOICE.asking(question) });
-    await this.emit("agent.say", { text: clip(question, LIMITS.sayChars), to: "human" }, a.dto.id, t.dto.id);
+    await this.emit("agent.say", { text: clip(asked, LIMITS.sayChars), to: "human" }, from.dto.id, t.dto.id);
     this.kick();
     const answer = await abortable<string>(signal, (resolve) => {
       a.humanWait = { taskId: t.dto.id, resolve };
     });
     a.humanWait = null;
+    const reply = bounded(answer, COMPANY.answerChars);
+    await this.emit("request.decided", { requestId, byAgentId: null, byOwner: true, answer: reply, approved: true }, a.dto.id, t.dto.id);
+    if (via) {
+      await this.emit(
+        "request.decided",
+        { requestId: via.requestId, byAgentId: via.lead.dto.id, byOwner: false, answer: bounded(`The owner says: ${reply}`, COMPANY.answerChars), approved: true },
+        via.lead.dto.id,
+        t.dto.id,
+      );
+    }
     a.waiting = false;
     timer.start();
     await this.saveTask(t, { status: "running" });
@@ -1884,7 +2234,7 @@ export class RunEngine {
     };
   }
 
-  private async controlCreateTasks(a: LiveAgent, t: LiveTask, call: ToolCall): Promise<ControlOut> {
+  private async controlCreateTasks(a: LiveAgent, t: LiveTask, call: ToolCall, signal: AbortSignal): Promise<ControlOut> {
     const p = parseArgs("create_tasks", createTasksArgs, call.arguments);
     if (!p.ok) return { output: p.error, ok: false };
     const planned = p.value.tasks;
@@ -1897,6 +2247,32 @@ export class RunEngine {
     const resolved = resolveDeps(planned, ids, [...this.tasks.values()].map((x) => ({ id: x.dto.id, title: x.dto.title })));
     if (!resolved.ok) return { output: resolved.error, ok: false };
     const lines: string[] = [];
+    const created: LiveTask[] = [];
+    // the first published plan opens with a kickoff: nothing is dealt until the crew has met
+    const kickoff = t.kind === "plan" && !this.kickedOff && planned.some((x) => x.role !== "lead");
+    if (kickoff) {
+      this.kickedOff = true;
+      this.holds++;
+    }
+    try {
+      await this.insertPlanned(a, t, planned, ids, resolved.deps, lines, created);
+      if (kickoff) await this.kickoff(a, t, created, signal);
+    } finally {
+      if (kickoff) this.holds--;
+    }
+    this.kick();
+    return { output: `Created ${planned.length} task${planned.length === 1 ? "" : "s"}:\n${lines.join("\n")}`, ok: true };
+  }
+
+  private async insertPlanned(
+    a: LiveAgent,
+    t: LiveTask,
+    planned: PlannedTask[],
+    ids: string[],
+    deps: string[][],
+    lines: string[],
+    created: LiveTask[],
+  ): Promise<void> {
     for (let i = 0; i < planned.length; i++) {
       const x = planned[i]!;
       const task = this.makeTask({
@@ -1905,7 +2281,7 @@ export class RunEngine {
         spec: x.spec || x.title,
         acceptance: x.acceptance,
         role: x.role,
-        deps: resolved.deps[i]!,
+        deps: deps[i]!,
         review: x.review,
         priority: x.priority,
         parentId: t.dto.id,
@@ -1914,11 +2290,10 @@ export class RunEngine {
         kind: "work",
       });
       await this.insertTask(task);
+      created.push(task);
       const after = task.dto.deps.map((d) => this.tasks.get(d)?.dto.title ?? d);
       lines.push(`- ${task.dto.id} ${task.dto.title} (${task.dto.role})${after.length ? ` after: ${after.join(", ")}` : ""}${task.dto.review ? " [review]" : ""}`);
     }
-    this.kick();
-    return { output: `Created ${planned.length} task${planned.length === 1 ? "" : "s"}:\n${lines.join("\n")}`, ok: true };
   }
 
   private async controlUpdateTask(self: LiveTask, call: ToolCall): Promise<ControlOut> {

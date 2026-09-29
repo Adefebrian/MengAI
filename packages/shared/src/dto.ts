@@ -30,6 +30,7 @@ import type {
   TaskStatus,
   Tier,
 } from "./enums";
+import type { MeetingKind } from "./events";
 
 export interface HealthDTO {
   ok: boolean;
@@ -377,6 +378,20 @@ export interface EvalRunDTO {
   createdAt: number;
 }
 
+/** One crew meeting (kickoff, sync, review, wrap-up), rebuilt from meeting.started / meeting.ended. */
+export interface MeetingDTO {
+  id: string;
+  kind: MeetingKind;
+  title: string;
+  agentIds: string[];
+  agenda: string[];
+  /** empty while the meeting is running */
+  notes: string[];
+  startedAt: number;
+  /** null while the meeting is running */
+  endedAt: number | null;
+}
+
 /** Full picture of one run, used for the first paint before the SSE stream. */
 export interface RunSnapshotDTO {
   run: RunDTO;
@@ -385,6 +400,8 @@ export interface RunSnapshotDTO {
   handoffs: HandoffDTO[];
   decisions: DecisionDTO[];
   approvals: ApprovalDTO[];
+  /** crew meetings, oldest first, so a reload restores the meeting room */
+  meetings?: MeetingDTO[];
   /** events are replayed from this seq onward over SSE */
   lastSeq: number;
 }

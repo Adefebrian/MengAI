@@ -172,8 +172,19 @@ export const VOICE = {
   paused: "Curled up while the run is paused",
   compacting: "Tucking older notes away",
   idle: "Napping until the next task",
+  /** idle with nothing queued for its role: the cat heads to the pantry */
+  coffee: "Coffee break in the pantry",
+  /** the lead between its own tasks: the CEO keeps watch */
+  ceoIdle: "Keeping an eye on the board",
+  backAtDesk: "Back at my desk",
+  dealing: "Dealing the tasks to the crew",
   done: "All done, purring",
   resumed: (title: string) => statusLine(`Back on ${text(title, 60) ?? "the task"}`),
   asking: (question: string) => statusLine(`Meowing for you: ${question}`),
   waitingOn: (roleLabel: string, title: string) => statusLine(`Waiting by the door for ${roleLabel}: ${title}`),
+  askingLead: (leadName: string, question: string) => statusLine(`Asking ${leadName}: ${question}`),
+  weighing: (askerName: string) => statusLine(`Weighing ${askerName}'s question`),
+  answered: (askerName: string) => statusLine(`Answered ${askerName}`),
+  escalating: (askerName: string) => statusLine(`Taking ${askerName}'s question to the owner`),
+  signedOff: (title: string) => statusLine(`Signed off on ${text(title, 60) ?? "the task"}`),
 } as const;

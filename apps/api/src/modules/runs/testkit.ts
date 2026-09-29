@@ -22,9 +22,10 @@ import type {
 } from "../../core/services";
 import { notFound } from "../../lib/http";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
+import { CEO_SYSTEM, packetQuestion } from "./company";
 import { CONTROL_TOOLS } from "./controls";
 import { createRunsModule } from "./index";
-import type { MemoryPromotion, RunsDeps } from "./ports";
+import type { CompanyPace, MemoryPromotion, RunsDeps } from "./ports";
 import { bounded } from "./policy";
 import { createRunsRepo } from "./repo";
 
@@ -50,6 +51,11 @@ export interface CallInfo {
 
 export type Script = Partial<Record<AgentRole, Reply[]>> | ((info: CallInfo) => Reply);
 
+/** The CEO decision call: the question in, the lead's raw JSON reply (or an error) out. */
+export type CeoScript = (question: string) => { text?: string; error?: Error; wait?: Promise<void> };
+
+const CEO_APPROVE = JSON.stringify({ decision: "approve", answer: "Approved. Go ahead." });
+
 const DEFAULT_USAGE: Usage = { inputTokens: 100, outputTokens: 10, cachedTokens: 0, cacheWriteTokens: 0 };
 
 export function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -73,9 +79,10 @@ function parseSystem(system: string): { role: AgentRole; title: string } {
   return { role, title };
 }
 
-export function scriptedRouter(script: Script) {
+export function scriptedRouter(script: Script, ceo?: CeoScript, meetingMs: readonly [number, number] = [0, 0]) {
   const perRole = new Map<AgentRole, number>();
   const calls: CallInfo[] = [];
+  const ceoCalls: ChatRequest[] = [];
   const signals: AbortSignal[] = [];
   let seq = 0;
   const provider: LlmProvider = {
@@ -88,6 +95,14 @@ export function scriptedRouter(script: Script) {
       if (req.signal) signals.push(req.signal);
       if (req.system.startsWith("Summarize")) {
         return { text: "summary of earlier steps", toolCalls: [], stopReason: "end", usage: { ...DEFAULT_USAGE, outputTokens: 5 }, model: req.model, latencyMs: 1, retries: 0 };
+      }
+      if (req.system === CEO_SYSTEM) {
+        ceoCalls.push(req);
+        const content = req.messages[0]?.content;
+        const r = ceo ? ceo(packetQuestion(typeof content === "string" ? content : "")) : { text: CEO_APPROVE };
+        if (r.wait) await waitAbortable(r.wait, req.signal);
+        if (r.error) throw r.error;
+        return { text: r.text ?? CEO_APPROVE, toolCalls: [], stopReason: "end", usage: { ...DEFAULT_USAGE, outputTokens: 20 }, model: req.model, latencyMs: 2, retries: 0 };
       }
       const { role, title } = parseSystem(req.system);
       const n = perRole.get(role) ?? 0;
@@ -115,9 +130,13 @@ export function scriptedRouter(script: Script) {
       };
     },
   };
-  const router: LlmRouter & { calls: CallInfo[]; signals: AbortSignal[]; resolved: Array<{ tier: Tier; role?: AgentRole }>; configuredValue: boolean } = {
+  const router: LlmRouter &
+    CompanyPace & { calls: CallInfo[]; ceoCalls: ChatRequest[]; signals: AbortSignal[]; resolved: Array<{ tier: Tier; role?: AgentRole }>; configuredValue: boolean } = {
     calls,
+    ceoCalls,
     signals,
+    // meetings are held for a few ms in tests
+    company: { meetingMs },
     resolved: [],
     configuredValue: true,
     async resolve(opts) {
@@ -457,6 +476,10 @@ const CONFIG: AppConfig = {
 
 export interface HarnessOptions {
   script: Script;
+  ceo?: CeoScript;
+  /** meeting hold range in ms (default 0) */
+  meetingMs?: readonly [number, number];
+  eventLog?: RunsDeps["eventLog"];
   settings?: Partial<OwnerSettings>;
   tools?: ReturnType<typeof fakeTools>;
   decisions?: ReturnType<typeof fakeDecisions>;
@@ -471,7 +494,7 @@ export async function harness(opts: HarnessOptions) {
   const clock = opts.clock ?? fakeClock();
   const events = captureEvents(clock);
   const ctx: ModuleContext = { config: CONFIG, db, kv: memoryKv(), blob: noBlob, vault: memoryVault(), clock, logger: silentLogger, events };
-  const llm = scriptedRouter(opts.script);
+  const llm = scriptedRouter(opts.script, opts.ceo, opts.meetingMs);
   const tools = opts.tools ?? fakeTools();
   tools.bind(ctx);
   const usage = fakeUsage();
@@ -492,6 +515,7 @@ export async function harness(opts: HarnessOptions) {
     killswitch,
     automation: opts.automation ?? fakeAutomation(false),
     workspace: fakeWorkspace(),
+    eventLog: opts.eventLog,
   };
   const mod = createRunsModule(ctx, deps);
   await mod.ready;

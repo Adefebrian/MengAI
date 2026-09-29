@@ -10,6 +10,8 @@ import {
   type EstimateRunBody,
   type HumanMessageBody,
   type LlmCallDTO,
+  type MeetingDTO,
+  type MengaiEvent,
   type RunDTO,
   type RunEstimate,
   type RunSnapshotDTO,
@@ -22,6 +24,7 @@ import type { ModuleContext } from "../../core/module";
 import type { RunsService } from "../../core/services";
 import { HttpError, conflict, notFound } from "../../lib/http";
 import { redact } from "../../lib/redact";
+import { COMPANY, meetingsFromEvents } from "./company";
 import { RunEngine, TERMINAL_RUN, type EngineHooks, type EngineInit } from "./engine";
 import { HEURISTIC, LIMITS, bounded, estimatePlan, roundUsd } from "./policy";
 import type { RunsDeps } from "./ports";
@@ -43,13 +46,48 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
   const engines = new Map<string, RunEngine>();
   const hydrating = new Map<string, Promise<RunEngine>>();
   const lastSeq = new Map<string, number>();
+  /** meetings of runs that ended here (or were rebuilt from the log), newest last, bounded */
+  const pastMeetings = new Map<string, MeetingDTO[]>();
   let closed = false;
+
+  function rememberMeetings(runId: string, meetings: MeetingDTO[]): void {
+    pastMeetings.delete(runId);
+    pastMeetings.set(runId, meetings);
+    while (pastMeetings.size > COMPANY.closedRunsCached) pastMeetings.delete(pastMeetings.keys().next().value!);
+  }
+
+  /** Meetings of a run that is not live: the in-memory record, else the event log when it is wired. */
+  async function meetingsOf(runId: string, run: RunDTO | null): Promise<MeetingDTO[]> {
+    const known = pastMeetings.get(runId);
+    if (known) return known;
+    const reader = deps.eventLog;
+    if (!reader) return [];
+    const found: MeetingDTO[] = [];
+    try {
+      const events: MengaiEvent[] = [];
+      let after = 0;
+      for (let page = 0; page < COMPANY.eventPages; page++) {
+        const batch = await reader.after(after, runId, COMPANY.eventPage);
+        for (const e of batch) if (e.type === "meeting.started" || e.type === "meeting.ended") events.push(e);
+        if (batch.length < COMPANY.eventPage) break;
+        after = batch[batch.length - 1]!.seq;
+      }
+      found.push(...meetingsFromEvents(events));
+    } catch (e) {
+      log.log("warn", "meeting history read failed", { error: redact(errMsg(e)) });
+      return [];
+    }
+    // an ended run never changes again: keep what was read
+    if (run && TERMINAL_RUN.has(run.status)) rememberMeetings(runId, found);
+    return found;
+  }
 
   const hooks: EngineHooks = {
     onSeq(runId, seq) {
       if (seq > (lastSeq.get(runId) ?? 0)) lastSeq.set(runId, seq);
     },
-    onClosed(runId) {
+    onClosed(runId, meetings) {
+      rememberMeetings(runId, meetings);
       engines.delete(runId);
     },
   };
@@ -99,6 +137,7 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
     if (TERMINAL_RUN.has(run.status)) return null;
     const p = (async () => {
       const init = await engineInit(run);
+      init.meetings = await meetingsOf(runId, run);
       const e = await RunEngine.hydrate(init);
       engines.set(runId, e);
       return e;
@@ -216,14 +255,15 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
       const seq = lastSeq.get(runId) ?? 0;
       const live = engines.get(runId);
       const run = await loadRun(runId);
-      const [agents, tasks, handoffs, decisions, approvals] = await Promise.all([
+      const [agents, tasks, handoffs, decisions, approvals, meetings] = await Promise.all([
         live ? live.agentList() : repo.listAgents(runId),
         live ? live.taskList() : repo.listTasks(runId),
         live ? live.handoffList() : repo.listHandoffs(runId),
         deps.decisions.list(runId).catch(() => []),
         deps.approvals ? deps.approvals.list(runId).catch(() => []) : Promise.resolve([]),
+        live ? live.meetingList() : meetingsOf(runId, run),
       ]);
-      return { run, agents, tasks, handoffs, decisions, approvals, lastSeq: seq };
+      return { run, agents, tasks, handoffs, decisions, approvals, meetings, lastSeq: seq };
     },
 
     async pause(runId: string): Promise<RunDTO> {

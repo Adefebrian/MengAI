@@ -5,7 +5,8 @@ import type { RunsDeps } from "./ports";
 import { createRunsRoutes } from "./routes";
 import { createRunsService, type RunsServiceImpl } from "./service";
 
-export type { RunsDeps, MemoryPromotion } from "./ports";
+export type { RunsDeps, MemoryPromotion, CompanyPace } from "./ports";
+export { CEO_SYSTEM, packetQuestion } from "./company";
 export type { RunsServiceImpl } from "./service";
 
 export function createRunsModule(ctx: ModuleContext, deps: RunsDeps): MountedModule & { service: RunsServiceImpl; ready: Promise<void> } {
