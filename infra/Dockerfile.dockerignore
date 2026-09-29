@@ -1,0 +1,24 @@
+# BuildKit uses this file for infra/Dockerfile (context = repo root).
+# Keep secrets, local data and heavy folders out of the build context.
+**/node_modules
+**/.turbo
+**/dist
+**/target
+.git
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.db
+*.db-shm
+*.db-wal
+data
+.data
+legacy
+.jal
+.claude
+coverage
+apps/desktop/src-tauri
+services

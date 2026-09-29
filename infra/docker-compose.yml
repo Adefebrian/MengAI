@@ -1,17 +1,65 @@
+# MengAI on your own server: app + Postgres 16 + Redis 7.
+# The database and Redis are only reachable on the internal network (no host
+# ports). The app listens on 127.0.0.1:3001 for a TLS reverse proxy on the
+# host (see infra/deploy.md). Secrets come from ../.env, never from this file.
+#
+#   docker compose -f infra/docker-compose.yml --env-file .env up -d --build
+name: mengai
+
 services:
+  app:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    image: mengai:latest
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      MENGAI_MODE: server
+      HOST: 0.0.0.0
+      PORT: "3001"
+      DATA_DIR: /data
+      WEB_DIR: /repo/web
+      DATABASE_URL: postgres://mengai:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/mengai
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
+      TRUST_PROXY: "1"
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - app-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [edge, backend]
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: app
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: mengai
+      POSTGRES_DB: mengai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - pg-data:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
+    networks: [backend]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app"]
+      test: ["CMD-SHELL", "pg_isready -U mengai -d mengai"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -19,16 +67,24 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    # rate limits and caches only: no persistence, bounded memory
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --save '' --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru"]
+    security_opt:
+      - no-new-privileges:true
+    networks: [backend]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+networks:
+  edge: {}
+  backend:
+    internal: true
+
 volumes:
-  postgres-data:
-  redis-data:
+  app-data:
+  pg-data:
