@@ -42,6 +42,18 @@ export function parseOrigins(value: string | undefined): string[] {
     .filter((origin) => origin.length > 0);
 }
 
+/** Exact https origin (the public websites that serve the UI). */
+export function isHttpsOrigin(value: string): boolean {
+  return isExactOrigin(value) && value.startsWith("https://");
+}
+
+/** Exact http(s) origin on 127.0.0.1 or localhost with an explicit port. */
+export function isLoopbackOrigin(value: string): boolean {
+  if (!isExactOrigin(value)) return false;
+  const u = new URL(value);
+  return (u.hostname === "127.0.0.1" || u.hostname === "localhost") && u.port !== "";
+}
+
 /** Decodes a base64 (or base64url) string; null when it is not valid base64. */
 export function decodeBase64(value: string): Uint8Array | null {
   const clean = value.trim().replace(/-/g, "+").replace(/_/g, "/");
@@ -100,13 +112,19 @@ export const envSchema = z
     VAULT_KEK: optionalString,
     ALLOWED_ORIGINS: z.preprocess(blankToUndefined, z.string().optional()),
     /**
-     * public website that serves the MengAI UI (exact origin, for example
-     * https://mengai.example). The local runtime prints and hands out
-     * <site>/app#pair=<one-time token> so that site can pair with it.
+     * local mode: websites that serve a static copy of the MengAI UI and may
+     * call the engine on this machine. Comma separated exact https origins
+     * (https://host[:port]), no path, no wildcard. Checked at boot.
      */
-    MENGAI_SITE_URL: z.preprocess(
+    MENGAI_SITE_ORIGINS: z.preprocess(blankToUndefined, z.string().optional()),
+    /**
+     * local mode, development only: the origin serving the UI when it is not
+     * the engine itself (for example http://localhost:3000 from apps/web dev).
+     * One exact loopback origin with an explicit port.
+     */
+    MENGAI_UI_ORIGIN: z.preprocess(
       (v) => (typeof v === "string" ? (v.trim() === "" ? undefined : v.trim().replace(/\/+$/, "")) : v),
-      z.string().refine(isExactOrigin, "MENGAI_SITE_URL must be an exact origin (scheme://host[:port], no path, no wildcard)").optional(),
+      z.string().refine(isLoopbackOrigin, "MENGAI_UI_ORIGIN must be one exact loopback origin with a port (http://localhost:<port> or http://127.0.0.1:<port>)").optional(),
     ),
     /** one-time code required to create the owner account on first run (server mode) */
     SETUP_CODE: z.preprocess(blankToUndefined, z.string().trim().min(12, "SETUP_CODE must be at least 12 characters").max(256).optional()),
@@ -121,6 +139,15 @@ export const envSchema = z
           code: z.ZodIssueCode.custom,
           path: ["ALLOWED_ORIGINS"],
           message: `"${origin}" is not an exact origin (scheme://host[:port], no path, no wildcard)`,
+        });
+      }
+    }
+    for (const origin of parseOrigins(env.MENGAI_SITE_ORIGINS)) {
+      if (!isHttpsOrigin(origin)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["MENGAI_SITE_ORIGINS"],
+          message: `"${origin}" is not an exact https origin (https://host[:port], no path, no wildcard)`,
         });
       }
     }

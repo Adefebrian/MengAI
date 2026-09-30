@@ -1,14 +1,26 @@
 // Security middleware, applied by core/app.ts in this order:
-//   request context (id + client ip) -> secure headers -> CORS allowlist ->
-//   body cap -> kv rate limit (fails open) -> Host allowlist (local mode) ->
-//   Origin + CSRF header check on mutating requests.
+//   request context (id + client ip) -> secure headers -> local guard (Host,
+//   Origin allowlist, JSON-only mutations) -> CORS allowlist -> body cap ->
+//   kv rate limit (fails open) -> Origin + CSRF header check (server mode).
 //
-// Local-first bridge: the public website serves only the UI; the browser
-// talks straight to the runtime on 127.0.0.1. Websites paired through
-// POST /api/auth/pair (see modules/auth) join the origin allowlist through the
-// OriginRegistry port. They get CORS without credentials (bearer tokens, no
-// cookies) and the Private Network Access preflight answer. Static
-// ALLOWED_ORIGINS keep credentials for existing server-mode cookie clients.
+// Local mode (the crew engine on the owner's own Mac, 127.0.0.1): there is no
+// login, no token and no cookie. Trust comes from the network position plus
+// strict request checks, all answered before routing:
+//   - Host must be 127.0.0.1:<port> or localhost:<port> (DNS rebinding)
+//   - a request that carries an Origin must match the allowlist exactly: the
+//     engine's own two origins, the UI dev origin (MENGAI_UI_ORIGIN) and the
+//     site origins (MENGAI_SITE_ORIGINS, https). Anything else is a 403, not
+//     just a missing CORS header. Never every localhost port: the crew's own
+//     preview apps run on 127.0.0.1 ports and must not drive the engine.
+//   - POST, PUT, PATCH and DELETE must be Content-Type application/json, which
+//     forces a CORS preflight and blocks form posts
+//   - CORS echoes allowlisted origins only (Vary: Origin, no credentials) and
+//     answers Private Network Access preflights
+// A request with no Origin is a local native client (the desktop shell, curl).
+//
+// Server mode (owner login, not used by the website) keeps cookie sessions:
+// ALLOWED_ORIGINS get CORS with credentials, and every mutating request needs
+// an allowed Origin plus the x-mengai-csrf header.
 //
 // Rate limit decisions (jal-security-hardening):
 //   - keyed on the matched route pattern + client ip, never the raw path, so
@@ -18,7 +30,6 @@
 //   - FAILS OPEN: if the kv errors (Redis down) the request passes and a warning
 //     is logged. Stated choice: availability of a single-owner app beats
 //     throttling during a cache outage. Login keeps its own 5/min kv limit.
-import { isExactOrigin } from "@mengai/config";
 import { CSRF_HEADER, type Mode } from "@mengai/shared";
 import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -26,7 +37,6 @@ import { cors } from "hono/cors";
 import { matchedRoutes } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { errorBody, HttpError } from "../lib/http";
-import type { OriginRegistry } from "./auth";
 import type { AppConfig } from "./module";
 import type { Kv } from "./ports/kv";
 import type { Logger } from "./ports/logger";
@@ -85,9 +95,10 @@ export const HEALTH_PATH = "/api/health";
 
 /**
  * hono secure headers. Cross-Origin-Resource-Policy is same-origin
- * everywhere except GET /api/health, which is cross-origin so a website that
- * is not paired yet can tell "runtime running" from "nothing here" with an
- * opaque request. CORS reads are not affected by CORP.
+ * everywhere except GET /api/health, which is cross-origin so the web app can
+ * tell "engine running" from "nothing here" with an opaque request. CORS
+ * reads are not affected by CORP. frame-src admits loopback pages only: the
+ * live preview iframe shows what the crew built on its own 127.0.0.1 port.
  */
 export function securityHeaders(mode: Mode): MiddlewareHandler {
   const inner = secureHeaders({
@@ -99,6 +110,7 @@ export function securityHeaders(mode: Mode): MiddlewareHandler {
       scriptSrc: ["'self'"],
       styleSrc: ["'self'"],
       fontSrc: ["'self'"],
+      frameSrc: ["http://127.0.0.1:*", "http://localhost:*"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -121,15 +133,16 @@ export function securityHeaders(mode: Mode): MiddlewareHandler {
 }
 
 // ----------------------------------------------------------------------- CORS
-/** The one route any exact web origin may call before it is paired (the pairing token is the proof). */
-export const PAIR_PATH = "/api/auth/pair";
 export const PNA_REQUEST_HEADER = "access-control-request-private-network";
 export const PNA_ALLOW_HEADER = "Access-Control-Allow-Private-Network";
-
-/** scheme://host[:port] over http or https, nothing else ("null", file:, paths and wildcards are refused). */
-export function isWebOrigin(origin: string | null | undefined): origin is string {
-  return typeof origin === "string" && origin.length <= 255 && isExactOrigin(origin);
-}
+export const CORS_METHODS = ["GET", "POST", "PATCH", "PUT", "DELETE"];
+/**
+ * local mode: the only request headers a cross-origin page may send (no
+ * credentials, no auth header). x-mengai-csrf is accepted for the web client
+ * but never required here: a custom header only forces a preflight.
+ * JEV be.api_quality allow_headers: option_compat 0.95.
+ */
+export const LOCAL_CORS_HEADERS = ["content-type", "last-event-id", CSRF_HEADER];
 
 /** The Origin names the host this request was sent to. */
 export function isSameHostOrigin(origin: string, host: string): boolean {
@@ -142,33 +155,41 @@ export function isSameHostOrigin(origin: string, host: string): boolean {
 }
 
 /**
- * Exact-match allowlist. Static ALLOWED_ORIGINS get credentials (server-mode
- * cookie clients); paired websites, the same origin and, on POST
- * /api/auth/pair only, any exact web origin get CORS without credentials.
- * Allowed preflights that ask for Private Network Access get
- * Access-Control-Allow-Private-Network: true. Unknown origins get no CORS
- * headers at all.
+ * Local mode Origin allowlist, exact match: the engine's own origins (one per
+ * allowed Host, read live because the port is known only once listening) and
+ * config.allowedOrigins (MENGAI_SITE_ORIGINS and MENGAI_UI_ORIGIN).
  */
-export function corsAllowlist(allowedOrigins: string[], paired: OriginRegistry | null = null): MiddlewareHandler {
-  const fixed = new Set(allowedOrigins);
-  const base = {
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allowHeaders: ["content-type", CSRF_HEADER, "last-event-id", "authorization"],
-    exposeHeaders: ["x-request-id", "retry-after"],
-    maxAge: 600,
-  };
-  const bearerAllowed = (origin: string, c: Context) =>
-    Boolean(origin) &&
-    ((paired?.has(origin) ?? false) || isSameHostOrigin(origin, requestHost(c)) || (c.req.path === PAIR_PATH && isWebOrigin(origin)));
-  const withCredentials = cors({ ...base, credentials: true, origin: (origin) => (fixed.has(origin) ? origin : null) });
-  const bearerOnly = cors({ ...base, origin: (origin, c) => (bearerAllowed(origin, c) ? origin : null) });
+export function localOriginAllowed(config: Pick<AppConfig, "allowedOrigins" | "allowedHosts">, origin: string): boolean {
+  if (config.allowedOrigins.includes(origin)) return true;
+  return origin.startsWith("http://") && config.allowedHosts.includes(origin.slice("http://".length));
+}
+
+/**
+ * Local mode: allowlisted origins get CORS without credentials, and allowed
+ * preflights that ask for Private Network Access get
+ * Access-Control-Allow-Private-Network: true. The local guard has already
+ * refused every other Origin with a 403.
+ * Server mode: exact ALLOWED_ORIGINS with credentials (cookie clients).
+ * Unknown origins get no CORS headers at all. Vary: Origin on every answer.
+ */
+export function corsAllowlist(config: AppConfig): MiddlewareHandler {
+  const shared = { allowMethods: CORS_METHODS, exposeHeaders: ["x-request-id", "retry-after"], maxAge: 600 };
+  if (config.mode !== "local") {
+    const fixed = new Set(config.allowedOrigins);
+    return cors({
+      ...shared,
+      allowHeaders: ["content-type", CSRF_HEADER, "last-event-id"],
+      credentials: true,
+      origin: (origin) => (fixed.has(origin) ? origin : null),
+    });
+  }
+  const allowed = (origin: string) => origin !== "" && localOriginAllowed(config, origin);
+  const local = cors({ ...shared, allowHeaders: LOCAL_CORS_HEADERS, origin: (origin) => (allowed(origin) ? origin : null) });
   return async (c, next) => {
-    const origin = c.req.header("origin") ?? "";
-    const isFixed = origin !== "" && fixed.has(origin);
-    if (c.req.method === "OPTIONS" && c.req.header(PNA_REQUEST_HEADER) === "true" && (isFixed || bearerAllowed(origin, c))) {
+    if (c.req.method === "OPTIONS" && c.req.header(PNA_REQUEST_HEADER) === "true" && allowed(c.req.header("origin") ?? "")) {
       c.res.headers.set(PNA_ALLOW_HEADER, "true");
     }
-    return (isFixed ? withCredentials : bearerOnly)(c, next);
+    return local(c, next);
   };
 }
 
@@ -262,49 +283,64 @@ export function rateLimit(opts: RateLimitOptions): MiddlewareHandler {
   };
 }
 
-// -------------------------------------------------------------- host allowlist
+// ---------------------------------------------------------------- local guard
 export function requestHost(c: Context): string {
   const raw = c.req.header("host") ?? new URL(c.req.url).host;
   return raw.trim().toLowerCase();
 }
 
-/** Local mode only: DNS rebinding defense. An empty allowlist rejects everything. */
-export function hostAllowlist(config: AppConfig): MiddlewareHandler {
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** application/json, parameters allowed (charset); nothing else counts as JSON here. */
+export function isJsonContentType(value: string | null | undefined): boolean {
+  return (value ?? "").split(";")[0]!.trim().toLowerCase() === "application/json";
+}
+
+/**
+ * Local mode only, before CORS and routing (see the header comment):
+ * 403 bad_host for a Host outside allowedHosts (an empty list rejects
+ * everything), 403 bad_origin for any Origin off the allowlist on every
+ * method, 415 unsupported_media_type for a mutating request that is not JSON.
+ */
+export function localGuard(config: AppConfig): MiddlewareHandler {
   return async (c, next) => {
     if (config.mode !== "local") return next();
     const host = requestHost(c);
-    if (!config.allowedHosts.some((h) => h.toLowerCase() === host)) {
+    if (!config.allowedHosts.includes(host)) {
       return c.json(errorBody("bad_host", "Host not allowed"), 403);
+    }
+    const origin = c.req.header("origin");
+    if (origin !== undefined && !localOriginAllowed(config, origin)) {
+      return c.json(errorBody("bad_origin", "This site is not allowed to call MengAI on this machine"), 403);
+    }
+    if (!SAFE_METHODS.has(c.req.method) && !isJsonContentType(c.req.header("content-type"))) {
+      return c.json(errorBody("unsupported_media_type", "Send JSON: Content-Type must be application/json"), 415);
     }
     return next();
   };
 }
 
 // ------------------------------------------------------------ origin and csrf
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-
-export function originAllowed(origin: string, host: string, allowedOrigins: string[], paired: OriginRegistry | null = null): boolean {
+export function originAllowed(origin: string, host: string, allowedOrigins: string[]): boolean {
   if (allowedOrigins.includes(origin)) return true;
-  if (paired?.has(origin)) return true;
   return isSameHostOrigin(origin, host);
 }
 
 /**
- * Every mutating request needs an allowed Origin (same host, the allowlist
- * or a paired website) and the x-mengai-csrf header. A cross-site page cannot
- * set that header without a CORS preflight, which the allowlist refuses.
- * POST /api/auth/pair takes any exact web origin: the one-time token is the
- * proof, and the auth module registers that origin. Requests that carry a
- * valid desktop control token (kill switch) are not browser requests and
- * skip this check.
+ * Server mode: every mutating request needs an allowed Origin (same host or
+ * ALLOWED_ORIGINS) and the x-mengai-csrf header. A cross-site page cannot set
+ * that header without a CORS preflight, which the allowlist refuses.
+ * Local mode relies on the local guard instead (no cookies to ride along).
+ * Requests that carry a valid desktop control token (kill switch) are not
+ * browser requests and skip this check.
  */
-export function csrfGuard(config: AppConfig, paired: OriginRegistry | null = null): MiddlewareHandler {
+export function csrfGuard(config: AppConfig): MiddlewareHandler {
   return async (c, next) => {
+    if (config.mode === "local") return next();
     if (SAFE_METHODS.has(c.req.method)) return next();
     if (c.get("control")) return next();
     const origin = c.req.header("origin");
-    const pairing = c.req.method === "POST" && c.req.path === PAIR_PATH && isWebOrigin(origin);
-    if (!origin || !(pairing || originAllowed(origin, requestHost(c), config.allowedOrigins, paired))) {
+    if (!origin || !originAllowed(origin, requestHost(c), config.allowedOrigins)) {
       return c.json(errorBody("bad_origin", "Cross-origin request refused"), 403);
     }
     if (!c.req.header(CSRF_HEADER)) {
@@ -313,4 +349,3 @@ export function csrfGuard(config: AppConfig, paired: OriginRegistry | null = nul
     return next();
   };
 }
-

@@ -32,8 +32,8 @@ export interface BootConfig {
   handsBin: string | null;
   trustProxy: number;
   migrationsDir: string | null;
-  /** public website that serves the UI (exact origin); the local runtime builds its pair URL on it */
-  siteUrl: string | null;
+  /** local mode: websites (exact https origins) that serve a static copy of the UI and may call this engine */
+  siteOrigins: string[];
 }
 
 export const APP_VERSION: string = pkg.version;
@@ -63,13 +63,20 @@ export function buildConfig(env: Env, opts: { home?: string; version?: string } 
   const webDirRaw = env.MENGAI_WEB_DIR ?? env.WEB_DIR;
   const webDir = webDirRaw ? resolve(webDirRaw) : null;
 
+  // local mode: the exact Origin allowlist besides the engine's own origins
+  // (those follow allowedHosts): the site origins and the UI dev origin.
+  // Server mode: ALLOWED_ORIGINS, with credentials for cookie clients.
+  const siteOrigins = mode === "local" ? parseOrigins(env.MENGAI_SITE_ORIGINS) : [];
+  const allowedOrigins =
+    mode === "local" ? [...new Set([...siteOrigins, ...(env.MENGAI_UI_ORIGIN ? [env.MENGAI_UI_ORIGIN] : [])])] : parseOrigins(env.ALLOWED_ORIGINS);
+
   const app: AppConfig = {
     mode,
     version,
     dataDir,
     workspacesDir,
     webDir,
-    allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS),
+    allowedOrigins,
     // local mode: filled with 127.0.0.1:<port> and localhost:<port> once listening
     allowedHosts: [],
     controlToken: mode === "local" ? randomToken() : null,
@@ -100,21 +107,16 @@ export function buildConfig(env: Env, opts: { home?: string; version?: string } 
     handsBin: mode === "local" ? (env.MENGAI_HANDS_BIN ?? null) : null,
     trustProxy: mode === "local" ? 0 : env.TRUST_PROXY,
     migrationsDir: env.MENGAI_MIGRATIONS_DIR ? resolve(env.MENGAI_MIGRATIONS_DIR) : null,
-    siteUrl: env.MENGAI_SITE_URL ?? null,
+    siteOrigins,
   };
-}
-
-/**
- * Where a browser pairs with this runtime: <site>/app#pair=<token>&runtime=<local url>
- * on the public website when MENGAI_SITE_URL is set, else on the local URL itself.
- * The token rides in the fragment, so it never reaches any server log.
- */
-export function pairUrl(opts: { siteUrl: string | null; localUrl: string; token: string }): string {
-  const base = (opts.siteUrl ?? opts.localUrl).replace(/\/+$/, "");
-  return `${base}/app#pair=${opts.token}&runtime=${encodeURIComponent(opts.localUrl)}`;
 }
 
 /** Host header values the local API accepts (DNS rebinding defense). */
 export function localHosts(port: number): string[] {
   return [`127.0.0.1:${port}`, `localhost:${port}`];
+}
+
+/** The engine's own origins for those hosts (always on the Origin allowlist in local mode). */
+export function localOrigins(port: number): string[] {
+  return localHosts(port).map((host) => `http://${host}`);
 }

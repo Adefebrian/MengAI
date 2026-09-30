@@ -7,8 +7,8 @@
 // Local computer control is not part of this build: automation is null
 // everywhere and health reports it unavailable.
 //
-// Local-first bridge: websites paired with this runtime (auth module) feed
-// the CORS allowlist and the Origin check through auth.origins.
+// Local mode has no login or token: the local guard in core/hardening.ts
+// (Host, exact Origin allowlist, JSON-only mutations) is the trust boundary.
 //
 // Capabilities: connectors (MCP servers and HTTP APIs) feed the tools bridge
 // and the trading venue; trading (paper broker, live gate) feeds the tools
@@ -27,6 +27,7 @@ import { createEventsModule } from "../modules/events";
 import { createHealthModule, type HealthDeps } from "../modules/health";
 import { createJevModule } from "../modules/jev";
 import { createMemoryModule } from "../modules/memory";
+import { createPreviewModule, type PreviewOptions } from "../modules/preview";
 import { createProjectsModule } from "../modules/projects";
 import { createProvidersModule } from "../modules/providers";
 import { createRunsModule } from "../modules/runs";
@@ -75,6 +76,8 @@ export interface ContainerOptions {
   demo?: boolean | DemoOptions;
   /** tests inject the MCP process spawner, fetch and DNS for connectors */
   connectors?: ConnectorsOptions;
+  /** tests inject the dev server spawner, probe fetch and folder opener for live preview */
+  preview?: PreviewOptions;
 }
 
 export interface Container {
@@ -88,6 +91,7 @@ export interface Container {
     providers: ReturnType<typeof createProvidersModule>;
     jev: ReturnType<typeof createJevModule>;
     workspace: ReturnType<typeof createWorkspaceModule>;
+    preview: ReturnType<typeof createPreviewModule>;
     projects: ReturnType<typeof createProjectsModule>;
     context: ReturnType<typeof createContextModule>;
     memory: ReturnType<typeof createMemoryModule>;
@@ -233,7 +237,9 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
     const providers = createProvidersModule(ctx, { usage: usage.service });
     const jev = createJevModule(ctx, { judge: providers.service.judge });
     const workspace = createWorkspaceModule(ctx, { runner });
-    const projects = createProjectsModule(ctx, { workspace: workspace.service });
+    // live preview (local only): the kill switch and shutdown stop every preview
+    const preview = createPreviewModule(ctx, { killswitch }, opts.preview);
+    const projects = createProjectsModule(ctx, { workspace: workspace.service, preview: preview.service });
     const context = createContextModule(ctx);
     const llm: LlmRouter = demoOpts
       ? createDemoRouter({ charter: (role) => context.service.charter(role), paceMs: demoOpts.paceMs, securityScan: true })
@@ -292,7 +298,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
     });
 
     // every module, in creation order; closed in reverse
-    const all: MountedModule[] = [events, settings, auth, usage, providers, jev, workspace, projects, context, memory, assets, security, connectors, trading, companies, tools, runs, evals, health];
+    const all: MountedModule[] = [events, settings, auth, usage, providers, jev, workspace, preview, projects, context, memory, assets, security, connectors, trading, companies, tools, runs, evals, health];
     // providers owns two top-level segments and mounts at "" (under /api): mount it after the named segments
     const mounted = [...all.filter((m) => m.routes && m !== providers), providers];
     const app = createApp({
@@ -300,7 +306,6 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       modules: mounted,
       killswitch,
       auth: auth.sessionAuth,
-      origins: auth.origins,
       kv,
       logger,
       trustProxy: boot.trustProxy,
@@ -337,8 +342,6 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
         logger.log("warn", "connector secret warm-up failed", { error: errText(err) });
       }
       await runs.ready;
-      // paired websites (local-first bridge) must be known before the first CORS answer
-      await auth.service.warm();
 
       if (config.mode === "server" && !boot.setupCode) {
         const sessionInfo = await auth.service.sessionInfo(null);
@@ -354,7 +357,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       return {
         app,
         ctx,
-        modules: { events, settings, auth, usage, providers, jev, workspace, projects, context, memory, assets, security, tools, connectors, trading, companies, runs, evals, health },
+        modules: { events, settings, auth, usage, providers, jev, workspace, preview, projects, context, memory, assets, security, tools, connectors, trading, companies, runs, evals, health },
         killswitch,
         runner,
         demo,

@@ -76,6 +76,8 @@ function send(app: Hono, path: string, init: { method?: string; body?: string; c
   if (method !== "GET" && method !== "HEAD") {
     headers.origin = BASE;
     headers[CSRF_HEADER] = "1";
+    // local mode takes JSON-only mutations, bodyless ones included (as the web client sends them)
+    headers["content-type"] = "application/json";
   }
   if (init.cookie) headers.cookie = `${SESSION_COOKIE}=${init.cookie}`;
   if (init.body !== undefined) {
@@ -85,10 +87,13 @@ function send(app: Hono, path: string, init: { method?: string; body?: string; c
   return Promise.resolve(app.fetch(new native.Request(`${BASE}${path}`, { method, headers, body: init.body })));
 }
 
+/** Local mode has no login or token: launch answers the local owner and sets no cookie, so there is none to return. */
 async function session(c: Container): Promise<string> {
-  const res = await send(c.app, "/api/auth/launch", { method: "POST", body: JSON.stringify({ token: c.modules.auth.service.issueLaunchToken() }) });
+  const res = await send(c.app, "/api/auth/launch", { method: "POST", body: JSON.stringify({ token: "A".repeat(43) }) });
   expect(res.status).toBe(200);
-  return new RegExp(`${SESSION_COOKIE}=([^;]*)`).exec(res.headers.getSetCookie().join(", "))?.[1] ?? "";
+  expect(res.headers.getSetCookie()).toEqual([]);
+  expect(((await res.json()) as { authenticated: boolean }).authenticated).toBe(true);
+  return "";
 }
 
 // Every key of Routes. The type check below fails when a route is added to
@@ -99,7 +104,6 @@ const ROUTES = [
   "POST /api/auth/setup",
   "POST /api/auth/login",
   "POST /api/auth/launch",
-  "POST /api/auth/pair",
   "GET /api/providers",
   "GET /api/providers/presets",
   "POST /api/providers",
@@ -114,6 +118,10 @@ const ROUTES = [
   "DELETE /api/projects/:id",
   "GET /api/projects/:id/files",
   "GET /api/projects/:id/file",
+  "GET /api/projects/:id/preview",
+  "POST /api/projects/:id/preview",
+  "DELETE /api/projects/:id/preview",
+  "POST /api/projects/:id/reveal",
   "GET /api/runs",
   "POST /api/runs",
   "POST /api/runs/estimate",
@@ -218,7 +226,7 @@ describe("container", () => {
     expect(everyRouteListed).toBe(true);
     const { container } = await localContainer();
     try {
-      expect(container.killswitch.hooks().sort()).toEqual(["connectors", "runner", "runs.orchestrator", "trading"]);
+      expect(container.killswitch.hooks().sort()).toEqual(["connectors", "preview", "runner", "runs.orchestrator", "trading"]);
       const cookie = await session(container);
       const health = await (await send(container.app, "/api/health")).json();
       expect(health).toMatchObject({ ok: true, mode: "local", automation: { available: false } });

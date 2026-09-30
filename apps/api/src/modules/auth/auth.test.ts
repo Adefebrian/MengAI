@@ -5,8 +5,7 @@ import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLo
 import { jsonErrorHandler } from "../../core/app";
 import { createFsBlobStore } from "../../core/adapters/blob-fs";
 import type { AppConfig, ModuleContext } from "../../core/module";
-import { controlTokenMatches, createAuthModule, MAX_PAIRED_ORIGINS, OWNER_ID, PAIR_TOKEN_TTL_MS, SESSION_TTL_MS } from "./index";
-import { MAX_PENDING_PAIR_TOKENS } from "./service";
+import { controlTokenMatches, createAuthModule, LOCAL_PRINCIPAL, OWNER_ID, SESSION_TTL_MS } from "./index";
 
 const SETUP_CODE = "correct-horse-battery-staple";
 
@@ -179,22 +178,30 @@ describe("auth: server mode", () => {
 });
 
 describe("auth: local mode", () => {
-  test("launch token is single use and yields a non-Secure strict cookie", async () => {
+  test("no login and no token: every request is the local owner, launch sets no cookie", async () => {
     const { app, mod, db } = await setup("local");
-    const launch = mod.service.issueLaunchToken();
-    const res = await post(app, "/auth/launch", { token: launch });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as SessionDTO)).toEqual({ authenticated: true, mode: "local", needsSetup: false });
-    const { header, token } = cookieOf(res);
-    expect(header).toContain("HttpOnly");
-    expect(header).toContain("SameSite=Strict");
-    expect(header).not.toContain("Secure");
-    const reuse = await post(app, "/auth/launch", { token: launch });
-    expect(reuse.status).toBe(401);
-    const session = (await (await call(app, "/session", { headers: { cookie: `${SESSION_COOKIE}=${token}` } })).json()) as SessionDTO;
-    expect(session.authenticated).toBe(true);
-    const forged = await post(app, "/auth/launch", { token: "A".repeat(43) });
-    expect(forged.status).toBe(401);
+    const anonymous = (await (await call(app, "/session")).json()) as SessionDTO;
+    expect(anonymous).toEqual({ authenticated: true, mode: "local", needsSetup: false });
+    expect(LOCAL_PRINCIPAL).toEqual({ sessionId: "local", userId: OWNER_ID, email: null });
+
+    // POST /api/auth/launch stays in the contract: any well-formed body answers the local owner
+    for (const token of ["A".repeat(43), "any-launch-value-123"]) {
+      const res = await post(app, "/auth/launch", { token });
+      expect(res.status).toBe(200);
+      expect((await res.json()) as SessionDTO).toEqual({ authenticated: true, mode: "local", needsSetup: false });
+      expect(res.headers.getSetCookie()).toEqual([]);
+    }
+    expect((await post(app, "/auth/launch", { token: "short" })).status).toBe(422);
+    expect((await post(app, "/auth/launch", { token: "A".repeat(43), extra: 1 })).status).toBe(422);
+
+    // a stale cookie from an older build is ignored, logout is a no-op without a cookie
+    const stale = await call(app, "/session", { headers: { cookie: `${SESSION_COOKIE}=${"B".repeat(43)}` } });
+    expect(((await stale.json()) as SessionDTO).authenticated).toBe(true);
+    const out = await post(app, "/auth/logout", {});
+    expect(out.status).toBe(200);
+    expect(out.headers.getSetCookie()).toEqual([]);
+    expect(await mod.service.resolve("A".repeat(43))).toBeNull();
+    expect((await db.query`select id from sessions`).length).toBe(0);
     await db.close();
   });
 
@@ -202,51 +209,6 @@ describe("auth: local mode", () => {
     const { app, db } = await setup("local");
     expect((await post(app, "/auth/setup", { email: "me@example.com", password: "a-long-password-1", setupCode: SETUP_CODE })).status).toBe(404);
     expect((await post(app, "/auth/login", { email: "me@example.com", password: "a-long-password-1" })).status).toBe(404);
-    await db.close();
-  });
-
-  test("pairing tokens expire after an hour, the pending set is capped, sessions carry the origin", async () => {
-    const { mod, clock, db } = await setup("local");
-    const svc = mod.service;
-    const host = "127.0.0.1:4190";
-    const site = "https://mengai.example";
-    expect(MAX_PAIRED_ORIGINS).toBe(10);
-
-    const stale = svc.issuePairToken();
-    clock.advance(PAIR_TOKEN_TTL_MS);
-    await expect(svc.pair({ token: stale, origin: site, host }, "ip-1")).rejects.toMatchObject({ status: 401, code: "invalid_pair_token" });
-
-    const oldest = svc.issuePairToken();
-    const rest = Array.from({ length: MAX_PENDING_PAIR_TOKENS }, () => svc.issuePairToken());
-    await expect(svc.pair({ token: oldest, origin: site, host }, "ip-2")).rejects.toMatchObject({ status: 401 });
-    const ok = await svc.pair({ token: rest.at(-1)!, origin: site, host }, "ip-3");
-    expect(ok).toMatchObject({ origin: site, registered: true });
-    expect(ok.session.principal.origin).toBe(site);
-    expect(svc.isPairedOrigin(site)).toBe(true);
-    expect((await svc.resolve(ok.session.token))?.principal.origin).toBe(site);
-
-    // the runtime's own origin is never stored
-    const self = await svc.pair({ token: rest[0]!, origin: `http://${host}`, host }, "ip-4");
-    expect(self.registered).toBe(false);
-    expect(svc.isPairedOrigin(`http://${host}`)).toBe(false);
-    expect((await svc.listOrigins()).map((o) => o.origin)).toEqual([site]);
-
-    // 10 per minute per ip
-    for (let i = 0; i < 10; i++) await expect(svc.pair({ token: "bad", origin: site, host }, "ip-5")).rejects.toMatchObject({ status: 401 });
-    await expect(svc.pair({ token: rest[1]!, origin: site, host }, "ip-5")).rejects.toMatchObject({ status: 429 });
-
-    // removal revokes the bound session
-    expect(await svc.removeOrigin(site)).toBe(true);
-    expect(await svc.resolve(ok.session.token)).toBeNull();
-    expect(svc.isPairedOrigin(site)).toBe(false);
-    await db.close();
-  });
-
-  test("pairing does not exist in server mode", async () => {
-    const { mod, db } = await setup("server");
-    expect(() => mod.service.issuePairToken()).toThrow(/local mode/);
-    await expect(mod.service.pair({ token: "A".repeat(43), origin: "https://mengai.example", host: "h" }, "ip")).rejects.toMatchObject({ status: 404 });
-    expect(mod.origins.has("https://mengai.example")).toBe(false);
     await db.close();
   });
 
