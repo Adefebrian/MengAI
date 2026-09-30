@@ -206,6 +206,18 @@ export function bounded(text: string, max: number): string {
   return clean.length > max ? clean.slice(0, max - 3) + "..." : clean;
 }
 
+/** "an engineer", "a reviewer", "a UX researcher", "an SRE", "an hour": the phrase with its indefinite article. */
+export function withArticle(phrase: string): string {
+  const p = String(phrase ?? "").trim();
+  const word = p.split(/\s+/)[0] ?? "";
+  let an: boolean;
+  if (/^[A-Z]{2,}\b/.test(word)) an = /^[AEFHILMNORSX]/.test(word);
+  else if (/^(uni|use|usu|ure|uti|ux\b|eu|one\b|once\b)/i.test(word)) an = false;
+  else if (/^(hour|honest|honor|honour|heir)/i.test(word)) an = true;
+  else an = /^[aeiou]/i.test(word);
+  return `${an ? "an" : "a"} ${p}`;
+}
+
 export function roundUsd(v: number): number {
   return Math.round(v * 10_000) / 10_000;
 }

@@ -22,7 +22,7 @@ import {
   TIERS,
   activityForStatus,
   activityForTool,
-  catLook,
+  assignCoat,
   leadCatName,
   pickCatName,
   type AgentDTO,
@@ -88,7 +88,7 @@ import {
 import { EvidenceLog, REFLEXION, REFLEXION_SYSTEM, StepBudget, initialSteps, parseReflexion, precheck, reflexionPacket, type Evidence, type Verdict } from "./brain";
 import { createBrainJudge, planAdopt, planHire, planLetGo, planRole, type BrainJudge } from "./judge";
 import { ORG, budgetLeftShare, canAffordHire, depthOf, hireReason, letGoReason, type BudgetView, type HireKind } from "./org";
-import { LIMITS, OUTPUT_CAP, RepeatGuard, TITLES, bounded, moodFor, roleCap } from "./policy";
+import { LIMITS, OUTPUT_CAP, RepeatGuard, TITLES, bounded, moodFor, roleCap, withArticle } from "./policy";
 import {
   BRAIN_DEFAULTS,
   brainOf,
@@ -950,9 +950,11 @@ export class RunEngine {
    */
   private async spawnAgent(role: AgentRole, forTask: LiveTask, hire: Hire): Promise<LiveAgent> {
     const id = this.ctx.clock.id();
-    const taken = new Set([...this.agents.values()].map((a) => a.dto.name));
+    const crew = [...this.agents.values()];
+    const taken = new Set(crew.map((a) => a.dto.name));
     const name = pickCatName(id, role, taken, this.org.ceoName);
-    const look = catLook(id);
+    // the lead is always ginger; everyone else wears a coat no one in this run has
+    const look = assignCoat(id, role, crew.map((a) => a.dto.look.coat));
     const dyn = role !== "lead" && forTask.dto.roleId ? (this.roles.get(forTask.dto.roleId) ?? null) : null;
     let tier: Tier = "balanced";
     try {
@@ -1604,7 +1606,7 @@ export class RunEngine {
       charter,
       charterVersion: 1,
       tools: subset,
-      reason: bounded(`${by.dto.name} asked for a ${title} for ${task.title}`, ROLE_GEN.reasonChars),
+      reason: bounded(`${by.dto.name} asked for ${withArticle(title)} for ${task.title}`, ROLE_GEN.reasonChars),
       createdBy: by.dto.id,
       createdAt: now,
     };
@@ -2755,7 +2757,7 @@ export class RunEngine {
    * reply that starts with yes, approve, ok or go.
    */
   private async approveTool(a: LiveAgent, t: LiveTask, req: { tool: string; risk: Risk; summary: string }, signal: AbortSignal, timer: TaskTimer): Promise<{ approved: boolean; answer: string }> {
-    const question = bounded(`May I run ${req.tool}, a ${req.risk} tool? ${req.summary}`, 900);
+    const question = bounded(`May I run ${req.tool}, ${withArticle(req.risk)} tool? ${req.summary}`, 900);
     const lead = this.lead();
     const fromOwner = (out: ControlOut) => {
       const reply = out.output.replace(/^The human replied: /, "");

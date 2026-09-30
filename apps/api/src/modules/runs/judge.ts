@@ -12,6 +12,7 @@ import { ROLE_LABEL, type AgentRole, type DecisionDTO, type StrategyChoice, type
 import type { Clock, JevAnswer, JevQuestion, Judge, Kv, Logger } from "../../core/ports";
 import { clip, redact, redactDeep } from "../../lib/redact";
 import { aRole } from "./org";
+import { withArticle } from "./policy";
 import { ARCHETYPE_NOTE } from "./roles";
 
 export const BRAIN_DECISIONS = {
@@ -340,7 +341,7 @@ export function planLetGo(i: LetGoInput): BrainPlan<LetGoResult> {
     precheck,
     state: {
       product: PRODUCT,
-      task: `${i.agent.name}, a ${i.agent.title} cat, failed ${i.consecutive} times in a row. Decide: let it go (its tasks go back on the board for a replacement), coach it, or keep it as it is.`,
+      task: `${i.agent.name}, ${withArticle(i.agent.title)} cat, failed ${i.consecutive} times in a row. Decide: let it go (its tasks go back on the board for a replacement), coach it, or keep it as it is.`,
       proposal: { cat: `${i.agent.name} (${i.agent.title}, ${ROLE_LABEL[i.agent.role]})` },
       evidence: {
         consecutive_failures: i.consecutive,

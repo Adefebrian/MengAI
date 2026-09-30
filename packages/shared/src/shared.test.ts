@@ -13,6 +13,7 @@ import {
   TOOL_ACTIVITY,
   TOOL_NAMES,
   activityForTool,
+  assignCoat,
   catLook,
   costUsd,
   findPreset,
@@ -46,6 +47,20 @@ describe("cat identity", () => {
     const b = catLook("0192f0aa-1111-7000-8000-000000000001");
     expect(a).toEqual(b);
     expect(COATS).toContain(a.coat);
+  });
+  test("coats: the lead is always ginger, a crew never repeats a coat until all are worn", () => {
+    expect(assignCoat("any-lead", "lead", ["ginger", "gray"]).coat).toBe("ginger");
+    expect(assignCoat("x", "engineer", ["tabby"])).toEqual(assignCoat("x", "engineer", ["tabby"]));
+    expect(assignCoat("x", "engineer", []).seed).toBe(catLook("x").seed);
+    for (let run = 0; run < 50; run++) {
+      const taken: Array<(typeof COATS)[number]> = [assignCoat(`lead-${run}`, "lead", []).coat];
+      for (let i = 1; i < COATS.length; i++) taken.push(assignCoat(`run-${run}-cat-${i}`, i % 2 ? "engineer" : "reviewer", taken).coat);
+      expect(new Set(taken).size).toBe(COATS.length);
+      expect(taken.filter((c) => c === "ginger")).toEqual(["ginger"]);
+      // a ninth cat takes a least used coat, never the lead's
+      const extra = assignCoat(`run-${run}-extra`, "qa", [...taken, "gray", "black"]).coat;
+      expect(["ginger", "gray", "black"]).not.toContain(extra);
+    }
   });
   test("the CEO is Oyen by default, or the owner's ceoName; nobody else takes it", () => {
     expect(LEAD_NAME).toBe("Oyen");

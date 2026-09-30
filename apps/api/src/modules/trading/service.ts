@@ -294,6 +294,19 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
         if (!venue) throw new TradingError(`the venue tool ${clip(want, 60)} is not connected`, "not_found");
         if (!venue.money) throw new TradingError(`${venue.name} does not place orders; name the connector tool that does`);
       }
+      // one live idea, one proposal: an identical order still waiting is returned as is, nothing new is published
+      const same = (await repo.openOrders()).find(
+        (x) =>
+          x.status === "proposed" &&
+          x.runId === input.runId &&
+          x.mode === mode &&
+          x.symbol === symbol &&
+          x.side === input.side &&
+          x.qty === input.qty &&
+          x.type === type &&
+          x.limitPrice === limitPrice,
+      );
+      if (same) return orderDto(same);
       let quote: number | null = null;
       if (input.quote !== undefined && input.quote !== null) {
         if (!(Number.isFinite(input.quote) && input.quote > 0)) throw new TradingError("quote must be a positive price");

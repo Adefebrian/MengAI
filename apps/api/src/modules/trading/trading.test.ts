@@ -212,6 +212,24 @@ describe("orders", () => {
     expect((await reject(svc.decide(o.id, "approve"))).message).toContain("the order is filled");
   });
 
+  test("an identical proposal still waiting is returned, not created twice, and nothing new is published", async () => {
+    const { svc, events, clock } = await setup();
+    const ask = { runId: RUN, agentId: TRADER, symbol: "ABC", side: "buy" as const, qty: 1, type: "limit" as const, limitPrice: 99, live: true, venue: "exch.place_order", reason: "entry at the level" };
+    const a = await svc.propose(ask);
+    await svc.review({ runId: RUN, agentId: RISK, orderId: a.id, verdict: "approve", note: "small size" });
+    const published = events.ofType("trade.order").length;
+    clock.advance(13 * 60_000);
+    const b = await svc.propose({ ...ask, reason: "entry at the level, again" });
+    expect(b.id).toBe(a.id);
+    expect(events.ofType("trade.order")).toHaveLength(published);
+    expect((await svc.orders({ runId: RUN })).filter((o) => o.status === "proposed")).toHaveLength(1);
+    // a different limit, another run, or a decided order is a new proposal
+    expect((await svc.propose({ ...ask, limitPrice: 98 })).id).not.toBe(a.id);
+    expect((await svc.propose({ ...ask, runId: "run-2" })).id).not.toBe(a.id);
+    await svc.decide(a.id, "reject");
+    expect((await svc.propose(ask)).id).not.toBe(a.id);
+  });
+
   test("live: the daily loss limit stops new orders; a venue failure marks the order failed", async () => {
     const { svc, venue } = await setup();
     await svc.saveSettings({ ...LIVE, autoTrade: true, dailyLossLimitUsd: 20 });

@@ -752,8 +752,8 @@ A record of the test, not investment advice.
 `;
 
 const FUND_LOG = `time,symbol,side,qty,type,quote,reason
-2026-08-08T00:05Z,BTC-USD,buy,0.05,market,61200,close above the 20 day high
-2026-08-08T20:00Z,BTC-USD,sell,0.02,market,62050,take part off at the +1.4 percent band
+2026-08-08T00:05Z,BTC-USD,buy,0.05,market,61200,Close above the 20 day high
+2026-08-08T20:00Z,BTC-USD,sell,0.02,market,62050,Take part off at the +1.4 percent band
 `;
 
 export function fundReport(): string {
@@ -813,15 +813,15 @@ function traderSteps(title: string): Step[] {
     return [
       {
         say: "One live proposal, inside the limits. It waits for risk and the owner.",
-        calls: [call("propose_order", { symbol, side: "buy", qty: live.qty, type: "limit", limit_price: live.limit, quote: live.quote, live: true, reason: "add on a pullback to the breakout level, within the paper limits" })],
+        calls: [call("propose_order", { symbol, side: "buy", qty: live.qty, type: "limit", limit_price: live.limit, quote: live.quote, live: true, reason: "Add on a pullback to the breakout level, within the paper limits" })],
       },
       { calls: [finish(`Proposed one live limit buy of ${live.qty} ${symbol} at ${live.limit}; it waits for the risk review and the owner.`)] },
     ];
   }
   return [
-    { say: "Close above the 20 day high. Buying on paper at the quote I read.", calls: [call("propose_order", { symbol, side: "buy", qty: buy.qty, type: "market", quote: buy.quote, reason: "close above the 20 day high" })] },
+    { say: "Close above the 20 day high. Buying on paper at the quote I read.", calls: [call("propose_order", { symbol, side: "buy", qty: buy.qty, type: "market", quote: buy.quote, reason: "Close above the 20 day high" })] },
     { say: "Logging it.", calls: [call("fs_write", { path: "trades/log.csv", content: FUND_LOG })] },
-    { say: "Up 1.4 percent. Taking part off, as the thesis says.", calls: [call("propose_order", { symbol, side: "sell", qty: sell.qty, type: "market", quote: sell.quote, reason: "take part off at the +1.4 percent band" })] },
+    { say: "Up 1.4 percent. Taking part off, as the thesis says.", calls: [call("propose_order", { symbol, side: "sell", qty: sell.qty, type: "market", quote: sell.quote, reason: "Take part off at the +1.4 percent band" })] },
     { calls: [finish(`Two paper orders for ${symbol} proposed (buy ${buy.qty} at ${buy.quote}, sell ${sell.qty} at ${sell.quote}); trades/log.csv lists both.`, ["trades/log.csv"])] },
   ];
 }
@@ -831,7 +831,7 @@ function riskSteps(title: string): Step[] {
     return [
       { say: "Two orders on my desk. Checking the book first.", calls: [call("positions")] },
       { say: "The buy fits the size limit.", calls: [call("review_order", { verdict: "approve", note: "0.05 BTC is inside the 0.05 limit; stop at 2 percent caps the loss near 61 dollars" })] },
-      { say: "The sell only reduces risk.", calls: [call("review_order", { verdict: "approve", note: "reduces the position; no new risk" })] },
+      { say: "The sell only reduces risk.", calls: [call("review_order", { verdict: "approve", note: "Reduces the position; no new risk" })] },
       { calls: [call("positions")] },
       { calls: [finish(`Both paper orders approved and filled. Book: 0.03 BTC left, realized +$${FUND_TRADES.realizedUsd.toFixed(2)}, unrealized +$${FUND_TRADES.unrealizedUsd.toFixed(2)}.`)] },
     ];

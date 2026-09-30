@@ -141,6 +141,33 @@ export function catLook(agentId: string): { coat: Coat; seed: number } {
   return { coat: COATS[seed % COATS.length]!, seed };
 }
 
+/** The CEO cat's coat: Oyen is always the ginger tabby. */
+export const LEAD_COAT: Coat = "ginger";
+
+/**
+ * The look of a new agent in a run, so coats never repeat inside one crew.
+ * The lead is always LEAD_COAT; every other cat gets a coat no one in the run
+ * wears yet (never the lead's), and only when all of them are taken the least
+ * used one. `takenCoats` lists the coats already in the run, one entry per cat.
+ * Deterministic for a given (agentId, role, takenCoats); the seed is catLook's.
+ */
+export function assignCoat(agentId: string, role: AgentRole, takenCoats: Iterable<string>): { coat: Coat; seed: number } {
+  const { seed } = catLook(agentId);
+  if (role === "lead") return { coat: LEAD_COAT, seed };
+  const used = new Map<string, number>();
+  for (const c of takenCoats) used.set(c, (used.get(c) ?? 0) + 1);
+  const pool = COATS.filter((c) => c !== LEAD_COAT);
+  const start = hash32(agentId + ":coat") % pool.length;
+  let best = pool[start]!;
+  for (let i = 0; i < pool.length; i++) {
+    const coat = pool[(start + i) % pool.length]!;
+    const n = used.get(coat) ?? 0;
+    if (n === 0) return { coat, seed };
+    if (n < (used.get(best) ?? 0)) best = coat;
+  }
+  return { coat: best, seed };
+}
+
 /**
  * Pick a unique name for a new agent in a run. Deterministic for a given
  * (agentId, role, taken, leadName). The lead gets `leadName` (the owner's

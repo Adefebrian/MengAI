@@ -3,7 +3,7 @@
 // a short query), never from tool output, then redacted and clipped to
 // STATUS_MAX. Pure: no I/O, deterministic for a given seed.
 import type { AgentRole } from "@mengai/shared";
-import { bounded } from "./policy";
+import { bounded, withArticle } from "./policy";
 
 export const STATUS_MAX = 80;
 
@@ -192,10 +192,10 @@ export const VOICE = {
   anotherRound: (critique: string) => statusLine(`One more round: ${critique}`),
   /** a cat that was let go packs its desk */
   leaving: "Packing up the desk",
-  hiring: (role: string) => statusLine(`Hiring a ${role}`),
+  hiring: (role: string) => statusLine(`Hiring ${withArticle(role)}`),
   playbook: (role: string, version: number) => statusLine(`New ${role} playbook v${version}`),
   /** the CEO writes a charter for a new role */
-  definingRole: (title: string) => statusLine(`Writing a charter for a ${title}`),
+  definingRole: (title: string) => statusLine(`Writing a charter for ${withArticle(title)}`),
   /** the CEO reads the evaluation of a candidate strategy */
   tuning: (who: string) => statusLine(`Rethinking how ${who} works`),
   coaching: (name: string) => statusLine(`Coaching ${name}`),

@@ -10,7 +10,9 @@ import { EvidenceLog, REFLEXION, STEPS, StepBudget, initialSteps, parseReflexion
 import { UNVERIFIED, createBrainJudge, planAdopt, planHire, planLetGo, planRole, readChoice, type BrainDecisionRow } from "./judge";
 import { ORG, aRole, budgetLeftShare, canAffordHire, depthOf, hireReason, letGoReason } from "./org";
 import { baseRoleOf, closestRole, fallbackCharter, parseRoleReply, roleCharterText, roleSlug, roleTitle, toolSubset } from "./roles";
+import { withArticle } from "./policy";
 import { stageFromBoard, stageMoves } from "./stage";
+import { VOICE } from "./voice";
 
 let n = 0;
 function step(calls: Array<{ name: string; args?: unknown; output?: string; ok?: boolean }>, text = ""): StepRecord {
@@ -357,5 +359,18 @@ describe("the tracker and the org", () => {
     expect(hireReason("replacement", "Security", { replaces: "Cemong" })).toBe("Replaces Cemong");
     expect(letGoReason(3, "blocked on X")).toBe("Let go after 3 failures in a row. Last: blocked on X");
     expect(ORG.askAfter).toBe(3);
+    // every hire reason and hiring line reads with the right article
+    expect(hireReason("needed", "Engineer", { task: "Build it" })).toBe("The plan needs an engineer: Build it");
+    expect(hireReason("handoff", "Reviewer", { by: "Kopi" })).toBe("Kopi needs a reviewer");
+    expect(hireReason("needed", "Operator")).toBe("The plan needs an operator");
+    expect([withArticle("engineer"), withArticle("reviewer"), withArticle("UX researcher"), withArticle("SRE"), withArticle("user tester"), withArticle("hour")]).toEqual([
+      "an engineer",
+      "a reviewer",
+      "a UX researcher",
+      "an SRE",
+      "a user tester",
+      "an hour",
+    ]);
+    expect([VOICE.hiring("engineer"), VOICE.definingRole("Analyst")]).toEqual(["Hiring an engineer", "Writing a charter for an Analyst"]);
   });
 });

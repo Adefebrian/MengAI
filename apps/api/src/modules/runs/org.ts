@@ -4,7 +4,7 @@
 // concurrency queue bounds how many cats work at once. Soft calls (hire or
 // do it yourself, hire or wait, let go, coach or keep) go to runtime JEV
 // (judge.ts); these are the pure rules around them.
-import { bounded } from "./policy";
+import { bounded, withArticle } from "./policy";
 
 export const ORG = {
   /** an optional hire needs at least this much token budget left per live cat, after the hire */
@@ -66,7 +66,7 @@ const ADJECTIVE_TITLES = new Set(["security", "qa", "lead"]);
 export function aRole(title: string): string {
   const low = title.trim().toLowerCase();
   const noun = ADJECTIVE_TITLES.has(low) ? `${low === "qa" ? "QA" : low} cat` : low;
-  return `${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun}`;
+  return withArticle(noun);
 }
 
 /** "engineer", "QA cat", "launch tester" (no article) */

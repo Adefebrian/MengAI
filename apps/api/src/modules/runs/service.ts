@@ -34,6 +34,27 @@ import { brainOf, type RunsDeps } from "./ports";
 import { createRunsRepo, emptyUsage } from "./repo";
 import { stageFromBoard } from "./stage";
 
+/**
+ * The mind's version history, newest first: each subject's versions by version
+ * number (v3 before v2 even when they share a timestamp), the role's and the
+ * cat's own lists merged by time.
+ */
+export function newestVersionsFirst(...lists: StrategyVersionDTO[][]): StrategyVersionDTO[] {
+  const queues = lists.map((l) => [...l].sort((x, y) => y.version - x.version || y.createdAt - x.createdAt || (x.id < y.id ? 1 : -1)));
+  const out: StrategyVersionDTO[] = [];
+  for (;;) {
+    let pick = -1;
+    for (let i = 0; i < queues.length; i++) {
+      const head = queues[i]![0];
+      if (!head) continue;
+      const best = pick < 0 ? undefined : queues[pick]![0]!;
+      if (!best || head.createdAt > best.createdAt || (head.createdAt === best.createdAt && head.version > best.version)) pick = i;
+    }
+    if (pick < 0) return out;
+    out.push(queues[pick]!.shift()!);
+  }
+}
+
 export interface RunsServiceImpl extends RunsService {
   /** resolves once boot recovery (running -> paused "restart") is done */
   readonly ready: Promise<void>;
@@ -386,7 +407,7 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
             ? await brain.strategiesByIds(snap.addendumIds)
             : [await brain.activeStrategy({ kind: "role", key: roleKey }), await brain.activeStrategy({ kind: "agent", key: agentId })].filter((x): x is StrategyVersionDTO => !!x);
           const [r, own] = await Promise.all([brain.strategyHistory({ kind: "role", key: roleKey }, 20), brain.strategyHistory({ kind: "agent", key: agentId }, 20)]);
-          history = [...r, ...own].sort((x, y) => y.createdAt - x.createdAt || (x.id < y.id ? 1 : -1)).slice(0, 30);
+          history = newestVersionsFirst(r, own).slice(0, 30);
         } catch (e) {
           log.log("warn", "mind strategies read failed", { error: redact(errMsg(e)) });
         }

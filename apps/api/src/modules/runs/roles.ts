@@ -6,6 +6,7 @@
 // its archetype's tools in the registry. Pure, no I/O.
 import { ROLE_LABEL, ROLE_TOOLS, type AgentRole, type RoleDTO } from "@mengai/shared";
 import { clip, redact } from "../../lib/redact";
+import { withArticle } from "./policy";
 
 export const ROLE_GEN = {
   /** output cap of the charter call (JEV orch.playbooks charter_output_cap: 220) */
@@ -108,10 +109,10 @@ export function toolSubset(archetype: AgentRole, wanted: readonly string[] | nul
 
 /** The header line every dynamic charter starts with (the demo crew reads the title from it). */
 export function roleHeader(title: string, archetype: AgentRole): string {
-  return `You are the ${title} cat on a MengAI crew, a ${ROLE_LABEL[archetype]} specialist.`;
+  return `You are the ${title} cat on a MengAI crew, ${withArticle(ROLE_LABEL[archetype])} specialist.`;
 }
 
-export const ROLE_HEADER_RE = /^You are the (.+?) cat on a MengAI crew, a (.+?) specialist\./;
+export const ROLE_HEADER_RE = /^You are the (.+?) cat on a MengAI crew, an? (.+?) specialist\./;
 
 /** The charter text stored on the role: the header, then the generated lines. */
 export function roleCharterText(title: string, archetype: AgentRole, lines: readonly string[]): string {
@@ -130,7 +131,7 @@ export function roleCharterText(title: string, archetype: AgentRole, lines: read
 /** Deterministic charter when the call fails or answers nothing usable. */
 export function fallbackCharter(title: string, archetype: AgentRole, task: { title: string }): string {
   return roleCharterText(title, archetype, [
-    `Work as a ${title.toLowerCase()}: ${ARCHETYPE_NOTE[archetype].toLowerCase()}`,
+    `Work as ${withArticle(title.toLowerCase())}: ${ARCHETYPE_NOTE[archetype].toLowerCase()}`,
     `Start from the task and its acceptance criteria (first task: ${clip(task.title, 80)}).`,
     "Read the files that matter before you judge or change anything.",
     "Prove every result with a file you changed or a check you ran, and name it in your finish summary.",

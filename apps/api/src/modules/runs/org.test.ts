@@ -4,10 +4,11 @@
 // yourself, hire or wait, helpers at any depth), letting a cat go and hiring
 // its replacement, the CEO's name, the tracker stages and the mind API.
 import { describe, expect, test } from "bun:test";
-import type { LessonDTO, MengaiEvent, TaskDTO } from "@mengai/shared";
+import type { LessonDTO, MengaiEvent, StrategyVersionDTO, TaskDTO } from "@mengai/shared";
 import { Hono } from "hono";
 import { jsonErrorHandler } from "../../core/app";
 import { silentLogger } from "../../testing";
+import { newestVersionsFirst } from "./service";
 import { choice, fakeBrain, fakeJudge, fakeTools, harness, type CallInfo, type Reply } from "./testkit";
 
 type Ev<T extends MengaiEvent["type"]> = MengaiEvent<T>;
@@ -361,6 +362,9 @@ describe("brain: the unlimited org", () => {
         expect(engineers).toHaveLength(2);
         expect(engineers[1]!.hireReason).toBe("1 engineer task is waiting and every engineer is busy");
         expect(engineers[1]!.parentId).toBe(snap.agents.find((a) => a.role === "lead")!.id);
+        // two cats of one role still wear different coats; the CEO is ginger
+        expect(new Set(snap.agents.map((a) => a.look.coat)).size).toBe(snap.agents.length);
+        expect(snap.agents.find((a) => a.role === "lead")!.look.coat).toBe("ginger");
       } else {
         expect(engineers).toHaveLength(1);
         expect(byTitle(snap.tasks, "Engine B").assigneeId).toBe(engineers[0]!.id);
@@ -509,6 +513,18 @@ describe("brain: the CEO's name, the tracker, the mind API, unlimited budgets", 
     expect((await h.svc.snapshot(run.id)).agents[0]!.name).toBe("Mas Oyen");
   });
 
+  test("the CEO is always the ginger cat and no coat repeats inside the crew", async () => {
+    const roles = ["engineer", "designer", "reviewer", "qa", "security", "researcher"];
+    const lead = leadThen(roles.map((role, i) => ({ key: `t${i}`, title: `Task ${i}`, spec: "Do it", role })));
+    const h = await harness({ script: (info) => lead(info) ?? finish("done") });
+    const run = await h.svc.create({ projectId: "p1", goal: "A crew of seven" });
+    await h.untilStatus(run.id, "done");
+    const agents = (await h.svc.snapshot(run.id)).agents;
+    expect(agents.length).toBe(roles.length + 1);
+    expect(agents.find((a) => a.role === "lead")!.look.coat).toBe("ginger");
+    expect(new Set(agents.map((a) => a.look.coat)).size).toBe(agents.length);
+  });
+
   test("run.stage walks the tracker and loops back on a failed review", async () => {
     const h = await harness({
       script: {
@@ -535,6 +551,28 @@ describe("brain: the CEO's name, the tracker, the mind API, unlimited budgets", 
     expect((await h.svc.snapshot(run.id)).stage).toBe("shipped");
     // run.created, the CEO, the plan task come first; the goal stage follows
     expect(h.events.events.slice(0, 4).map((e) => e.type)).toEqual(["run.created", "agent.spawned", "task.created", "run.stage"]);
+  });
+
+  test("the mind's version history lists the newest version first (v3 before v2), even on one timestamp", () => {
+    const v = (id: string, subject: "role" | "agent", version: number, createdAt: number): StrategyVersionDTO => ({
+      id,
+      subject,
+      subjectKey: subject === "role" ? "engineer" : "cat-1",
+      role: "engineer",
+      version,
+      text: "t",
+      tokens: 1,
+      status: "active",
+      choice: null,
+      reason: "r",
+      decision: null,
+      evidence: null,
+      createdAt,
+    });
+    const role = [v("z", "role", 1, 10), v("b", "role", 3, 50), v("y", "role", 2, 50)];
+    const own = [v("a1", "agent", 1, 40)];
+    expect(newestVersionsFirst(role, own).map((x) => `${x.subject[0]}${x.version}`)).toEqual(["r3", "r2", "a1", "r1"]);
+    expect(newestVersionsFirst([], [])).toEqual([]);
   });
 
   test("GET .../agents/:agentId/mind: charter, lessons with their reason, redacted; 404 and 422", async () => {
