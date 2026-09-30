@@ -1,7 +1,19 @@
 // What the runs module needs from the rest of the monolith. Every entry is a
 // service interface from core/services.ts (or a port), injected by
 // core/container.ts. The orchestrator never imports another module.
-import type { AgentRole, ApprovalDTO, MengaiEvent, StrategyChoice, StrategyEvidenceDTO, StrategyVersionDTO } from "@mengai/shared";
+import type {
+  AgentRole,
+  ApprovalDTO,
+  CompanyKind,
+  MengaiEvent,
+  Risk,
+  RunStage,
+  RunStatus,
+  StrategyChoice,
+  StrategyEvidenceDTO,
+  StrategyVersionDTO,
+  TaskStatus,
+} from "@mengai/shared";
 import type {
   AutomationService,
   ContextService,
@@ -22,7 +34,7 @@ export interface RunsDeps {
   usage: UsageService;
   context: ContextService;
   memory: MemoryService & MemoryPromotion & Partial<BrainMemory>;
-  tools: ToolsService;
+  tools: ToolsService & CapabilityTools;
   decisions: DecisionService;
   settings: SettingsService;
   killswitch: KillSwitch;
@@ -45,6 +57,48 @@ export interface RunsDeps {
    * takes its deterministic fallback, stamped UNVERIFIED BY JEV.
    */
   judge?: Judge;
+  /** company templates (the companies module); without it every run is a studio run */
+  companies?: CompanyCatalog;
+}
+
+/** One company template as the engine reads it (the companies module's CompanyTemplate, structurally). */
+export interface CompanyTemplateView {
+  kind: CompanyKind;
+  label: string;
+  /** the CEO cat's display title (the fund's CIO); null keeps the base label */
+  leadTitle: string | null;
+  roles: ReadonlyArray<{ key: string; title: string; archetype: AgentRole; charter: readonly string[]; tools: readonly string[] }>;
+  planGuide: readonly string[];
+  finalSpec: string | null;
+}
+
+export interface StageTaskView {
+  title: string;
+  roleKey: string;
+  archetype: AgentRole;
+  kind: string;
+}
+
+/** The companies module's service, structurally. */
+export interface CompanyCatalog {
+  template(kind: CompanyKind | null | undefined): CompanyTemplateView;
+  mapStage(kind: CompanyKind, beat: RunStage, task: StageTaskView | null): string | null;
+  stageMoves(kind: CompanyKind, current: string | null, next: string, loopBack?: boolean): boolean;
+  boardStage(kind: CompanyKind, tasks: ReadonlyArray<StageTaskView & { status: TaskStatus }>, status: RunStatus): string | null;
+  grantsFor(kind: CompanyKind, roleKey: string, archetype: AgentRole): string[];
+}
+
+/** The capability side of the tools service (connectors and trading); absent in older wiring and tests. */
+export interface CapabilityTools {
+  taskSpecs?(input: { role: AgentRole; runId: string; taskId: string | null; grants?: readonly string[] }): Promise<ToolSpec[]>;
+}
+
+/** What the engine adds to every tool call (the tools module's CapabilityContext, structurally). */
+export interface ToolExtras {
+  company?: CompanyKind;
+  roleKey?: string;
+  grants?: readonly string[];
+  approve?(req: { tool: string; risk: Risk; summary: string }): Promise<{ approved: boolean; answer: string }>;
 }
 
 export interface BrainOptions {

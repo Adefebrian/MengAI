@@ -2,6 +2,11 @@
 // tool. Each call: parse and validate args against the spec, check the role
 // may use the tool, run it jailed to the project workspace, redact the
 // output, persist a tool_calls row and publish tool.call / tool.result.
+// Capability tools ride on the same path (capabilities.ts): find_tools and
+// the connector tools a task loaded, and the trading tools a company grants.
+// Destructive and sensitive connector tools go through the approval path the
+// engine passes in; order placement and fund movement only through the
+// trading gate.
 import {
   activityForTool,
   ROLE_TOOLS,
@@ -37,6 +42,8 @@ import { createToolCallsRepo } from "./repo";
 import { CONTROL_TOOLS, OPERATOR_TOOLS, READ_ONLY_TOOLS, TOOL_SPECS, UNAVAILABLE_TOOLS } from "./specs";
 import { validateArgs, type JsonSchema } from "./validate";
 import { fetchReadable, type Lookup } from "./web";
+import { argsLine, connectorSpec, dotted, FIND_TOOLS, FIND_TOOLS_SPEC, isTradingTool, searchTools, TRADING_ORDER, TRADING_SPECS, type TradingToolName } from "./capabilities";
+import type { BridgeTool, CapabilityContext, ConnectorsBridge, TaskSpecsInput, TradingBridge } from "./ports";
 
 export interface ToolsDeps {
   workspace: WorkspaceService;
@@ -49,6 +56,10 @@ export interface ToolsDeps {
   automation: AutomationService | null;
   settings: SettingsService;
   projects: ProjectsService;
+  /** the owner's connectors (MCP servers, HTTP APIs); null or absent: no find_tools */
+  connectors?: ConnectorsBridge | null;
+  /** the trading service; null or absent: no trading tools */
+  trading?: TradingBridge | null;
 }
 
 export interface ToolsOptions {
@@ -60,8 +71,14 @@ export interface ToolsOptions {
 
 /** ToolsService plus the persisted call detail the runs module serves */
 export interface ToolsServiceImpl extends ToolsService {
-  execute(call: ToolCall, ctx: ToolContext): Promise<ToolResult & { callId: string }>;
+  execute(call: ToolCall, ctx: ToolContext & CapabilityContext): Promise<ToolResult & { callId: string }>;
   detail(runId: string, callId: string): Promise<ToolCallDetail | null>;
+  /**
+   * The capability tools of one step, after the role's registry tools: the
+   * trading tools granted to the cat, find_tools when connector tools exist
+   * for its role, then the connector tools this task loaded (in load order).
+   */
+  taskSpecs(input: TaskSpecsInput): Promise<ToolSpec[]>;
 }
 
 export const SHELL_TIMEOUT_MS = 120_000;
@@ -71,6 +88,8 @@ export const WEB_MAX_BYTES = 2 * 1024 * 1024;
 /** hard cap on what one tool result may carry (the context module truncates further) */
 export const MAX_OUTPUT_CHARS = 256_000;
 const MAX_LIST_LINES = 400;
+/** tasks whose loaded connector tools are remembered (oldest dropped first) */
+const LOADED_TASKS = 1000;
 
 type Args = Record<string, unknown>;
 interface Outcome {
@@ -78,7 +97,7 @@ interface Outcome {
   output: string;
   summary: string;
 }
-interface Call extends ToolContext {
+interface Call extends ToolContext, CapabilityContext {
   /** verified realpath of the project workspace */
   workspace(): Promise<string>;
 }
@@ -138,6 +157,140 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
   };
 
   const networkAllowed = async () => (await deps.settings.get()).allowNetworkTools === true;
+
+  // ----------------------------------------------------- capabilities
+  /** connector tools a task loaded (find_tools or a call), by "runId:taskId", in load order */
+  const loaded = new Map<string, string[]>();
+  /** alias and namespaced name -> the last seen connector tool (isReadOnly is sync) */
+  const known = new Map<string, BridgeTool>();
+  const taskKey = (runId: string, taskId: string | null) => `${runId}:${taskId ?? "-"}`;
+  function markLoaded(runId: string, taskId: string | null, name: string): void {
+    const key = taskKey(runId, taskId);
+    const list = loaded.get(key) ?? [];
+    if (!list.includes(name)) list.push(name);
+    loaded.delete(key);
+    loaded.set(key, list);
+    while (loaded.size > LOADED_TASKS) loaded.delete(loaded.keys().next().value!);
+  }
+  function remember(tools: readonly BridgeTool[]): void {
+    for (const t of tools) {
+      known.set(t.alias, t);
+      known.set(t.name, t);
+    }
+  }
+  async function connectorTools(role: AgentRole): Promise<BridgeTool[]> {
+    if (!deps.connectors) return [];
+    try {
+      const tools = await deps.connectors.tools({ role });
+      remember(tools);
+      return tools;
+    } catch (e) {
+      log.log("warn", "connector tool list failed", { error: redact(String(e)) });
+      return [];
+    }
+  }
+
+  async function findTools(a: Args, call: Call): Promise<Outcome> {
+    const tools = await connectorTools(call.role);
+    if (!tools.length) return done("no connector tools are available to your role", "find_tools: none available");
+    const query = s(a.query)!;
+    const hits = searchTools(tools, query, n(a.limit) ?? 5);
+    if (!hits.length) return done(`no connector tool matches "${clip(query, 80)}"; ${tools.length} tools exist, try other words`, `find_tools ${clip(query, 60)}: no match`);
+    const lines = hits.map((t) => {
+      if (t.money) return `- ${t.alias} (${t.risk}, places orders): ${t.description} Pass its name as venue to propose_order; it is never called directly.`;
+      markLoaded(call.runId, call.taskId, t.name);
+      return `- ${t.alias} (${t.risk}): ${t.description} Args: ${argsLine(t.schema)}`;
+    });
+    return done([...lines, "The tools above are in your tool list from your next step. Destructive and sensitive ones need an approval."].join("\n"), `find_tools ${clip(query, 60)}: ${hits.length} found`);
+  }
+
+  async function connectorTool(name: string, rawArgs: unknown, call: Call): Promise<Outcome> {
+    const full = dotted(name)!;
+    const tools = await connectorTools(call.role);
+    const t = tools.find((x) => x.name === full);
+    if (!t) return fail(known.has(full) ? `${full} is not available to the ${call.role} role` : `unknown tool ${name}`);
+    if (t.money) return fail(`${t.name} places orders or moves funds: use propose_order (the risk review and the owner's trading gate), never a direct call`);
+    const props = (t.schema.properties ?? {}) as Record<string, unknown>;
+    const schema = (Object.keys(props).length ? t.schema : { type: "object" }) as JsonSchema;
+    const v = validateArgs(schema, rawArgs);
+    if (!v.ok) return fail(v.error);
+    const args = v.value as Args;
+    if (t.risk === "destructive" || t.risk === "sensitive") {
+      if (!call.approve) return fail(`${t.name} is ${t.risk} and needs an approval, and no approval path is available here`);
+      const verdict = await call.approve({ tool: t.name, risk: t.risk, summary: clip(`${t.description} Arguments: ${toJson(redactDeep(args))}`, 400) });
+      if (!verdict.approved) return fail(`not approved: ${clip(verdict.answer || "declined", 200)}`);
+    }
+    markLoaded(call.runId, call.taskId, t.name);
+    const r = await deps.connectors!.call(t.name, args, { signal: call.signal });
+    return { ok: r.ok, output: r.output, summary: `${t.name} ${r.ok ? "answered" : "failed"}` };
+  }
+
+  const money = (v: number) => (Math.abs(v) >= 1 ? v.toFixed(2) : String(Math.round(v * 1e6) / 1e6));
+  const signed = (v: number) => `${v >= 0 ? "+" : "-"}$${Math.abs(v).toFixed(2)}`;
+
+  async function tradingTool(name: TradingToolName, rawArgs: unknown, call: Call): Promise<Outcome> {
+    const trading = deps.trading;
+    if (!trading) return fail("trading is not available in this build");
+    if (!call.grants?.includes(name)) return fail(`${name} is not granted to your role in this company`);
+    const v = validateArgs(TRADING_SPECS[name].parameters as JsonSchema, rawArgs);
+    if (!v.ok) return fail(v.error);
+    const a = v.value as Args;
+    switch (name) {
+      case "get_quote": {
+        const q = await trading.quote(s(a.symbol)!, { signal: call.signal, runId: call.runId });
+        return done(`${q.symbol} last price ${money(q.price)} (source: ${q.source})`);
+      }
+      case "propose_order": {
+        const o = await trading.propose({
+          runId: call.runId,
+          agentId: call.agentId,
+          symbol: s(a.symbol)!,
+          side: s(a.side) as "buy" | "sell",
+          qty: n(a.qty)!,
+          type: (s(a.type) as "market" | "limit" | undefined) ?? (n(a.limit_price) !== undefined ? "limit" : "market"),
+          limitPrice: n(a.limit_price) ?? null,
+          live: a.live === true,
+          venue: s(a.venue) ?? null,
+          quote: n(a.quote) ?? null,
+          reason: s(a.reason)!,
+          signal: call.signal,
+        });
+        const what = `${o.mode} ${o.side} ${o.qty} ${o.symbol} ${o.type}${o.limitPrice !== null ? ` at ${money(o.limitPrice)}` : ""}`;
+        return done(`order ${o.id} proposed: ${what}. It waits for the risk manager's review_order${o.mode === "live" ? ", then the owner's trading gate" : ""}.`, `proposed ${what}`);
+      }
+      case "review_order": {
+        const o = await trading.review({ runId: call.runId, agentId: call.agentId, orderId: s(a.order_id) ?? null, verdict: s(a.verdict) as "approve" | "reject", note: s(a.note)!, signal: call.signal });
+        const what = `${o.mode} ${o.side} ${o.qty} ${o.symbol}`;
+        const result =
+          o.status === "filled"
+            ? `filled at ${money(o.fillPrice ?? 0)}`
+            : o.status === "rejected"
+              ? "rejected"
+              : o.status === "approved"
+                ? o.mode === "paper"
+                  ? `open at the limit ${money(o.limitPrice ?? 0)} until the price crosses it`
+                  : "sent to the venue, not filled yet"
+                : o.status === "proposed"
+                  ? "risk approved; it waits for the owner's decision and trading limits"
+                  : o.status;
+        return { ok: o.status !== "failed", output: `order ${o.id} (${what}): ${result}`, summary: `review ${what}: ${result}` };
+      }
+      case "positions": {
+        const [positions, pending] = await Promise.all([trading.positions(), trading.pendingReview(call.runId)]);
+        const lines = positions.map(
+          (p) => `${p.mode} ${p.symbol}: qty ${p.qty} avg ${money(p.avgPrice)} last ${p.lastPrice === null ? "n/a" : money(p.lastPrice)} unrealized ${signed(p.unrealizedUsd)} realized ${signed(p.realizedUsd)}`,
+        );
+        const totals = positions.reduce((t, p) => ({ u: t.u + p.unrealizedUsd, r: t.r + p.realizedUsd }), { u: 0, r: 0 });
+        const out = [
+          positions.length ? "positions:" : "no positions yet",
+          ...lines,
+          ...(positions.length ? [`total unrealized ${signed(totals.u)}, realized ${signed(totals.r)}`] : []),
+          ...(pending.length ? ["waiting for a risk review:", ...pending.map((o) => `- ${o.id}: ${o.mode} ${o.side} ${o.qty} ${o.symbol} ${o.type} (${clip(o.reason, 80)})`)] : []),
+        ];
+        return done(out.join("\n"), `positions: ${positions.length}, ${pending.length} waiting for review`);
+      }
+    }
+  }
 
   const automationDenied = (e: unknown): Outcome | null =>
     e instanceof ApprovalDeniedError ? fail(`denied by the owner: ${e.message}`) : null;
@@ -370,6 +523,16 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
   };
 
   async function run(tool: string, rawArgs: unknown, call: Call): Promise<Outcome> {
+    try {
+      if (tool === FIND_TOOLS) {
+        const v = validateArgs(FIND_TOOLS_SPEC.parameters as JsonSchema, rawArgs);
+        return v.ok ? await findTools(v.value as Args, call) : fail(v.error);
+      }
+      if (isTradingTool(tool)) return await tradingTool(tool, rawArgs, call);
+      if (deps.connectors && dotted(tool)) return await connectorTool(tool, rawArgs, call);
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
     if (!(TOOL_NAMES as readonly string[]).includes(tool)) return fail(`unknown tool ${tool}`);
     const name = tool as ToolName;
     const unavailable = UNAVAILABLE_TOOLS.get(name);
@@ -397,7 +560,20 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
   const service: ToolsServiceImpl = {
     specsFor,
     isControl: (tool) => CONTROL_TOOLS.has(tool),
-    isReadOnly: (tool) => READ_ONLY_TOOLS.has(tool),
+    isReadOnly: (tool) => READ_ONLY_TOOLS.has(tool) || tool === FIND_TOOLS || tool === "positions" || known.get(tool)?.risk === "read",
+
+    async taskSpecs(input) {
+      const out: ToolSpec[] = [];
+      if (deps.trading && input.grants?.length) for (const name of TRADING_ORDER) if (input.grants.includes(name)) out.push(TRADING_SPECS[name]);
+      const tools = await connectorTools(input.role);
+      if (!tools.length) return out;
+      out.push(FIND_TOOLS_SPEC);
+      for (const name of loaded.get(taskKey(input.runId, input.taskId)) ?? []) {
+        const t = tools.find((x) => x.name === name && !x.money);
+        if (t) out.push(connectorSpec(t));
+      }
+      return out;
+    },
 
     async execute(toolCall, tc) {
       const tool = toolCall.name;

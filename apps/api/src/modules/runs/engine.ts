@@ -9,6 +9,13 @@
 // cat, tuned when they underperform and adopted by runtime JEV; dynamic roles
 // defined from context; an unlimited org where any cat can hire helpers and
 // the CEO lets a struggling cat go; the run tracker (run.stage).
+//
+// A run belongs to a company kind (studio by default, or fund): the company
+// template seeds its specialist roles, guides the CEO's plan, titles the
+// CEO, writes the final report spec and maps the tracker onto its stages.
+// Tool calls carry the company, the cat's role key, its capability grants
+// and the approval path for sensitive connector tools (the CEO decides crew
+// requests, the owner the rest).
 import {
   ACTIVITY_LABEL,
   ROLE_LABEL,
@@ -21,6 +28,7 @@ import {
   type AgentDTO,
   type AgentRole,
   type BudgetBody,
+  type CompanyKind,
   type CallPurpose,
   type ContextXrayDTO,
   type EventMap,
@@ -33,6 +41,7 @@ import {
   type RoleDTO,
   type RunDTO,
   type RunStage,
+  type Risk,
   type Severity,
   type StrategyVersionDTO,
   type TaskDTO,
@@ -43,7 +52,7 @@ import {
 } from "@mengai/shared";
 import type { ModuleContext } from "../../core/module";
 import { LlmError, type ChatRequest, type ChatResult, type Logger, type ResolvedModel, type ToolCall, type ToolSpec, type Usage } from "../../core/ports";
-import type { ContextBuild, ContextInput, StepRecord, ToolResult } from "../../core/services";
+import type { ContextBuild, ContextInput, StepRecord, ToolContext, ToolResult } from "../../core/services";
 import { badRequest, conflict, notFound } from "../../lib/http";
 import { clip, redact } from "../../lib/redact";
 import {
@@ -80,7 +89,18 @@ import { EvidenceLog, REFLEXION, REFLEXION_SYSTEM, StepBudget, initialSteps, par
 import { createBrainJudge, planAdopt, planHire, planLetGo, planRole, type BrainJudge } from "./judge";
 import { ORG, budgetLeftShare, canAffordHire, depthOf, hireReason, letGoReason, type BudgetView, type HireKind } from "./org";
 import { LIMITS, OUTPUT_CAP, RepeatGuard, TITLES, bounded, moodFor, roleCap } from "./policy";
-import { BRAIN_DEFAULTS, brainOf, type BrainMemory, type BrainOptions, type OutcomeKind, type RunsDeps, type StrategySubject } from "./ports";
+import {
+  BRAIN_DEFAULTS,
+  brainOf,
+  type BrainMemory,
+  type BrainOptions,
+  type CompanyTemplateView,
+  type OutcomeKind,
+  type RunsDeps,
+  type StageTaskView,
+  type StrategySubject,
+  type ToolExtras,
+} from "./ports";
 import { emptyUsage, progressOf, type MindSnapshot, type RunsRepo } from "./repo";
 import {
   ARCHETYPES,
@@ -236,6 +256,13 @@ export interface EngineInit {
 const TERMINAL_TASK: ReadonlySet<TaskStatus> = new Set(["done", "failed", "blocked", "cancelled"]);
 export const TERMINAL_RUN: ReadonlySet<RunDTO["status"]> = new Set(["done", "failed", "stopped"]);
 const NUDGE = "System: reply with a tool call. When the task is complete, call finish with a short summary of the result.";
+/** an owner reply that approves a tool call */
+const OWNER_YES = /^\s*(yes|y|approve|approved|ok|okay|go|go ahead|sure|allow|allowed)\b/i;
+
+/** The company kind of a run; anything unknown reads as studio. */
+export function companyOf(run: Pick<RunDTO, "company">): CompanyKind {
+  return run.company === "fund" ? "fund" : "studio";
+}
 
 const isTerminal = (t: LiveTask) => TERMINAL_TASK.has(t.dto.status);
 const alive = (a: LiveAgent) => a.dto.status !== "stopped" && a.dto.status !== "error";
@@ -364,7 +391,11 @@ export class RunEngine {
   private departures = 0;
   /** role key -> the name of the last cat of that role that was let go (for the replacement's reason) */
   private readonly leftByRole = new Map<string, string>();
-  private stage: RunStage | null = null;
+  /** a company's stages are wider than RunStage (the fund tracker): the event carries the string */
+  private stage: string | null = null;
+  private readonly company: CompanyKind;
+  /** the company template; null for a studio run or when no catalog is wired */
+  private readonly template: CompanyTemplateView | null;
 
   private constructor(init: EngineInit) {
     this.ctx = init.ctx;
@@ -378,6 +409,8 @@ export class RunEngine {
     this.log = init.ctx.logger.child({ module: "runs", runId: init.run.id });
     this.brain = brainOf(init.deps.memory);
     this.opts = { ...BRAIN_DEFAULTS, ...(init.deps.brain ?? {}) };
+    this.company = companyOf(init.run);
+    this.template = this.company !== "studio" && init.deps.companies ? init.deps.companies.template(this.company) : null;
     this.org = {
       ceoName: leadCatName(init.org?.ceoName ?? DEFAULT_ORG.ceoName),
       maxAgents: Math.max(0, Math.floor(init.org?.maxAgents ?? 0)),
@@ -400,6 +433,7 @@ export class RunEngine {
     await e.emit("run.created", { run: e.view });
     const automation = await e.automationAvailable();
     const roles = (Object.keys(ROLE_LABEL) as AgentRole[]).filter((r) => r !== "lead" && (automation || r !== "operator"));
+    await e.seedCompanyRoles();
     await e.loadRoles();
     const known = [...e.roles.values()].slice(0, 8).map((r) => `${r.title} (${r.archetype})`);
     const planSpec = [
@@ -412,6 +446,7 @@ export class RunEngine {
             `For a specialist the roles do not name, add role_title (for example "Accessibility auditor") next to the closest role.${known.length ? ` Specialists this project already has: ${known.join(", ")}.` : ""}`,
           ]
         : []),
+      ...(e.template ? e.template.planGuide : []),
       "If the goal is trivial, do it without tasks. Then call finish with a short plan summary.",
     ].join("\n");
     const plan = e.makeTask({
@@ -553,7 +588,8 @@ export class RunEngine {
   }
 
   get stageNow(): RunStage {
-    return this.stage ?? this.boardStage();
+    // a fund stage ("backtest") rides in the RunStage slot of the wire types
+    return (this.stage ?? this.boardStage()) as RunStage;
   }
 
   overBudget(): boolean {
@@ -781,17 +817,77 @@ export class RunEngine {
     }
   }
 
-  private boardStage(): RunStage {
+  private boardStage(): string {
+    if (this.template && this.deps.companies) {
+      const tasks = [...this.tasks.values()].map((t) => ({ ...this.stageTask(t), status: t.dto.status }));
+      const s = this.deps.companies.boardStage(this.company, tasks, this.run.status);
+      if (s) return s;
+    }
     const board = [...this.tasks.values()].map((t) => ({ role: t.dto.role, status: t.dto.status, kind: t.kind }));
     return stageFromBoard(board, this.run.status, [...this.agents.values()].filter(alive).length);
   }
 
-  /** Moves the tracker (forward only, or back to working after a failed review) and publishes run.stage. */
-  private async advanceStage(next: RunStage, reason: string, loopBack = false): Promise<void> {
-    if (!stageMoves(this.stage, next, loopBack)) return;
+  private stageTask(t: LiveTask): StageTaskView {
+    return { title: t.dto.title, roleKey: this.keyOf(t.dto), archetype: t.dto.role, kind: t.kind };
+  }
+
+  /**
+   * Moves the tracker (forward only, or back to working after a failed review) and publishes run.stage.
+   * A company template maps the studio beat (and the task that started) onto its own stages.
+   */
+  private async advanceStage(next: RunStage, reason: string, loopBack = false, task?: LiveTask): Promise<void> {
+    let target: string = next;
+    if (this.template && this.deps.companies) {
+      const mapped = this.deps.companies.mapStage(this.company, next, task ? this.stageTask(task) : null);
+      if (!mapped || !this.deps.companies.stageMoves(this.company, this.stage, mapped, loopBack)) return;
+      target = mapped;
+    } else if (!stageMoves(this.stage as RunStage | null, next, loopBack)) return;
     const previous = this.stage;
-    this.stage = next;
-    await this.emit("run.stage", { stage: next, previous, reason: bounded(reason, 160) });
+    this.stage = target;
+    await this.emit("run.stage", { stage: target as RunStage, previous: previous as RunStage | null, reason: bounded(reason, 160) });
+  }
+
+  /** A company template's specialists become the project's dynamic roles (once per project), with the template charters. */
+  private async seedCompanyRoles(): Promise<void> {
+    const t = this.template;
+    if (!t || t.roles.length === 0) return;
+    let existing: RoleDTO[] = [];
+    try {
+      existing = await this.repo.projectRoles(this.project.id);
+    } catch (e) {
+      this.log.log("warn", "roles read failed", { error: redact(errMsg(e)) });
+      return;
+    }
+    for (const r of t.roles) {
+      if (existing.some((x) => x.key === r.key)) continue;
+      const now = this.ctx.clock.now();
+      const role: RoleDTO = {
+        id: this.ctx.clock.id(),
+        projectId: this.project.id,
+        runId: this.run.id,
+        key: r.key,
+        title: r.title,
+        archetype: r.archetype,
+        charter: roleCharterText(r.title, r.archetype, r.charter),
+        charterVersion: 1,
+        tools: toolSubset(r.archetype, r.tools),
+        reason: bounded(`${t.label} template: the ${r.title} role`, ROLE_GEN.reasonChars),
+        createdBy: null,
+        createdAt: now,
+      };
+      try {
+        await this.repo.insertRole(role, now, null);
+        await this.emit("role.created", { role, reason: role.reason, byAgentId: null });
+      } catch (e) {
+        this.log.log("warn", "company role insert failed", { role: r.key, error: redact(errMsg(e)) });
+      }
+    }
+  }
+
+  /** Capability tools the company grants this cat (trading); none in a studio run. */
+  private grantsOf(a: LiveAgent): string[] {
+    if (!this.template || !this.deps.companies) return [];
+    return this.deps.companies.grantsFor(this.company, this.keyOf(a.dto), a.dto.role);
   }
 
   // ----------------------------------------------------------- agents
@@ -893,7 +989,7 @@ export class RunEngine {
       usage: emptyUsage(),
       createdAt: now,
       updatedAt: now,
-      roleTitle: dyn ? dyn.title : ROLE_LABEL[role],
+      roleTitle: dyn ? dyn.title : role === "lead" && this.template?.leadTitle ? this.template.leadTitle : ROLE_LABEL[role],
       archetype: role,
       roleId: dyn?.id ?? null,
       hireReason: role === "lead" ? null : hire.reason,
@@ -1586,7 +1682,9 @@ export class RunEngine {
     const lead = this.lead();
     const t = this.makeTask({
       title: this.finalReports === 1 ? TITLES.final : `${TITLES.final} ${this.finalReports}`,
-      spec: "Every crew task has ended. Read the results below, then call finish with the final report for the owner: what was done, what failed or is blocked, and the next steps.",
+      spec:
+        this.template?.finalSpec ??
+        "Every crew task has ended. Read the results below, then call finish with the final report for the owner: what was done, what failed or is blocked, and the next steps.",
       acceptance: ["States what was delivered", "Lists anything failed or blocked"],
       role: "lead",
       deps: [],
@@ -1726,8 +1824,9 @@ export class RunEngine {
     }
     await this.saveTask(t, { status: "running", assigneeId: a.dto.id, attempts: t.dto.attempts + 1, startedAt: t.dto.startedAt ?? now });
     a.cleanSteps = 0;
+    if (this.template && t.kind === "final") await this.advanceStage("working", `${a.dto.name} writes the report`, false, t);
     if (a.dto.role !== "lead" && t.kind !== "review") {
-      await this.advanceStage("working", `${a.dto.name} started ${t.dto.title}`);
+      await this.advanceStage("working", `${a.dto.name} started ${t.dto.title}`, false, t);
       if (a.dto.role === "qa" && (t.kind === "work" || t.kind === "handoff")) await this.advanceStage("testing", `${a.dto.name} is testing: ${t.dto.title}`);
     }
     await this.setAgent(a, { status: "thinking", currentTaskId: t.dto.id, statusText: thinkingLine(a.dto.role, t.dto.title, 0, false) });
@@ -1981,7 +2080,7 @@ export class RunEngine {
   private async agentLoop(a: LiveAgent, t: LiveTask, signal: AbortSignal): Promise<Outcome> {
     const role = a.dto.role;
     const timer = new TaskTimer(() => this.ctx.clock.now());
-    const specs = this.specsFor(a);
+    const baseSpecs = this.specsFor(a);
     const brief = await this.briefFor();
     const lessons = await this.lessonsFor(a, t);
     await this.loadStrategies(a);
@@ -2008,6 +2107,8 @@ export class RunEngine {
 
       // the charter layer is read every step: an adopted strategy reaches the very next step
       const layers = this.layersFor(a);
+      // capability tools join per step: find_tools, the connector tools this task loaded, the company's grants
+      const specs = await this.stepSpecs(a, t, baseSpecs);
       const input = { ...this.contextInput(a, t, specs, brief, lessons, steps, summary, resolved, textOnly > 0), ...layers };
       let build = this.deps.context.build(input);
       if (build.needsCompaction && steps.length > 1) {
@@ -2165,6 +2266,20 @@ export class RunEngine {
     const keep = new Set(dyn.tools);
     const cut = all.filter((s) => keep.has(s.name));
     return cut.some((s) => s.name === "finish") ? cut : all;
+  }
+
+  /** The registry tools plus the capability tools of this step (the tools service decides which). */
+  private async stepSpecs(a: LiveAgent, t: LiveTask, base: ToolSpec[]): Promise<ToolSpec[]> {
+    if (!this.deps.tools.taskSpecs) return base;
+    try {
+      const more = await this.deps.tools.taskSpecs({ role: a.dto.role, runId: this.run.id, taskId: t.dto.id, grants: this.grantsOf(a) });
+      if (!more.length) return base;
+      const names = new Set(base.map((x) => x.name));
+      return [...base, ...more.filter((x) => !names.has(x.name))];
+    } catch (e) {
+      this.log.log("warn", "capability tools failed, using the registry tools", { error: redact(errMsg(e)) });
+      return base;
+    }
   }
 
   /** The charter layer of a cat: its dynamic role's charter and the addenda of its role and its own. */
@@ -2633,6 +2748,33 @@ export class RunEngine {
     return { decision: "owner", answer: "" };
   }
 
+  /**
+   * The approval path for a destructive or sensitive connector tool. A crew
+   * cat asks the CEO, who decides it (owner-only topics go on to the owner);
+   * the CEO's own calls go straight to the owner. The owner approves with a
+   * reply that starts with yes, approve, ok or go.
+   */
+  private async approveTool(a: LiveAgent, t: LiveTask, req: { tool: string; risk: Risk; summary: string }, signal: AbortSignal, timer: TaskTimer): Promise<{ approved: boolean; answer: string }> {
+    const question = bounded(`May I run ${req.tool}, a ${req.risk} tool? ${req.summary}`, 900);
+    const lead = this.lead();
+    const fromOwner = (out: ControlOut) => {
+      const reply = out.output.replace(/^The human replied: /, "");
+      return { approved: OWNER_YES.test(reply), answer: bounded(reply, COMPANY.answerChars) };
+    };
+    if (a.dto.role === "lead" || !lead || lead === a) return fromOwner(await this.askOwner(a, t, question, signal, timer, null));
+    const requestId = await this.raise(a, lead, question, t);
+    await this.emit("agent.say", { text: clip(question, LIMITS.sayChars), to: lead.dto.id }, a.dto.id, t.dto.id);
+    const verdict = await this.ceoDecide(a, lead, t, question, signal);
+    if (verdict.decision === "owner") {
+      await this.emit("agent.say", { text: clip(`${a.dto.name}, ${req.tool} is for the owner to allow. I am asking.`, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, t.dto.id);
+      return fromOwner(await this.askOwner(a, t, question, signal, timer, { requestId, lead }));
+    }
+    const approved = verdict.decision === "approve";
+    await this.emit("request.decided", { requestId, byAgentId: lead.dto.id, byOwner: false, answer: verdict.answer, approved }, lead.dto.id, t.dto.id);
+    await this.emit("agent.say", { text: clip(verdict.answer, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, t.dto.id);
+    return { approved, answer: `${lead.dto.name} (the CEO): ${verdict.answer}` };
+  }
+
   private async raise(from: LiveAgent, to: LiveAgent | null, question: string, t: LiveTask): Promise<string> {
     const requestId = this.ctx.clock.id();
     await this.emit("request.raised", { requestId, fromAgentId: from.dto.id, toAgentId: to?.dto.id ?? null, question: bounded(question, 600), toOwner: to === null }, from.dto.id, t.dto.id);
@@ -2702,7 +2844,7 @@ export class RunEngine {
         });
         const live = plan.filter((p) => !p.pre).map((p) => p.call);
         if (live.length) await this.setAgent(a, { status: "working", activity: activityForTool(live[0]!.name), statusText: batchLine(live, a.dto.steps) }, true);
-        const outs = await Promise.all(plan.map((p) => (p.pre ? Promise.resolve(p.pre) : this.runTool(a, t, p.call, signal))));
+        const outs = await Promise.all(plan.map((p) => (p.pre ? Promise.resolve(p.pre) : this.runTool(a, t, p.call, signal, timer))));
         for (let k = 0; k < outs.length; k++) {
           const p = plan[k]!;
           if (p.pre) results.push(p.pre);
@@ -2722,7 +2864,7 @@ export class RunEngine {
         if (r.end) end = r.end;
       } else {
         await this.announce(a, call);
-        settle(call, await this.runTool(a, t, call, signal));
+        settle(call, await this.runTool(a, t, call, signal, timer));
       }
     }
     return { results, anyError, tripped, end };
@@ -2739,19 +2881,24 @@ export class RunEngine {
    * (the id the UI resolves through toolCall()). The engine adds nothing to
    * that log; it only turns the result into the model's step record.
    */
-  private async runTool(a: LiveAgent, t: LiveTask, call: ToolCall, signal: AbortSignal): Promise<StepResult> {
+  private async runTool(a: LiveAgent, t: LiveTask, call: ToolCall, signal: AbortSignal, timer: TaskTimer): Promise<StepResult> {
     const started = this.ctx.clock.now();
     let res: ToolResult & { callId?: string };
+    const toolCtx: ToolContext & ToolExtras = {
+      runId: this.run.id,
+      agentId: a.dto.id,
+      taskId: t.dto.id,
+      projectId: this.project.id,
+      root: this.root,
+      role: a.dto.role,
+      signal,
+      company: this.company,
+      roleKey: this.keyOf(a.dto),
+      grants: this.grantsOf(a),
+      approve: (req) => this.approveTool(a, t, req, signal, timer),
+    };
     try {
-      res = await this.deps.tools.execute(call, {
-        runId: this.run.id,
-        agentId: a.dto.id,
-        taskId: t.dto.id,
-        projectId: this.project.id,
-        root: this.root,
-        role: a.dto.role,
-        signal,
-      });
+      res = await this.deps.tools.execute(call, toolCtx);
     } catch (e) {
       if (signal.aborted) throw signal.reason;
       this.log.log("warn", "tool execute threw", { tool: call.name, error: redact(errMsg(e)) });

@@ -680,6 +680,10 @@ export interface HarnessOptions {
   judge?: Judge;
   /** fast-tier side calls: the self-check critic and the role charter */
   side?: SideScript;
+  /** company templates (the companies module's service); none by default: every run is a studio run */
+  companies?: RunsDeps["companies"];
+  /** a tools service of its own (for example one with taskSpecs) instead of fakeTools */
+  toolsService?: RunsDeps["tools"];
 }
 
 export async function harness(opts: HarnessOptions) {
@@ -711,6 +715,8 @@ export async function harness(opts: HarnessOptions) {
     eventLog: opts.eventLog,
     brain: { reflexion: false, tuning: false, org: false, ...(opts.brain ?? {}) },
     ...(opts.judge ? { judge: opts.judge } : {}),
+    ...(opts.companies ? { companies: opts.companies } : {}),
+    ...(opts.toolsService ? { tools: opts.toolsService } : {}),
   };
   const mod = createRunsModule(ctx, deps);
   await mod.ready;

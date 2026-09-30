@@ -6,11 +6,18 @@
 //
 // Local computer control is not part of this build: automation is null
 // everywhere and health reports it unavailable.
+//
+// Capabilities: connectors (MCP servers and HTTP APIs) feed the tools bridge
+// and the trading venue; trading (paper broker, live gate) feeds the tools
+// bridge; companies (studio, fund templates) feed the runs engine. The kill
+// switch also kills every MCP server process and cancels open orders.
 import { mkdir } from "node:fs/promises";
 import type { AutomationStatus } from "@mengai/shared";
 import type { Hono } from "hono";
 import { createAssetsModule } from "../modules/assets";
 import { createAuthModule } from "../modules/auth";
+import { createCompaniesModule } from "../modules/companies";
+import { createConnectorsModule, type ConnectorsOptions } from "../modules/connectors";
 import { createContextModule } from "../modules/context";
 import { createEvalsModule } from "../modules/evals";
 import { createEventsModule } from "../modules/events";
@@ -23,6 +30,7 @@ import { createRunsModule } from "../modules/runs";
 import { createSecurityModule } from "../modules/security";
 import { createSettingsModule } from "../modules/settings";
 import { createToolsModule } from "../modules/tools";
+import { createTradingModule } from "../modules/trading";
 import { createUsageModule } from "../modules/usage";
 import { createWorkspaceModule } from "../modules/workspace";
 import { redact } from "../lib/redact";
@@ -62,6 +70,8 @@ export interface ContainerOptions {
   migrate?: boolean;
   /** scripted demo crew instead of the owner's providers for runs (MENGAI_DEMO=1) */
   demo?: boolean | DemoOptions;
+  /** tests inject the MCP process spawner, fetch and DNS for connectors */
+  connectors?: ConnectorsOptions;
 }
 
 export interface Container {
@@ -81,6 +91,9 @@ export interface Container {
     assets: ReturnType<typeof createAssetsModule>;
     security: ReturnType<typeof createSecurityModule>;
     tools: ReturnType<typeof createToolsModule>;
+    connectors: ReturnType<typeof createConnectorsModule>;
+    trading: ReturnType<typeof createTradingModule>;
+    companies: ReturnType<typeof createCompaniesModule>;
     runs: ReturnType<typeof createRunsModule>;
     evals: ReturnType<typeof createEvalsModule>;
     health: ReturnType<typeof createHealthModule>;
@@ -235,6 +248,9 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       settings: settings.service,
       projects: projects.service,
     });
+    const connectors = createConnectorsModule(ctx, { killswitch }, opts.connectors);
+    const trading = createTradingModule(ctx, { venue: connectors.service, killswitch });
+    const companies = createCompaniesModule();
     const tools = createToolsModule(ctx, {
       workspace: workspace.service,
       runner,
@@ -244,6 +260,8 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       automation,
       settings: settings.service,
       projects: projects.service,
+      connectors: connectors.service,
+      trading: trading.service,
     });
     const runs = createRunsModule(ctx, {
       projects: projects.service,
@@ -260,6 +278,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       eventLog: events.service,
       // the scripted demo crew answers its own brain decisions; real runs ask JEV
       judge: demoOpts ? undefined : providers.service.judge,
+      companies: companies.service,
     });
     killswitch.register("runner", () => runner.killAll());
     const evals = createEvalsModule(ctx, { context: context.service, tools: tools.service });
@@ -270,7 +289,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
     });
 
     // every module, in creation order; closed in reverse
-    const all: MountedModule[] = [events, settings, auth, usage, providers, jev, workspace, projects, context, memory, assets, security, tools, runs, evals, health];
+    const all: MountedModule[] = [events, settings, auth, usage, providers, jev, workspace, projects, context, memory, assets, security, connectors, trading, companies, tools, runs, evals, health];
     // providers owns two top-level segments and mounts at "" (under /api): mount it after the named segments
     const mounted = [...all.filter((m) => m.routes && m !== providers), providers];
     const app = createApp({ config, modules: mounted, killswitch, auth: auth.sessionAuth, kv, logger, trustProxy: boot.trustProxy });
@@ -300,6 +319,11 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       } catch (err) {
         logger.log("warn", "provider key warm-up failed", { error: errText(err) });
       }
+      try {
+        await connectors.service.warm();
+      } catch (err) {
+        logger.log("warn", "connector secret warm-up failed", { error: errText(err) });
+      }
       await runs.ready;
 
       if (config.mode === "server" && !boot.setupCode) {
@@ -310,13 +334,13 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       let demo: Container["demo"] = null;
       if (demoOpts) {
         logger.log("info", "demo mode: runs are played by the scripted demo crew, no model is called");
-        demo = { seed: demoOpts.seed === false ? null : await seedDemo({ projects: projects.service, runs: runs.service, logger }) };
+        demo = { seed: demoOpts.seed === false ? null : await seedDemo({ projects: projects.service, runs: runs.service, logger, fund: demoOpts.fund }) };
       }
 
       return {
         app,
         ctx,
-        modules: { events, settings, auth, usage, providers, jev, workspace, projects, context, memory, assets, security, tools, runs, evals, health },
+        modules: { events, settings, auth, usage, providers, jev, workspace, projects, context, memory, assets, security, tools, connectors, trading, companies, runs, evals, health },
         killswitch,
         runner,
         demo,

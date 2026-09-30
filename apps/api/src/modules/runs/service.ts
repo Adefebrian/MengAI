@@ -17,6 +17,7 @@ import {
   type RunDTO,
   type RunEstimate,
   type RunSnapshotDTO,
+  type RunStage,
   type RunStatus,
   type StrategyVersionDTO,
   type TaskDTO,
@@ -28,7 +29,7 @@ import type { RunsService } from "../../core/services";
 import { HttpError, conflict, notFound } from "../../lib/http";
 import { clip, redact } from "../../lib/redact";
 import { COMPANY, meetingsFromEvents } from "./company";
-import { RunEngine, TERMINAL_RUN, type EngineHooks, type EngineInit, type OrgSettings } from "./engine";
+import { RunEngine, TERMINAL_RUN, companyOf, type EngineHooks, type EngineInit, type OrgSettings } from "./engine";
 import { HEURISTIC, LIMITS, TITLES, bounded, estimatePlan, roundUsd } from "./policy";
 import { brainOf, type RunsDeps } from "./ports";
 import { createRunsRepo, emptyUsage } from "./repo";
@@ -208,6 +209,7 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
         startedAt: now,
         endedAt: null,
         createdAt: now,
+        company: input.company ?? "studio",
       };
       await repo.insertRun(run, now);
       try {
@@ -283,13 +285,32 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
       // agents holds the crew still at work; cats that were let go are listed apart
       const agents = all.filter((a) => !a.leftReason);
       const departed = all.filter((a) => !!a.leftReason);
+      const kindOf = (t: TaskDTO) =>
+        t.role === "lead" && t.title === TITLES.plan
+          ? "plan"
+          : t.role === "lead" && t.title.startsWith(TITLES.final)
+            ? "final"
+            : t.role === "reviewer" && t.parentId && t.title.startsWith(TITLES.reviewPrefix)
+              ? "review"
+              : "work";
+      const company = companyOf(run);
+      const roleKeys = new Map(roles.map((r) => [r.id, r.key] as const));
+      const companyStage =
+        !live && company !== "studio" && deps.companies
+          ? deps.companies.boardStage(
+              company,
+              tasks.map((t) => ({ title: t.title, roleKey: (t.roleId && roleKeys.get(t.roleId)) || t.role, archetype: t.role, kind: kindOf(t), status: t.status })),
+              run.status,
+            )
+          : null;
       const stage = live
         ? live.stageNow
-        : stageFromBoard(
+        : ((companyStage as RunStage | null) ??
+          stageFromBoard(
             tasks.map((t) => ({ role: t.role, status: t.status, kind: t.role === "reviewer" && t.parentId && t.title.startsWith(TITLES.reviewPrefix) ? "review" : "work" })),
             run.status,
             agents.length,
-          );
+          ));
       const merged = [...decisions, ...brainDecisions].sort((x, y) => x.createdAt - y.createdAt || (x.id < y.id ? -1 : 1));
       return { run, agents, tasks, handoffs, decisions: merged, approvals, meetings, departed, roles, stage, lastSeq: seq };
     },

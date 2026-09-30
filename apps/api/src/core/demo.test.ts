@@ -12,6 +12,8 @@ import { CEO_SYSTEM, REFLEXION_SYSTEM, ROLE_SYSTEM } from "../modules/runs";
 import { createDb } from "./adapters/db-bunsql";
 import { buildConfig } from "./config";
 import { createContainer } from "./container";
+import { COMPANY_STAGES } from "@mengai/shared";
+import { HttpError } from "../lib/http";
 import {
   DEMO_CRITIQUE,
   DEMO_CSS,
@@ -20,6 +22,9 @@ import {
   DEMO_QUESTION,
   DEMO_ROLE_TITLE,
   DEMO_SMOKE,
+  FUND_DEMO_GOAL,
+  FUND_TITLE,
+  FUND_TRADES,
   createDemoJudge,
   createDemoRouter,
   demoCharters,
@@ -390,5 +395,104 @@ describe("demo crew: script units", () => {
     expect(demoMeetingMs([1, 3])).toEqual([3, 7]);
     expect(createDemoRouter({ charter }).company).toEqual({ meetingMs: [6000, 10_000] });
     expect(createDemoRouter({ charter, meetingMs: [5, 5] }).company).toEqual({ meetingMs: [5, 5] });
+  });
+});
+
+describe("demo fund: one hedge fund day", () => {
+  test("Oyen as CIO, template roles, every fund stage, risk reviewed paper fills with P&L, a live order that waits for the owner, a P&L report", async () => {
+    const dataDir = await tempDir();
+    const workspaces = await tempDir();
+    const boot = buildConfig(parseEnv({ MENGAI_MODE: "local", MENGAI_DATA_DIR: dataDir, MENGAI_WORKSPACES_DIR: workspaces }));
+    const container = await createContainer({
+      boot,
+      logger: silentLogger,
+      overrides: { db: createDb({ url: ":memory:" }), kv: memoryKv(), vault: memoryVault(), runner: fakeRunner() },
+      demo: { paceMs: [1, 3] },
+    });
+    try {
+      const fund = container.demo!.seed!.fund!;
+      const bus = container.modules.events.service;
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("the fund demo run did not finish in 30 s")), 30_000);
+        const off = bus.subscribe((e: MengaiEvent) => {
+          if (e.type !== "run.status" || e.runId !== fund.runId) return;
+          const st = (e as Ev<"run.status">).data.status;
+          if (st === "done" || st === "failed" || st === "stopped") {
+            clearTimeout(timer);
+            off();
+            resolve();
+          }
+        });
+      });
+      const ev = await bus.after(0, fund.runId, 10_000);
+      const of = <T extends EventType>(t: T) => ev.filter((e): e is Ev<T> => e.type === t);
+      const snap = await container.modules.runs.service.snapshot(fund.runId);
+      expect(snap.run).toMatchObject({ status: "done", company: "fund", goal: FUND_DEMO_GOAL });
+
+      // the tracker walks every fund stage in order and ends on the report
+      expect(of("run.stage").map((e) => e.data.stage as string)).toEqual([...COMPANY_STAGES.fund]);
+      expect(snap.stage as string).toBe("report");
+
+      // Oyen is the CIO; the template seeded five specialists on base archetypes
+      expect(snap.agents.find((a) => a.role === "lead")).toMatchObject({ name: "Oyen", roleTitle: "CIO" });
+      const seeded = of("role.created").map((e) => e.data.role);
+      expect(seeded.map((r) => `${r.title}:${r.archetype}`).sort()).toEqual(
+        ["Compliance officer:security", "Data engineer:engineer", "Quant researcher:researcher", "Risk manager:reviewer", "Trader:engineer"].sort(),
+      );
+      expect(seeded.every((r) => r.charter.includes("MengAI crew") && of("role.created").every((e) => e.data.byAgentId === null))).toBe(true);
+      expect(seeded.find((r) => r.key === "trader")!.charter).toContain("Never give investment advice");
+      const titles = new Set(snap.agents.map((a) => a.roleTitle));
+      for (const t of ["Quant researcher", "Data engineer", "Trader", "Risk manager", "Compliance officer"]) expect(titles.has(t)).toBe(true);
+      for (const title of Object.values(FUND_TITLE)) expect(snap.tasks.find((t) => t.title === title)?.status).toBe("done");
+
+      // orders: two paper fills at the trader's quotes, each with a risk note; one live proposal waiting for the owner
+      const trading = container.modules.trading.service;
+      const orders = (await trading.orders({ runId: fund.runId })).sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+      expect(orders.map((o) => `${o.mode}:${o.side}:${o.status}`)).toEqual(["paper:buy:filled", "paper:sell:filled", "live:buy:proposed"]);
+      expect(orders[0]!.fillPrice).toBe(FUND_TRADES.buy.quote);
+      expect(orders[1]!.fillPrice).toBe(FUND_TRADES.sell.quote);
+      expect(orders.every((o) => (o.riskNote ?? "").length > 5)).toBe(true);
+      expect(orders[2]).toMatchObject({ type: "limit", limitPrice: FUND_TRADES.live.limit, venue: null });
+      const book = (await trading.positions("paper")).find((p) => p.symbol === FUND_TRADES.symbol)!;
+      expect(book).toMatchObject({ qty: 0.03, avgPrice: FUND_TRADES.buy.quote, lastPrice: FUND_TRADES.live.quote, realizedUsd: FUND_TRADES.realizedUsd, unrealizedUsd: FUND_TRADES.unrealizedUsd });
+      expect(of("trade.order").length).toBeGreaterThanOrEqual(6);
+      expect(of("trade.positions").length).toBeGreaterThan(0);
+
+      // every trading call is audited like any tool call
+      const calls = of("tool.call").map((e) => e.data.tool);
+      expect(calls.filter((t) => t === "propose_order")).toHaveLength(3);
+      expect(calls.filter((t) => t === "review_order")).toHaveLength(3);
+
+      // the owner's approval meets the trading gate: paper mode holds the live order
+      const live = orders[2]!;
+      const gate = await trading.decide(live.id, "approve").catch((e: unknown) => e);
+      expect(gate).toBeInstanceOf(HttpError);
+      expect(gate).toMatchObject({ status: 409, code: "trading_gate", message: "live trading is off (paper mode)" });
+      expect((await trading.orders({ runId: fund.runId })).find((o) => o.id === live.id)!.status).toBe("proposed");
+
+      // the P&L report states the numbers and that it is not advice
+      const report = snap.tasks.find((t) => t.role === "lead" && t.title !== "Plan the work")!;
+      expect(report.resultSummary).toContain("realized +$17.00, unrealized +$25.50");
+      expect(report.resultSummary).toContain("not investment advice");
+      const root = await container.modules.projects.service.root(fund.projectId);
+      for (const f of ["notes/thesis.md", "data/btc-usd-daily.csv", "reports/backtest.md", "trades/log.csv"]) expect((await readFile(join(root, f), "utf8")).length).toBeGreaterThan(50);
+    } finally {
+      await container.close();
+    }
+  }, 40_000);
+
+  test("the fund script: the CIO plans nine tasks on the template roles, the trader proposes through propose_order", () => {
+    const charter = (r: AgentRole) => `charter:${r}`;
+    const roles = demoCharters(charter);
+    const plan = demoTurn(
+      { model: "m", system: charter("lead"), messages: [{ role: "user", content: "Your task: Plan the work\nSpec:\nCompany: hedge fund. Call create_tasks once" }, { role: "assistant", content: "" }] },
+      roles,
+    );
+    const tasks = (plan.toolCalls![0]!.arguments as { tasks: Array<{ role_title?: string }> }).tasks;
+    expect(tasks).toHaveLength(9);
+    expect(new Set(tasks.map((t) => t.role_title))).toEqual(new Set(["Quant researcher", "Data engineer", "Trader", "Risk manager", "Compliance officer"]));
+    const trader = "You are the Trader cat on a MengAI crew, a Engineer specialist.\n- Trade.";
+    const first = demoTurn({ model: "m", system: trader, messages: [{ role: "user", content: `Your task: ${FUND_TITLE.paper}` }] }, roles).toolCalls![0]!;
+    expect(first).toMatchObject({ name: "propose_order", arguments: { side: "buy", quote: FUND_TRADES.buy.quote } });
   });
 });

@@ -1,4 +1,5 @@
 // /api/runs routes: validate with zod, delegate to the service, no logic.
+import { COMPANY_KINDS } from "@mengai/shared";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -26,6 +27,7 @@ export const createRunSchema = z
     goal: z.string().trim().min(3).max(4000),
     budgetTokens: budgetTokens.optional(),
     budgetUsd: budgetUsd.optional(),
+    company: z.enum(COMPANY_KINDS).optional(),
   })
   .strict();
 

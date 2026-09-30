@@ -25,6 +25,18 @@
 //   the three checks
 // - a cat with nothing queued takes a coffee break; the crew holds a wrap-up
 //   meeting and the CEO writes the final report
+// A second project runs a hedge fund day (company "fund", Oyen as CIO):
+// - the quant researcher writes a momentum thesis while the data engineer
+//   writes the price history, then the quant backtests the rule
+// - the risk manager reviews the strategy, then every order: two paper
+//   orders fill at the trader's quotes (a buy, then a partial sell), so the
+//   book shows realized and unrealized P&L
+// - the trader proposes one live limit order; the risk manager approves it
+//   and it waits for the owner (the trading gate holds it in paper mode)
+// - the compliance officer checks the reports for advice language and
+//   secrets, and the CIO writes the P&L report (a record, not advice)
+// The tracker walks every fund stage: thesis, research, backtest, risk
+// review, paper trade, live trade, report. No network, no connector.
 // No model is called and no key is needed. Each reply waits 2.2 to 4.2 s and
 // each meeting holds 6 to 10 s, so the crew is visibly alive. The runtime JEV
 // is scripted too (the demo judge rides on the router).
@@ -56,9 +68,15 @@ export const DEMO_MEETING_MS: readonly [number, number] = [6000, 10_000];
 export interface DemoOptions {
   /** pause range per reply in ms (tests use a few ms) */
   paceMs?: readonly [number, number];
-  /** create the demo project and start one run when no project exists (default true) */
+  /** create the demo projects and start their runs when no project exists (default true) */
   seed?: boolean;
+  /** also seed the hedge fund demo run (default true) */
+  fund?: boolean;
 }
+
+export const FUND_DEMO_PROJECT_NAME = "Paw Capital";
+export const FUND_DEMO_GOAL =
+  "Run the Paw Capital paper desk on BTC-USD for one day: a momentum thesis, the price history, a backtest summary, a risk review, paper trades with fills and P&L, one live order proposal for the owner to decide, and a P&L report.";
 
 export interface DemoScriptOptions {
   /** add a security cat that scans for secrets and config before launch (default false) */
@@ -298,13 +316,22 @@ interface TurnInfo {
   round: number;
   /** the lead's planning task (its spec asks for create_tasks); any other lead task is the report */
   planning: boolean;
+  /** a hedge fund run (the plan guide or the P&L report spec says so) */
+  fund: boolean;
 }
 
 function textOf(content: ChatRequest["messages"][number]["content"]): string {
   return typeof content === "string" ? content : content.map((p) => (p.type === "text" ? p.text : "")).join("");
 }
 
-const DYNAMIC_ROLES: Record<string, AgentRole> = { [DEMO_ROLE_TITLE]: "qa" };
+const DYNAMIC_ROLES: Record<string, AgentRole> = {
+  [DEMO_ROLE_TITLE]: "qa",
+  "Quant researcher": "researcher",
+  "Data engineer": "engineer",
+  Trader: "engineer",
+  "Risk manager": "reviewer",
+  "Compliance officer": "security",
+};
 
 function readTurn(req: ChatRequest, charters: ReadonlyArray<readonly [string, AgentRole]>): TurnInfo {
   // the system prompt starts with the role's charter; learned strategies follow it
@@ -319,6 +346,7 @@ function readTurn(req: ChatRequest, charters: ReadonlyArray<readonly [string, Ag
   let title = "";
   let round = 1;
   let planning = false;
+  let fund = false;
   for (const m of req.messages) {
     if (m.role !== "user") continue;
     const text = textOf(m.content);
@@ -327,9 +355,10 @@ function readTurn(req: ChatRequest, charters: ReadonlyArray<readonly [string, Ag
     const r = /\(round (\d+) of/.exec(text);
     if (r) round = Number(r[1]);
     planning = text.includes("create_tasks");
+    fund = text.includes("Company: hedge fund") || text.includes("P&L report");
   }
   const step = req.messages.filter((m) => m.role === "assistant").length;
-  return { role, roleTitle, coached: /\nRole strategy v\d+ /.test(req.system), title, step, round, planning };
+  return { role, roleTitle, coached: /\nRole strategy v\d+ /.test(req.system), title, step, round, planning, fund };
 }
 
 function leadSteps(planning: boolean, security: boolean): Step[] {
@@ -506,6 +535,9 @@ function securitySteps(title: string, coached: boolean): Step[] {
 }
 
 function stepsFor(t: TurnInfo, opts: DemoScriptOptions): Step[] {
+  const fundScript = t.roleTitle ? FUND_SCRIPTS[t.roleTitle] : undefined;
+  if (fundScript) return fundScript(t);
+  if (t.role === "lead" && t.fund) return fundLeadSteps(t.planning);
   switch (t.role) {
     case "lead":
       return leadSteps(t.planning, opts.securityScan === true);
@@ -583,6 +615,254 @@ function roleTurn(): ScriptedTurn {
     }),
   };
 }
+
+// ------------------------------------------------------------- the fund
+export const FUND_TITLE = {
+  thesis: "Write the momentum thesis",
+  data: "Collect the BTC-USD price history",
+  backtest: "Backtest the momentum rule",
+  risk: "Risk review of the strategy",
+  paper: "Paper trade the signal",
+  paperReview: "Review the paper orders",
+  live: "Propose one live order",
+  liveReview: "Review the live order",
+  compliance: "Compliance check of the reports",
+} as const;
+
+/** the paper fills of the demo day and the book they leave */
+export const FUND_TRADES = {
+  symbol: "BTC-USD",
+  buy: { qty: 0.05, quote: 61_200 },
+  sell: { qty: 0.02, quote: 62_050 },
+  live: { qty: 0.01, limit: 61_900, quote: 62_050 },
+  realizedUsd: 17,
+  unrealizedUsd: 25.5,
+} as const;
+
+const FUND_TASKS = [
+  {
+    key: "thesis",
+    title: FUND_TITLE.thesis,
+    role: "researcher",
+    role_title: "Quant researcher",
+    spec: "Write notes/thesis.md: the momentum idea for BTC-USD as a rule you can test (entry, exit, size), and what would prove it wrong.",
+    acceptance: ["notes/thesis.md states the rule and what would falsify it"],
+  },
+  {
+    key: "data",
+    title: FUND_TITLE.data,
+    role: "engineer",
+    role_title: "Data engineer",
+    spec: "Write data/btc-usd-daily.csv from the desk's sample: date, open, high, low, close, UTC. Check the rows before you hand it over.",
+    acceptance: ["The CSV has a header and one row per day", "Row count and gaps are stated"],
+  },
+  {
+    key: "backtest",
+    title: FUND_TITLE.backtest,
+    role: "researcher",
+    role_title: "Quant researcher",
+    deps: ["thesis", "data"],
+    spec: "Backtest the rule on data/btc-usd-daily.csv and write reports/backtest.md: signals, hit rate, drawdown, costs and the limits of the test.",
+    acceptance: ["reports/backtest.md has the numbers and their sample size", "The limits of the test are stated"],
+  },
+  {
+    key: "risk",
+    title: FUND_TITLE.risk,
+    role: "reviewer",
+    role_title: "Risk manager",
+    deps: ["backtest"],
+    spec: "Review the strategy against the backtest: position size, stop and worst case. Set the paper limits the trader works within.",
+    acceptance: ["Size, stop and worst case are stated", "The paper limits are explicit"],
+  },
+  {
+    key: "paper",
+    title: FUND_TITLE.paper,
+    role: "engineer",
+    role_title: "Trader",
+    deps: ["risk"],
+    spec: "Paper trade the signal within the risk limits with propose_order (give the quote you read), and keep trades/log.csv.",
+    acceptance: ["Every order went through propose_order with a reason", "trades/log.csv lists each order"],
+  },
+  {
+    key: "paper_review",
+    title: FUND_TITLE.paperReview,
+    role: "reviewer",
+    role_title: "Risk manager",
+    deps: ["paper"],
+    spec: "Review every paper order waiting for you with review_order, then read the positions.",
+    acceptance: ["Each order has a risk note", "The positions are stated"],
+  },
+  {
+    key: "live",
+    title: FUND_TITLE.live,
+    role: "engineer",
+    role_title: "Trader",
+    deps: ["paper_review"],
+    spec: "Propose at most one live limit order within the risk limits. It waits for the risk manager and the owner; do not route around the gate.",
+    acceptance: ["One live proposal with a reason and a limit"],
+  },
+  {
+    key: "live_review",
+    title: FUND_TITLE.liveReview,
+    role: "reviewer",
+    role_title: "Risk manager",
+    deps: ["live"],
+    spec: "Review the live proposal with review_order. The owner and the trading limits decide after you.",
+    acceptance: ["The live order has a risk note"],
+  },
+  {
+    key: "compliance",
+    title: FUND_TITLE.compliance,
+    role: "security",
+    role_title: "Compliance officer",
+    deps: ["live_review"],
+    spec: "Check notes, reports and the trade log for investment advice language, promised returns and committed secrets.",
+    acceptance: ["A search for advice language ran", "A secret scan ran"],
+  },
+];
+
+const FUND_THESIS = `# Momentum thesis: BTC-USD
+
+Rule: go long when the close is above the 20 day high of the prior bars; exit half at +1.4 percent, trail the rest with a 2 percent stop.
+Size: at most 0.05 BTC per paper order.
+Wrong if: the breakout fails to hold for two closes in a row, or the backtest hit rate is under 45 percent on at least 30 signals.
+
+A research note for the desk, not investment advice.
+`;
+
+const FUND_CSV = `date,open,high,low,close
+2026-08-01,58210,58940,57820,58600
+2026-08-02,58600,59120,58110,58980
+2026-08-03,58980,59800,58700,59640
+2026-08-04,59640,60210,59200,59910
+2026-08-05,59910,60480,59350,60120
+2026-08-06,60120,61020,59880,60870
+2026-08-07,60870,61400,60410,61200
+2026-08-08,61200,62300,60950,62050
+`;
+
+const FUND_BACKTEST = `# Backtest: 20 day breakout, BTC-USD daily
+
+Sample: 8 daily bars in the desk file plus the desk's longer history summary (60 bars). Small sample: treat every number as a first look.
+Signals: 7. Winners: 4 (hit rate 57 percent). Average win +1.9 percent, average loss -1.1 percent.
+Max drawdown: 3.1 percent. Costs: 0.1 percent per side included.
+Limits: one regime (a rising month), no slippage model, no weekend gaps.
+
+A record of the test, not investment advice.
+`;
+
+const FUND_LOG = `time,symbol,side,qty,type,quote,reason
+2026-08-08T00:05Z,BTC-USD,buy,0.05,market,61200,close above the 20 day high
+2026-08-08T20:00Z,BTC-USD,sell,0.02,market,62050,take part off at the +1.4 percent band
+`;
+
+export function fundReport(): string {
+  return [
+    "Paw Capital paper desk report.",
+    "Thesis: a 20 day breakout on BTC-USD daily bars, notes/thesis.md. Data: 8 daily bars in data/btc-usd-daily.csv, no gaps.",
+    "Backtest: 7 signals, hit rate 57 percent, max drawdown 3.1 percent on a small sample (reports/backtest.md).",
+    "Risk review: at most 0.05 BTC per paper order, a 2 percent stop, worst case about 61 dollars per order.",
+    "Paper trades: bought 0.05 BTC-USD at 61,200.00 and sold 0.02 at 62,050.00, both risk approved. P&L: realized +$17.00, unrealized +$25.50 on the 0.03 BTC left, marked at 62,050.00.",
+    "Live: one limit buy of 0.01 BTC-USD at 61,900.00 has the risk manager's approval and waits for the owner; the trading gate holds it while live trading is off.",
+    "Compliance: no advice language and no committed secrets.",
+    "This is a record of what the crew did, not investment advice.",
+  ].join(" ");
+}
+
+function fundLeadSteps(planning: boolean): Step[] {
+  if (!planning) {
+    return [
+      { say: "Desk closed. Reading the book before I write to the owner.", calls: [call("positions")] },
+      { calls: [finish(fundReport())] },
+    ];
+  }
+  return [
+    { say: "Morning, desk. This is the demo fund day: every step is scripted, paper money only. Reading the workspace first.", calls: [call("fs_list", { path: "." })] },
+    {
+      say: `${FUND_TASKS.length} tasks: thesis and data together, then the backtest, the risk review, paper trades, the risk manager on every order, one live proposal for the owner, compliance.`,
+      calls: [call("create_tasks", { tasks: FUND_TASKS })],
+    },
+    { calls: [finish(`Plan: ${FUND_TASKS.length} tasks from thesis to compliance. Paper first; the one live order waits for the risk manager and the owner.`)] },
+  ];
+}
+
+function quantSteps(title: string): Step[] {
+  if (title === FUND_TITLE.backtest) {
+    return [
+      { say: "Running the breakout rule over the desk's bars.", calls: [call("fs_write", { path: "reports/backtest.md", content: FUND_BACKTEST })] },
+      { calls: [finish("Backtest in reports/backtest.md: 7 signals, 57 percent hit rate, 3.1 percent max drawdown, small sample stated.", ["reports/backtest.md"])] },
+    ];
+  }
+  return [
+    { say: "A thesis you can test beats a thesis you can like. Writing the rule down.", calls: [call("fs_write", { path: "notes/thesis.md", content: FUND_THESIS })] },
+    { calls: [finish("notes/thesis.md: the 20 day breakout rule, its size, and what would prove it wrong.", ["notes/thesis.md"])] },
+  ];
+}
+
+function dataSteps(): Step[] {
+  return [
+    { say: "Network tools are off in the demo, so the bars come from the desk's sample file.", calls: [call("fs_write", { path: "data/btc-usd-daily.csv", content: FUND_CSV })] },
+    { say: "Counting rows and looking for gaps.", calls: [call("fs_read", { path: "data/btc-usd-daily.csv" })] },
+    { calls: [finish("data/btc-usd-daily.csv: 8 daily bars, 2026-08-01 to 2026-08-08, no gaps, header present.", ["data/btc-usd-daily.csv"])] },
+  ];
+}
+
+function traderSteps(title: string): Step[] {
+  const { symbol, buy, sell, live } = FUND_TRADES;
+  if (title === FUND_TITLE.live) {
+    return [
+      {
+        say: "One live proposal, inside the limits. It waits for risk and the owner.",
+        calls: [call("propose_order", { symbol, side: "buy", qty: live.qty, type: "limit", limit_price: live.limit, quote: live.quote, live: true, reason: "add on a pullback to the breakout level, within the paper limits" })],
+      },
+      { calls: [finish(`Proposed one live limit buy of ${live.qty} ${symbol} at ${live.limit}; it waits for the risk review and the owner.`)] },
+    ];
+  }
+  return [
+    { say: "Close above the 20 day high. Buying on paper at the quote I read.", calls: [call("propose_order", { symbol, side: "buy", qty: buy.qty, type: "market", quote: buy.quote, reason: "close above the 20 day high" })] },
+    { say: "Logging it.", calls: [call("fs_write", { path: "trades/log.csv", content: FUND_LOG })] },
+    { say: "Up 1.4 percent. Taking part off, as the thesis says.", calls: [call("propose_order", { symbol, side: "sell", qty: sell.qty, type: "market", quote: sell.quote, reason: "take part off at the +1.4 percent band" })] },
+    { calls: [finish(`Two paper orders for ${symbol} proposed (buy ${buy.qty} at ${buy.quote}, sell ${sell.qty} at ${sell.quote}); trades/log.csv lists both.`, ["trades/log.csv"])] },
+  ];
+}
+
+function riskSteps(title: string): Step[] {
+  if (title === FUND_TITLE.paperReview) {
+    return [
+      { say: "Two orders on my desk. Checking the book first.", calls: [call("positions")] },
+      { say: "The buy fits the size limit.", calls: [call("review_order", { verdict: "approve", note: "0.05 BTC is inside the 0.05 limit; stop at 2 percent caps the loss near 61 dollars" })] },
+      { say: "The sell only reduces risk.", calls: [call("review_order", { verdict: "approve", note: "reduces the position; no new risk" })] },
+      { calls: [call("positions")] },
+      { calls: [finish(`Both paper orders approved and filled. Book: 0.03 BTC left, realized +$${FUND_TRADES.realizedUsd.toFixed(2)}, unrealized +$${FUND_TRADES.unrealizedUsd.toFixed(2)}.`)] },
+    ];
+  }
+  if (title === FUND_TITLE.liveReview) {
+    return [
+      { say: "A live proposal. Sizing it against the risk review.", calls: [call("review_order", { verdict: "approve", note: "0.01 BTC is a fifth of the paper size; the owner's limits and approval decide the rest" })] },
+      { calls: [finish("Live proposal risk approved; it waits for the owner and the trading gate.")] },
+    ];
+  }
+  return [
+    { say: "Reading the backtest before any trade.", calls: [call("fs_read", { path: "reports/backtest.md" })] },
+    { calls: [finish("Strategy review: at most 0.05 BTC per paper order, a 2 percent stop, worst case about 61 dollars per order. Small sample, so paper only until the owner decides.")] },
+  ];
+}
+
+function complianceSteps(): Step[] {
+  return [
+    { say: "Reading every note for advice language.", calls: [call("fs_search", { pattern: "you should|guaranteed|we recommend|can't lose" })] },
+    { say: "And for anything secret.", calls: [call("scan_secrets")] },
+    { calls: [finish("No advice language or promised returns in notes, reports or the trade log; the secret scan found nothing.")] },
+  ];
+}
+
+const FUND_SCRIPTS: Record<string, (t: TurnInfo) => Step[]> = {
+  "Quant researcher": (t) => quantSteps(t.title),
+  "Data engineer": () => dataSteps(),
+  Trader: (t) => traderSteps(t.title),
+  "Risk manager": (t) => riskSteps(t.title),
+  "Compliance officer": () => complianceSteps(),
+};
 
 /** The scripted reply for one request (exported for tests). */
 export function demoTurn(req: ChatRequest, charters: ReadonlyArray<readonly [string, AgentRole]>, opts: DemoScriptOptions = {}): ScriptedTurn {
@@ -716,6 +996,8 @@ export function createDemoRouter(opts: DemoRouterOptions): LlmRouter & CompanyPa
 export interface DemoSeed {
   projectId: string;
   runId: string;
+  /** the hedge fund demo run; null when opted out */
+  fund: { projectId: string; runId: string } | null;
 }
 
 /** First boot in demo mode: one demo project and one running demo run. Null when projects already exist. */
@@ -723,10 +1005,19 @@ export async function seedDemo(deps: {
   projects: Pick<ProjectsService, "list" | "create">;
   runs: Pick<RunsService, "create">;
   logger: Logger;
+  /** also start the hedge fund demo (default true) */
+  fund?: boolean;
 }): Promise<DemoSeed | null> {
   if ((await deps.projects.list()).length > 0) return null;
   const project = await deps.projects.create({ name: DEMO_PROJECT_NAME });
   const run = await deps.runs.create({ projectId: project.id, goal: DEMO_GOAL });
   deps.logger.log("info", "demo crew started", { projectId: project.id, runId: run.id });
-  return { projectId: project.id, runId: run.id };
+  let fund: DemoSeed["fund"] = null;
+  if (deps.fund !== false) {
+    const fp = await deps.projects.create({ name: FUND_DEMO_PROJECT_NAME });
+    const fr = await deps.runs.create({ projectId: fp.id, goal: FUND_DEMO_GOAL, company: "fund" });
+    deps.logger.log("info", "demo fund started", { projectId: fp.id, runId: fr.id });
+    fund = { projectId: fp.id, runId: fr.id };
+  }
+  return { projectId: project.id, runId: run.id, fund };
 }

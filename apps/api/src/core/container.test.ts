@@ -12,7 +12,7 @@ import type { Hono } from "hono";
 import { createDb } from "./adapters/db-bunsql";
 import { buildConfig } from "./config";
 import { AUTOMATION_REASON, createContainer, envFlag, runnerKind, type Container } from "./container";
-import { DEMO_GOAL, DEMO_PROJECT_NAME } from "./demo";
+import { DEMO_GOAL, DEMO_PROJECT_NAME, FUND_DEMO_PROJECT_NAME } from "./demo";
 import { EMBEDDED_MIGRATIONS, loadMigrations, MIGRATIONS_ROOT } from "./migrate";
 import type { ExecRequest, ExecResult, Runner } from "./ports/runner";
 import { memoryKv, memoryVault, silentLogger } from "../testing";
@@ -155,6 +155,16 @@ const ROUTES = [
   "GET /api/automation/audit/verify",
   "GET /api/automation/frames/:id",
   "GET /api/runs/:id/agents/:agentId/mind",
+  "GET /api/connectors",
+  "POST /api/connectors",
+  "PATCH /api/connectors/:id",
+  "DELETE /api/connectors/:id",
+  "POST /api/connectors/:id/test",
+  "GET /api/trading/settings",
+  "PUT /api/trading/settings",
+  "GET /api/trading/orders",
+  "GET /api/trading/positions",
+  "POST /api/trading/orders/:id/decision",
   "POST /api/killswitch",
   "GET /api/settings",
   "PATCH /api/settings",
@@ -202,7 +212,7 @@ describe("container", () => {
     expect(everyRouteListed).toBe(true);
     const { container } = await localContainer();
     try {
-      expect(container.killswitch.hooks().sort()).toEqual(["runner", "runs.orchestrator"]);
+      expect(container.killswitch.hooks().sort()).toEqual(["connectors", "runner", "runs.orchestrator", "trading"]);
       const cookie = await session(container);
       const health = await (await send(container.app, "/api/health")).json();
       expect(health).toMatchObject({ ok: true, mode: "local", automation: { available: false } });
@@ -234,6 +244,33 @@ describe("container", () => {
     }
   });
 
+  test("capabilities are wired: connector tools reach the bridge and the paper broker, the kill switch stops both", async () => {
+    const { container } = await localContainer();
+    try {
+      const m = container.modules;
+      const fixture = join(import.meta.dir, "..", "modules", "connectors", "fixtures", "fake-mcp.ts");
+      const dto = await m.connectors.service.create({ kind: "mcp_stdio", label: "fake", target: `${process.execPath} ${fixture}` });
+      expect(dto.status).toBe("connected");
+      const specs = await m.tools.service.taskSpecs({ role: "engineer", runId: "r1", taskId: "t1", grants: ["get_quote"] });
+      expect(specs.map((s) => s.name)).toEqual(["get_quote", "find_tools"]);
+      const project = await m.projects.service.create({ name: "Wiring" });
+      const root = await m.projects.service.root(project.id);
+      const tc = { runId: "r1", agentId: "a1", taskId: "t1", projectId: project.id, root, role: "engineer" as const, grants: ["get_quote"] };
+      // get_quote reads the connector's price tool through the trading service
+      const q = await m.tools.service.execute({ id: "x1", name: "get_quote", arguments: '{"symbol":"ABC"}' }, tc);
+      expect(q.output).toBe("ABC last price 101.25 (source: fake.get_price)");
+      const found = await m.tools.service.execute({ id: "x2", name: "find_tools", arguments: '{"query":"echo text"}' }, tc);
+      expect(found.output).toContain("fake__echo (write)");
+      expect((await m.tools.service.execute({ id: "x3", name: "fake__echo", arguments: '{"text":"wired"}' }, tc)).output).toBe("echo: wired ");
+      const result = await container.killswitch.trigger("user");
+      expect(result.killedProcesses).toBe(1);
+      expect(await m.trading.service.halted()).toBe(true);
+      expect((await m.connectors.service.list())[0]!.status).toBe("error");
+    } finally {
+      await container.close();
+    }
+  }, 20_000);
+
   test("demo mode: the seeded crew run plays through to done", async () => {
     const { container, runner, workspaces } = await localContainer({ paceMs: [1, 4] });
     try {
@@ -241,7 +278,8 @@ describe("container", () => {
       expect(seed).toBeTruthy();
       const { projectId, runId } = seed!;
       const projects = await container.modules.projects.service.list();
-      expect(projects.map((p) => p.name)).toEqual([DEMO_PROJECT_NAME]);
+      expect(projects.map((p) => p.name).sort()).toEqual([DEMO_PROJECT_NAME, FUND_DEMO_PROJECT_NAME].sort());
+      expect(seed!.fund).toBeTruthy();
 
       const status = await new Promise<string>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("demo run did not finish in 30 s")), 30_000);
@@ -321,7 +359,7 @@ describe("container", () => {
     const second = await createContainer({ boot: buildConfig(parseEnv(env)), logger: silentLogger, overrides, demo: { paceMs: [1, 2] } });
     try {
       expect(second.demo).toEqual({ seed: null });
-      expect(await second.modules.projects.service.list()).toHaveLength(1);
+      expect(await second.modules.projects.service.list()).toHaveLength(2);
     } finally {
       await second.close();
       await db.close();

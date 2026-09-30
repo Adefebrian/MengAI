@@ -63,6 +63,7 @@ export function runFromRow(r: Row, progress = 0): RunDTO {
     startedAt: numOrNull(r.started_at),
     endedAt: numOrNull(r.ended_at),
     createdAt: num(r.created_at),
+    company: r.company === "fund" ? "fund" : "studio",
   };
 }
 
@@ -190,8 +191,8 @@ export function createRunsRepo(db: Db) {
   return {
     // ------------------------------------------------------------ runs
     async insertRun(run: RunDTO, now: number): Promise<void> {
-      await db.query`insert into runs (id, project_id, goal, status, status_reason, budget_tokens, budget_usd, started_at, ended_at, created_at, updated_at)
-        values (${run.id}, ${run.projectId}, ${run.goal}, ${run.status}, ${run.statusReason}, ${run.budgetTokens}, ${run.budgetUsd}, ${run.startedAt}, ${run.endedAt}, ${run.createdAt}, ${now})`;
+      await db.query`insert into runs (id, project_id, goal, status, status_reason, budget_tokens, budget_usd, started_at, ended_at, created_at, updated_at, company)
+        values (${run.id}, ${run.projectId}, ${run.goal}, ${run.status}, ${run.statusReason}, ${run.budgetTokens}, ${run.budgetUsd}, ${run.startedAt}, ${run.endedAt}, ${run.createdAt}, ${now}, ${run.company ?? "studio"})`;
     },
 
     async getRun(id: string): Promise<RunDTO | null> {
