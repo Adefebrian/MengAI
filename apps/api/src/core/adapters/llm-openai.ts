@@ -2,6 +2,15 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // OpenAI Chat Completions adapter for every openai_chat preset (OpenAI,
 // DeepSeek, OpenRouter, Gemini compat, Groq, Mistral, Ollama, custom...).
+// Known vendor refusals self-heal through the table in llm-quirks, per
+// provider and model; on the official OpenAI host a model that refuses
+// tools while reasoning moves to the Responses API (llm-openai-responses)
+// and only falls back to reasoning_effort "none" when that path fails.
+// The owner's per-tier reasoning effort becomes reasoning_effort (default
+// sends nothing). Reasoning state a vendor attaches to its own tool calls
+// (DeepSeek and Kimi reasoning_content, OpenRouter reasoning_details, Gemini
+// thought signatures in extra_content) is kept per tool call id and sent back
+// with that call, because those models refuse a tool turn without it.
 // This file also hosts the small HTTP kit the sibling provider adapters
 // share: the base URL guard (SSRF), status and body -> LlmError mapping,
 // Retry-After parsing and an SSE reader. Pure fetch, no SDK.
@@ -11,6 +20,26 @@ import { isIP } from "node:net";
 import { redact } from "../../lib/redact";
 import { LlmError } from "../ports/llm";
 import type { ChatMessage, ChatRequest, ChatResult, ContentPart, LlmProvider, ToolCall, Usage } from "../ports/llm";
+import { buildResponsesBody, createResponsesStream, parseResponsesResult, responsesErrorStatus } from "./llm-openai-responses";
+import {
+  ALTERNATIVES_RE,
+  cloneQuirks,
+  createEchoStore,
+  createQuirkStore,
+  diagnose,
+  effortFor,
+  emptyQuirks,
+  JSON_WORD_RE,
+  NO_TOOLS_RE,
+  refusalContext,
+  refusesField,
+  toolsUnsupportedError,
+  UNSUPPORTED_RE,
+  type EchoStore,
+  type MaxTokensField,
+  type QuirkStore,
+  type WorkingQuirks,
+} from "./llm-quirks";
 
 export type FetchFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 export type LookupFn = (host: string) => Promise<Array<{ address: string; family: number }>>;
@@ -339,6 +368,8 @@ export interface OpenAiChatConfig {
   timeoutMs?: number;
   fetch?: FetchFn;
   now?: () => number;
+  /** what this provider taught about each model (see llm-quirks); one store per provider row */
+  quirks?: QuirkStore;
 }
 
 type Json = Record<string, unknown>;
@@ -350,83 +381,93 @@ function textOf(content: string | ContentPart[]): string {
     .join("\n");
 }
 
-function toOpenAiMessages(system: string, messages: ChatMessage[]): Json[] {
+function userContent(content: string | ContentPart[]): string | Json[] {
+  if (typeof content === "string") return content;
+  return content.map((p) =>
+    p.type === "text" ? { type: "text", text: p.text } : { type: "image_url", image_url: { url: `data:${p.mime};base64,${p.dataBase64}` } },
+  );
+}
+
+/** The system prompt folded into the first user turn, for models that refuse the system and developer roles. */
+function foldSystem(system: string, out: Json[]): void {
+  const first = out[0];
+  if (first && first.role === "user") {
+    const c = first.content;
+    first.content = typeof c === "string" ? `${system}\n\n${c}` : [{ type: "text", text: system }, ...(c as Json[])];
+  } else {
+    out.unshift({ role: "user", content: system });
+  }
+}
+
+function toOpenAiMessages(system: string, messages: ChatMessage[], systemAs?: "developer" | "user", echo?: EchoStore): Json[] {
   const out: Json[] = [];
-  if (system) out.push({ role: "system", content: system });
   for (const m of messages) {
     if (m.role === "tool") {
       out.push({ role: "tool", tool_call_id: m.toolCallId ?? "", content: textOf(m.content) });
     } else if (m.role === "assistant") {
       const msg: Json = { role: "assistant", content: textOf(m.content) || null };
       if (m.toolCalls?.length) {
-        msg.tool_calls = m.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: "function",
-          function: { name: tc.name, arguments: tc.arguments || "{}" },
-        }));
+        // the vendor's own reasoning for this tool turn goes back with it (see EchoStore)
+        const saved = echo?.get(m.toolCalls[0]!.id)?.message;
+        if (saved && typeof saved === "object") Object.assign(msg, saved);
+        msg.tool_calls = m.toolCalls.map((tc) => {
+          const call: Json = { id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments || "{}" } };
+          const extra = echo?.get(tc.id)?.extra;
+          if (extra && typeof extra === "object") call.extra_content = extra;
+          return call;
+        });
       } else if (msg.content === null) msg.content = "";
       out.push(msg);
     } else {
-      out.push({
-        role: "user",
-        content:
-          typeof m.content === "string"
-            ? m.content
-            : m.content.map((p) =>
-                p.type === "text"
-                  ? { type: "text", text: p.text }
-                  : { type: "image_url", image_url: { url: `data:${p.mime};base64,${p.dataBase64}` } },
-              ),
-      });
+      out.push({ role: "user", content: userContent(m.content) });
     }
+  }
+  if (system) {
+    if (systemAs === "user") foldSystem(system, out);
+    else out.unshift({ role: systemAs ?? "system", content: system });
   }
   return out;
 }
 
-/** Optional request fields a compatible vendor may reject as unsupported. */
+/** Optional request fields a compatible vendor may reject as unsupported (the generic heal). */
 const OPTIONAL_PARAMS = ["prompt_cache_key", "stream_options", "temperature", "max_tokens", "max_completion_tokens", "response_format"] as const;
 type OptionalParam = (typeof OPTIONAL_PARAMS)[number];
-type MaxTokensField = "max_tokens" | "max_completion_tokens";
-
-/**
- * Drops remembered per model for the rest of the process. JSON mode is only
- * ever dropped for the one call, and the output cap is never dropped: its
- * field name is swapped instead, so budget caps always reach the vendor.
- */
-const STICKY_DROPS: ReadonlySet<OptionalParam> = new Set(["prompt_cache_key", "stream_options", "temperature"]);
-
-/** The vendor says a field is not accepted at all (not that its value is wrong). */
-const UNSUPPORTED_RE = /unsupported|unrecognized|unknown|not supported|not permitted|extra inputs/i;
-/** JSON mode needs the prompt to mention json: a prompt problem, never a field to drop. */
-const JSON_WORD_RE = /\bword\s+\\?['"`]?json\b/i;
-/** Text after these words lists what the vendor accepts or suggests instead, not what it rejected. */
-const ALTERNATIVES_RE = /\b(?:expected|one of|instead|use|allowed|valid|supported (?:fields|parameters|values|arguments) are)\b/i;
 
 const isMaxTokensField = (p: OptionalParam): p is MaxTokensField => p === "max_tokens" || p === "max_completion_tokens";
 const otherMaxTokensField = (f: MaxTokensField): MaxTokensField => (f === "max_tokens" ? "max_completion_tokens" : "max_tokens");
 
-/** A vendor refusing tools because reasoning is on for this model. */
-const REASONING_TOOLS_RE = /reasoning_effort[\s\S]*(function )?tools|tools[\s\S]*reasoning_effort/i;
+export interface OpenAiBodyOptions {
+  stream: boolean;
+  /** the vendor default for the output cap field; a learned rename in quirks wins */
+  maxTokensField: MaxTokensField;
+  quirks?: WorkingQuirks;
+  /** vendor reasoning state to send back with its tool calls; left out when the model refused it */
+  echo?: EchoStore;
+}
 
-export function buildOpenAiBody(
-  req: ChatRequest,
-  opts: { stream: boolean; maxTokensField: MaxTokensField; drop?: ReadonlySet<OptionalParam>; reasoningNone?: boolean },
-): Json {
-  const drop = opts.drop ?? new Set<OptionalParam>();
-  const body: Json = { model: req.model, messages: toOpenAiMessages(req.system, req.messages) };
+export function buildOpenAiBody(req: ChatRequest, opts: OpenAiBodyOptions): Json {
+  const q = opts.quirks ?? cloneQuirks(undefined);
+  const drop = q.drop;
+  const body: Json = { model: req.model, messages: toOpenAiMessages(req.system, req.messages, q.system, q.noEcho ? undefined : opts.echo) };
   if (req.tools?.length) {
     body.tools = req.tools.map((t) => ({
       type: "function",
       function: { name: t.name, description: t.description, parameters: t.parameters },
     }));
-    if (req.toolChoice) body.tool_choice = req.toolChoice;
-    // reasoning models that refuse tools on Chat Completions unless reasoning is off
-    if (opts.reasoningNone) body.reasoning_effort = "none";
+    if (req.toolChoice && !drop.has("tool_choice")) body.tool_choice = req.toolChoice;
+    if (req.parallelToolCalls !== undefined && !drop.has("parallel_tool_calls")) body.parallel_tool_calls = req.parallelToolCalls;
   }
+  // the owner's effort for this tier, or the low effort a reasoning model takes tools at (llm-quirks effortFor)
+  const effort = effortFor(req, q, "chat");
+  if (effort) body.reasoning_effort = effort;
   // the output cap is never dropped (budget control); only its field name varies per vendor
-  if (req.maxOutputTokens !== undefined) body[opts.maxTokensField] = req.maxOutputTokens;
-  if (req.temperature !== undefined && !drop.has("temperature")) body.temperature = req.temperature;
-  if (req.responseFormat === "json" && !drop.has("response_format")) body.response_format = { type: "json_object" };
+  if (req.maxOutputTokens !== undefined) body[q.maxTokensField ?? opts.maxTokensField] = req.maxOutputTokens;
+  if (req.temperature !== undefined) {
+    if (q.temperatureOne) body.temperature = 1;
+    else if (!drop.has("temperature")) body.temperature = req.temperature;
+  }
+  if (req.topP !== undefined && !drop.has("top_p")) body.top_p = req.topP;
+  if (req.responseFormat === "json" && !q.jsonOff) body.response_format = { type: "json_object" };
   if (req.cacheKey && !drop.has("prompt_cache_key")) body.prompt_cache_key = req.cacheKey;
   if (opts.stream) {
     body.stream = true;
@@ -443,7 +484,8 @@ function n(v: unknown): number {
 /**
  * Normalizes OpenAI-style usage: prompt_tokens includes the cached part;
  * cached tokens come from prompt_tokens_details.cached_tokens (OpenAI,
- * OpenRouter, Gemini compat) or prompt_cache_hit_tokens (DeepSeek).
+ * OpenRouter, Gemini compat), input_tokens_details.cached_tokens (Responses
+ * API) or prompt_cache_hit_tokens (DeepSeek).
  */
 export function normalizeOpenAiUsage(u: unknown): Usage {
   const o = (u && typeof u === "object" ? u : {}) as Json;
@@ -492,6 +534,40 @@ export function parseOpenAiResponse(j: Json, fallbackModel: string): Omit<ChatRe
   };
 }
 
+/** Merges streamed reasoning_details parts by index: text-like strings grow, everything else is replaced. */
+function mergeDetails(into: Json[], parts: unknown): void {
+  if (!Array.isArray(parts)) return;
+  for (const raw of parts as Json[]) {
+    if (!raw || typeof raw !== "object") continue;
+    const at = typeof raw.index === "number" ? raw.index : into.length;
+    const cur = into[at] ?? {};
+    for (const [k, v] of Object.entries(raw)) {
+      cur[k] = typeof v === "string" && typeof cur[k] === "string" && !["type", "format", "id"].includes(k) ? `${cur[k] as string}${v}` : v;
+    }
+    into[at] = cur;
+  }
+}
+
+/**
+ * Keeps what a vendor attached to its own tool calls, keyed by the vendor's
+ * call ids: the message-level reasoning under the first call, and each call's
+ * extra_content. Synthesized ids (a vendor that sent none) are never keyed.
+ */
+function rememberEcho(echo: EchoStore, toolCalls: ToolCall[], vendorIds: ReadonlySet<string>, message: Json, extras: ReadonlyMap<string, Json>): void {
+  if (toolCalls.length === 0) return;
+  const msg: Json = {};
+  if (typeof message.reasoning_content === "string" && message.reasoning_content) msg.reasoning_content = message.reasoning_content;
+  if (Array.isArray(message.reasoning_details) && message.reasoning_details.length) msg.reasoning_details = message.reasoning_details;
+  toolCalls.forEach((tc, i) => {
+    if (!vendorIds.has(tc.id)) return;
+    const value: Json = {};
+    if (i === 0 && Object.keys(msg).length) value.message = msg;
+    const extra = extras.get(tc.id);
+    if (extra) value.extra = extra;
+    if (Object.keys(value).length) echo.set(tc.id, value);
+  });
+}
+
 function authHeaders(apiKey: string | null): Record<string, string> {
   return apiKey ? { authorization: `Bearer ${apiKey}` } : {};
 }
@@ -535,20 +611,25 @@ export function unsupportedParams(errText: string, sent: Json): OptionalParam[] 
   return [...found];
 }
 
+/** At most this many heals per call; every heal must change the request, so loops end sooner. */
+const MAX_HEALS = 6;
+/** Statuses a Responses attempt may fail with before the adapter falls back to Chat Completions. */
+const RESPONSES_FALLBACK = new Set([400, 404, 405, 422]);
+
+type ChatOut = Omit<ChatResult, "latencyMs" | "retries">;
+
 export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
   const now = cfg.now ?? Date.now;
   const vendor = cfg.label ?? "provider";
   const guard = createUrlGuard(cfg.guard, now);
-  const maxTokensField =
-    cfg.maxTokensField ?? (/^https:\/\/api\.openai\.com(\/|$)/.test(cfg.baseUrl) ? "max_completion_tokens" : "max_tokens");
-  /** per model: sticky drops and the max-tokens field name a vendor accepted after a heal */
-  const dropped = new Map<string, ReadonlySet<OptionalParam>>();
-  /** models that only take tools on Chat Completions with reasoning_effort "none" */
-  const reasoningOff = new Set<string>();
-  const tokenField = new Map<string, MaxTokensField>();
+  const official = /^https:\/\/api\.openai\.com(\/|$)/.test(cfg.baseUrl);
+  const maxTokensField = cfg.maxTokensField ?? (official ? "max_completion_tokens" : "max_tokens");
+  const store = cfg.quirks ?? createQuirkStore();
+  const echo = createEchoStore();
   const doFetch = (url: string, init: RequestInit) => (cfg.fetch ?? globalThis.fetch)(url, { ...init, redirect: "manual" });
+  const timeoutFor = (stream: boolean) => cfg.timeoutMs ?? (stream ? 300_000 : 180_000);
 
-  async function post(url: string, body: Json, stream: boolean, signal: AbortSignal | undefined, timeoutMs: number): Promise<Response> {
+  async function post(url: string, body: Json, stream: boolean, signal: AbortSignal | undefined): Promise<Response> {
     try {
       return await doFetch(url, {
         method: "POST",
@@ -559,19 +640,21 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
           ...cfg.headers,
         },
         body: JSON.stringify(body),
-        signal: withTimeout(signal, timeoutMs),
+        signal: withTimeout(signal, timeoutFor(stream)),
       });
     } catch (e) {
       throw transportError(e, signal, vendor);
     }
   }
 
-  async function readStream(res: Response, req: ChatRequest): Promise<Omit<ChatResult, "latencyMs" | "retries">> {
+  async function readStream(res: Response, req: ChatRequest): Promise<ChatOut> {
     let text = "";
     let finish: unknown = null;
     let usage: unknown = null;
     let model = req.model;
-    const calls = new Map<number, { id: string; name: string; args: string }>();
+    let reasoning = "";
+    const details: Json[] = [];
+    const calls = new Map<number, { id: string; name: string; args: string; extra?: Json }>();
     if (!res.body) throw new LlmError("server", `${vendor}: empty stream`);
     try {
       for await (const ev of readSse(res.body)) {
@@ -595,6 +678,8 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
             text += d.content;
             req.onDelta?.(d.content);
           }
+          if (typeof d.reasoning_content === "string") reasoning += d.reasoning_content;
+          mergeDetails(details, d.reasoning_details);
           for (const tc of (Array.isArray(d.tool_calls) ? d.tool_calls : []) as Json[]) {
             const idx = typeof tc.index === "number" ? tc.index : tc.id ? calls.size : Math.max(0, calls.size - 1);
             const cur = calls.get(idx) ?? { id: "", name: "", args: "" };
@@ -602,6 +687,7 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
             if (typeof tc.id === "string" && tc.id) cur.id = tc.id;
             if (typeof fn.name === "string" && fn.name && !cur.name) cur.name = fn.name;
             if (typeof fn.arguments === "string") cur.args += fn.arguments;
+            if (tc.extra_content && typeof tc.extra_content === "object") cur.extra = { ...cur.extra, ...(tc.extra_content as Json) };
             calls.set(idx, cur);
           }
           if (ch.finish_reason) finish = ch.finish_reason;
@@ -610,10 +696,165 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
     } catch (e) {
       throw transportError(e, req.signal, vendor);
     }
-    const toolCalls = [...calls.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([i, c]) => ({ id: c.id || `call_${i}`, name: c.name, arguments: c.args }));
+    const sorted = [...calls.entries()].sort((a, b) => a[0] - b[0]);
+    const toolCalls = sorted.map(([i, c]) => ({ id: c.id || `call_${i}`, name: c.name, arguments: c.args }));
+    const extras = new Map<string, Json>();
+    for (const [, c] of sorted) if (c.id && c.extra) extras.set(c.id, c.extra);
+    const message: Json = { reasoning_content: reasoning, reasoning_details: details.filter(Boolean) };
+    rememberEcho(echo, toolCalls, new Set(sorted.map(([, c]) => c.id).filter(Boolean)), message, extras);
     return { text, toolCalls, stopReason: mapFinish(finish, toolCalls.length), usage: normalizeOpenAiUsage(usage), model };
+  }
+
+  async function readJson(res: Response, req: ChatRequest): Promise<Json> {
+    let j: Json;
+    try {
+      j = (await res.json()) as Json;
+    } catch (e) {
+      throw transportError(e, req.signal, vendor);
+    }
+    return j;
+  }
+
+  async function readChat(res: Response, req: ChatRequest, stream: boolean): Promise<ChatOut> {
+    if (stream && !(res.headers.get("content-type") ?? "").includes("application/json")) return readStream(res, req);
+    const j = await readJson(res, req);
+    if (!Array.isArray(j.choices) && j.error) {
+      const code = Number((j.error as Json).code);
+      throw httpError(Number.isInteger(code) && code >= 400 ? code : 502, JSON.stringify(j), res.headers, vendor);
+    }
+    const out = parseOpenAiResponse(j, req.model);
+    const msg = ((Array.isArray(j.choices) ? (j.choices[0] as Json | undefined) : undefined)?.message ?? {}) as Json;
+    const raw = (Array.isArray(msg.tool_calls) ? msg.tool_calls : []) as Json[];
+    const vendorIds = new Set(raw.map((tc) => (tc && typeof tc.id === "string" ? tc.id : "")).filter(Boolean));
+    const extras = new Map<string, Json>();
+    for (const tc of raw) if (tc && typeof tc.id === "string" && tc.extra_content && typeof tc.extra_content === "object") extras.set(tc.id, tc.extra_content as Json);
+    rememberEcho(echo, out.toolCalls, vendorIds, msg, extras);
+    // not streamed (JSON answer, or a model that may not stream): the whole text is one delta
+    if (req.onDelta && out.text) req.onDelta(out.text);
+    return out;
+  }
+
+  async function readResponses(res: Response, req: ChatRequest, stream: boolean): Promise<ChatOut> {
+    if (stream && !(res.headers.get("content-type") ?? "").includes("application/json")) {
+      if (!res.body) throw new LlmError("server", `${vendor}: empty stream`);
+      const acc = createResponsesStream(req.model, req.onDelta);
+      try {
+        for await (const ev of readSse(res.body)) {
+          if (ev.data === "[DONE]") break;
+          let j: Json;
+          try {
+            j = JSON.parse(ev.data) as Json;
+          } catch {
+            continue;
+          }
+          const step = acc.push(String(j.type ?? ev.event ?? ""), j);
+          if (step === "done") break;
+          if (step) throw httpError(step.error.status, step.error.body, new Headers(), vendor);
+        }
+      } catch (e) {
+        throw transportError(e, req.signal, vendor);
+      }
+      const r = acc.result();
+      return { ...r, usage: normalizeOpenAiUsage(r.usage) };
+    }
+    const j = await readJson(res, req);
+    if (j.error && !Array.isArray(j.output)) {
+      const e = j.error as Json;
+      throw httpError(responsesErrorStatus(String(e.code ?? ""), String(e.message ?? "")), JSON.stringify(j), res.headers, vendor);
+    }
+    const r = parseResponsesResult(j, req.model);
+    if (req.onDelta && r.text) req.onDelta(r.text);
+    return { ...r, usage: normalizeOpenAiUsage(r.usage) };
+  }
+
+  /** The generic heal for allowlisted optional fields; true when the request changed. */
+  function genericHeal(errText: string, body: Json, q: WorkingQuirks): boolean {
+    let changed = false;
+    for (const p of unsupportedParams(errText, body)) {
+      if (isMaxTokensField(p)) {
+        const field = q.maxTokensField ?? maxTokensField;
+        // renamed once per call, never removed: a vendor refusing both names gets a bad_request
+        if (p === field && !q.fieldSwapped) {
+          q.maxTokensField = otherMaxTokensField(field);
+          q.fieldSwapped = changed = true;
+        }
+      } else if (p === "response_format") {
+        // JSON mode is dropped for this call only and asked for again next time
+        if (!q.jsonOff) q.jsonOff = changed = true;
+      } else if (!q.drop.has(p)) {
+        q.drop.add(p);
+        if (p === "temperature") q.temperatureOne = false;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function noTools(req: ChatRequest, status: number | null): LlmError {
+    // remembered at once: every later tool call with this model fails fast with the same sentence
+    store.set(req.model, { ...(store.get(req.model) ?? emptyQuirks()), noTools: true });
+    return toolsUnsupportedError(vendor, req.model, status);
+  }
+
+  /** Chat Completions with the heal loop. "responses" means the official host told us to switch. */
+  async function viaChat(req: ChatRequest, q: WorkingQuirks): Promise<{ out: ChatOut; healed: boolean } | "responses"> {
+    const url = joinUrl(cfg.baseUrl, "/chat/completions");
+    await guard(url);
+    const hasTools = Boolean(req.tools?.length);
+    let healed = false;
+    for (let heal = 0; ; heal++) {
+      const stream = typeof req.onDelta === "function" && !q.noStream;
+      const body = buildOpenAiBody(req, { stream, maxTokensField, quirks: q, echo });
+      const res = await post(url, body, stream, req.signal);
+      if (res.ok) return { out: await readChat(res, req, stream), healed };
+      const errText = await res.text().catch(() => "");
+      // OpenRouter answers a model without tool support with 404 "No endpoints found that support tool use"
+      if (res.status === 404 && hasTools && NO_TOOLS_RE.test(errText)) throw noTools(req, res.status);
+      if ((res.status !== 400 && res.status !== 422) || heal >= MAX_HEALS || CONTEXT_RE.test(errText)) {
+        throw httpError(res.status, errText, res.headers, vendor);
+      }
+      const verdict = diagnose(refusalContext({ status: res.status, text: errText, sent: body, wire: "chat", hasTools, official }), q);
+      if (verdict === "tools_unsupported") throw noTools(req, res.status);
+      if (verdict.includes("openai.reasoning_tools_responses")) return "responses";
+      if (verdict.length === 0 && !genericHeal(errText, body, q)) throw httpError(res.status, errText, res.headers, vendor);
+      healed = true;
+    }
+  }
+
+  /**
+   * The Responses API with the same heal table. Returns null when the path
+   * itself fails (an unknown 400, a 404 on this account...), so the caller
+   * falls back to Chat Completions with reasoning turned down. Account and
+   * transport failures (auth, rate limits, 5xx, network) are thrown as they
+   * are: they say nothing about the path.
+   */
+  async function viaResponses(req: ChatRequest, q: WorkingQuirks): Promise<{ out: ChatOut; healed: boolean } | null> {
+    const url = joinUrl(cfg.baseUrl, "/responses");
+    await guard(url);
+    let healed = false;
+    for (let heal = 0; ; heal++) {
+      const stream = typeof req.onDelta === "function" && !q.noStream;
+      const body = buildResponsesBody(req, { stream, quirks: q });
+      const res = await post(url, body, stream, req.signal);
+      if (res.ok) return { out: await readResponses(res, req, stream), healed };
+      const errText = await res.text().catch(() => "");
+      if (!RESPONSES_FALLBACK.has(res.status) || CONTEXT_RE.test(errText)) throw httpError(res.status, errText, res.headers, vendor);
+      if (res.status === 400 || res.status === 422) {
+        const c = refusalContext({ status: res.status, text: errText, sent: body, wire: "responses", hasTools: true, official });
+        const verdict = heal < MAX_HEALS ? diagnose(c, q) : [];
+        if (verdict === "tools_unsupported") throw noTools(req, res.status);
+        if (verdict.length > 0) {
+          healed = true;
+          continue;
+        }
+        // JSON mode refused on this path: dropped for the call, like response_format on Chat Completions
+        if (heal < MAX_HEALS && "text" in body && !q.jsonOff && !JSON_WORD_RE.test(errText) && (refusesField(c, "text.format") || refusesField(c, "text"))) {
+          q.jsonOff = true;
+          continue;
+        }
+      }
+      return null;
+    }
   }
 
   return {
@@ -621,69 +862,33 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
     protocol: "openai_chat",
     async chat(req: ChatRequest): Promise<ChatResult> {
       const started = now();
-      const url = joinUrl(cfg.baseUrl, "/chat/completions");
-      await guard(url);
-      const stream = typeof req.onDelta === "function";
-      const timeoutMs = cfg.timeoutMs ?? (stream ? 300_000 : 180_000);
-      const drop = new Set<OptionalParam>(dropped.get(req.model) ?? []);
-      let field = tokenField.get(req.model) ?? maxTokensField;
-      let swapped = false;
-      let healed = false;
-      let reasoningNone = Boolean(req.tools?.length) && reasoningOff.has(req.model);
-      let body = buildOpenAiBody(req, { stream, maxTokensField: field, drop, reasoningNone });
-      let res = await post(url, body, stream, req.signal, timeoutMs);
-      // Self-heal: a compatible vendor that calls an optional field unsupported is retried without it
-      // (the max-tokens field is renamed, never removed). Anything else is a real bad_request.
-      for (let heal = 0; heal < 3 && (res.status === 400 || res.status === 422); heal++) {
-        const errText = await res.text().catch(() => "");
-        if (CONTEXT_RE.test(errText)) throw httpError(res.status, errText, res.headers, vendor);
-        let changed = false;
-        for (const p of unsupportedParams(errText, body)) {
-          if (isMaxTokensField(p)) {
-            if (p === field && !swapped) {
-              field = otherMaxTokensField(field);
-              swapped = changed = true;
-            }
-          } else if (!drop.has(p)) {
-            drop.add(p);
-            changed = true;
+      const hasTools = Boolean(req.tools?.length);
+      const q = cloneQuirks(store.get(req.model));
+      if (hasTools && q.noTools) throw toolsUnsupportedError(vendor, req.model);
+      let changed = false;
+      for (;;) {
+        if (hasTools && official && q.responses && !q.responsesFailed) {
+          const r = await viaResponses(req, q);
+          if (r) {
+            if (changed || r.healed) store.set(req.model, q);
+            return { ...r.out, latencyMs: now() - started, retries: 0 };
           }
+          // the Responses path failed: Chat Completions with reasoning turned down, remembered once accepted
+          q.responses = false;
+          q.responsesFailed = true;
+          q.reasoningEffort ??= "none";
+          changed = true;
+          continue;
         }
-        // e.g. OpenAI: "Function tools with reasoning_effort are not supported for <model> in
-        // /v1/chat/completions ... set reasoning_effort to 'none'"
-        if (!reasoningNone && req.tools?.length && REASONING_TOOLS_RE.test(errText)) {
-          reasoningNone = changed = true;
+        const r = await viaChat(req, q);
+        if (r === "responses") {
+          changed = true;
+          continue;
         }
-        if (!changed) throw httpError(res.status, errText, res.headers, vendor);
-        healed = true;
-        body = buildOpenAiBody(req, { stream, maxTokensField: field, drop, reasoningNone });
-        res = await post(url, body, stream, req.signal, timeoutMs);
+        // remember only what the vendor then accepted; JSON mode never outlives the call
+        if (r.healed || changed) store.set(req.model, q);
+        return { ...r.out, latencyMs: now() - started, retries: 0 };
       }
-      if (!res.ok) throw httpError(res.status, await res.text().catch(() => ""), res.headers, vendor);
-      if (healed) {
-        // remember only what the vendor then accepted, and never JSON mode
-        dropped.set(req.model, new Set([...drop].filter((p) => STICKY_DROPS.has(p))));
-        if (swapped) tokenField.set(req.model, field);
-        if (reasoningNone) reasoningOff.add(req.model);
-      }
-      let out: Omit<ChatResult, "latencyMs" | "retries">;
-      if (stream && !(res.headers.get("content-type") ?? "").includes("application/json")) {
-        out = await readStream(res, req);
-      } else {
-        let j: Json;
-        try {
-          j = (await res.json()) as Json;
-        } catch (e) {
-          throw transportError(e, req.signal, vendor);
-        }
-        if (!Array.isArray(j.choices) && j.error) {
-          const code = Number((j.error as Json).code);
-          throw httpError(Number.isInteger(code) && code >= 400 ? code : 502, JSON.stringify(j), res.headers, vendor);
-        }
-        out = parseOpenAiResponse(j, req.model);
-        if (stream && out.text) req.onDelta?.(out.text);
-      }
-      return { ...out, latencyMs: now() - started, retries: 0 };
     },
     async listModels(signal?: AbortSignal): Promise<ProviderModel[]> {
       const url = joinUrl(cfg.baseUrl, "/models");

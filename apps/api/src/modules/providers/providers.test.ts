@@ -232,29 +232,150 @@ describe("providers CRUD and key hygiene", () => {
 });
 
 describe("connection test", () => {
-  test("GET /models when available, stored on the row", async () => {
+  const toolCall = () =>
+    json({
+      choices: [{ message: { content: null, tool_calls: [{ id: "call_1", type: "function", function: { name: "connection_check", arguments: '{"ok":true}' } }] }, finish_reason: "tool_calls" }],
+      usage: { prompt_tokens: 40, completion_tokens: 8 },
+    });
+
+  test("GET /models when available, stored on the row, then one tiny tool call with the crew's model", async () => {
     const p = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
-    mockFetch(() => json({ data: [{ id: "gpt-4o-mini" }, { id: "gpt-4.1" }] }));
+    mockFetch((c) => (c.url.endsWith("/models") ? json({ data: [{ id: "gpt-4o-mini" }, { id: "gpt-4.1" }] }) : toolCall()));
     const r = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as any;
     expect(calls[0]!.url).toBe("https://api.openai.com/v1/models");
     expect(calls[0]!.headers.get("authorization")).toBe(`Bearer ${OPENAI_KEY}`);
     expect(r).toMatchObject({ ok: true, error: null, models: [{ id: "gpt-4o-mini" }, { id: "gpt-4.1" }] });
     expect(typeof r.latencyMs).toBe("number");
+    expect(calls[1]!.url).toBe("https://api.openai.com/v1/chat/completions");
+    const probe = JSON.parse(calls[1]!.body!);
+    expect(probe).toMatchObject({ model: "gpt-4o-mini", tool_choice: "required", max_completion_tokens: 512 });
+    expect(probe.tools).toHaveLength(1);
+    expect(probe.tools[0].function.name).toBe("connection_check");
     const dto = (await (await env.req("GET", "/api/providers")).json()) as ProviderDTO[];
     expect(dto[0]).toMatchObject({ lastTestOk: true, lastTestError: null });
     expect(dto[0]!.lastTestAt).not.toBeNull();
   });
 
-  test("falls back to a one-token chat when the vendor has no /models", async () => {
+  test("without a model list, the tool probe alone checks the key and the model", async () => {
     const p = await add(env, { preset: "custom-openai", baseUrl: "https://llm.example.com/v1/", models: [{ id: "my-model" }] });
     expect(p.baseUrl).toBe("https://llm.example.com/v1");
-    mockFetch((c) => (c.url.endsWith("/models") ? json({ error: "no" }, 404) : json({ choices: [{ message: { content: "p" } }], usage: { prompt_tokens: 3, completion_tokens: 1 } })));
+    mockFetch((c) => (c.url.endsWith("/models") ? json({ error: "no" }, 404) : toolCall()));
+    const r = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as any;
+    expect(r).toMatchObject({ ok: true, error: null, models: [] });
+    expect(calls[1]!.url).toBe("https://llm.example.com/v1/chat/completions");
+    expect(JSON.parse(calls[1]!.body!)).toMatchObject({ model: "my-model", max_tokens: 512, tool_choice: "required" });
+    expect(calls[1]!.headers.get("authorization")).toBeNull();
+  });
+
+  test("the probe uses the model a tier maps to this provider", async () => {
+    const p = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
+    const routing: ModelRouting = {
+      tiers: [{ tier: "balanced", providerId: p.id, model: "gpt-4.1" }],
+      roleTiers: {},
+      image: { providerId: null, model: null },
+      video: { providerId: null, model: null },
+    };
+    expect((await env.req("PUT", "/api/routing", routing)).status).toBe(200);
+    mockFetch((c) => (c.url.endsWith("/models") ? json({ data: [] }) : toolCall()));
+    await env.req("POST", `/api/providers/${p.id}/test`);
+    expect(JSON.parse(calls[1]!.body!).model).toBe("gpt-4.1");
+  });
+
+  test("a model that cannot call tools fails the test with a plain sentence, and the crew's call fails with it before any request", async () => {
+    const p = await add(env, { preset: "ollama", models: [{ id: "gemma2" }] });
+    const refusal = { error: { message: "registry.ollama.ai/library/gemma2:latest does not support tools", type: "api_error", param: null, code: null } };
+    mockFetch((c) => {
+      if (c.url.endsWith("/models")) return json({ data: [{ id: "gemma2" }, { id: "qwen3" }] });
+      return "tools" in JSON.parse(c.body!) ? json(refusal, 400) : json({ choices: [{ message: { content: "pong" }, finish_reason: "stop" }] });
+    });
+    const r = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("Answered, but this model cannot call tools; pick another model for the crew (model gemma2)");
+    // the models stay listed so the owner can pick another one
+    expect(r.models).toEqual([{ id: "gemma2" }, { id: "qwen3" }]);
+    expect(calls).toHaveLength(3);
+    const dto = (await (await env.req("GET", "/api/providers")).json()) as ProviderDTO[];
+    expect(dto[0]).toMatchObject({ lastTestOk: false, lastTestError: r.error });
+
+    // the routed adapter shares what the test learned: a cat's tool call fails fast with the same sentence
+    const { provider, model } = await env.mod.service.llm.resolve({ tier: "balanced" });
+    const before = calls.length;
+    const err = (await provider
+      .chat({ model, system: "s", messages: [{ role: "user", content: "go" }], tools: [{ name: "fs_read", description: "read", parameters: { type: "object" } }] })
+      .catch((e) => e)) as LlmError;
+    expect(err).toBeInstanceOf(LlmError);
+    expect(err.kind).toBe("bad_request");
+    expect(err.code).toBe("tools_unsupported");
+    expect(err.message).toContain("gemma2 cannot call tools; pick another model for the crew");
+    expect(calls.length).toBe(before);
+  });
+
+  test("OpenRouter's 404 for a model without tool support is the same plain sentence", async () => {
+    const p = await add(env, { preset: "openrouter", apiKey: OPENAI_KEY, models: [{ id: "some/no-tools-model" }] });
+    mockFetch((c) => {
+      if (c.url.endsWith("/models")) return json({ data: [{ id: "some/no-tools-model" }] });
+      if ("tools" in JSON.parse(c.body!)) {
+        return json({ error: { message: "No endpoints found that support tool use. To learn more about provider routing, visit: https://openrouter.ai/docs/provider-routing", code: 404 } }, 404);
+      }
+      return json({ choices: [{ message: { content: "pong" }, finish_reason: "stop" }] });
+    });
+    const r = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as any;
+    expect(r).toMatchObject({ ok: false, error: "Answered, but this model cannot call tools; pick another model for the crew (model some/no-tools-model)" });
+  });
+
+  test("a model that answers without calling the test tool passes with a note", async () => {
+    const p = await add(env, { preset: "custom-openai", baseUrl: "https://llm.example.com/v1", models: [{ id: "chatty" }] });
+    mockFetch((c) => (c.url.endsWith("/models") ? json({ data: [{ id: "chatty" }] }) : json({ choices: [{ message: { content: "ok!" }, finish_reason: "stop" }] })));
     const r = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as any;
     expect(r.ok).toBe(true);
-    expect(calls[1]!.url).toBe("https://llm.example.com/v1/chat/completions");
-    const body = JSON.parse(calls[1]!.body!);
-    expect(body).toMatchObject({ model: "my-model", max_tokens: 1 });
-    expect(calls[1]!.headers.get("authorization")).toBeNull();
+    expect(r.error).toBe("chatty answered without calling the test tool; if cats stall, pick another model for the crew");
+  });
+
+  test("a vendor error on the probe still fails the test with the vendor text", async () => {
+    const p = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
+    mockFetch((c) =>
+      c.url.endsWith("/models") ? json({ data: [{ id: "gpt-4o-mini" }] }) : json({ error: { message: "The model `gpt-4o-mini` does not exist or you do not have access to it.", code: "model_not_found" } }, 404),
+    );
+    const r = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("does not exist or you do not have access");
+  });
+
+  test("the test learns the Responses path for a reasoning model on the official host, and the crew starts there", async () => {
+    const p = await add(env, { preset: "openai", apiKey: OPENAI_KEY, models: [{ id: "gpt-6-luna" }] });
+    const refusal = "Function tools with reasoning_effort are not supported for gpt-6-luna in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.";
+    const responsesOk = () =>
+      json({
+        model: "gpt-6-luna",
+        status: "completed",
+        output: [
+          { type: "reasoning", id: "rs_1", summary: [] },
+          { type: "function_call", id: "fc_1", call_id: "call_x", name: "connection_check", arguments: '{"ok":true}', status: "completed" },
+        ],
+        usage: { input_tokens: 50, input_tokens_details: { cached_tokens: 0 }, output_tokens: 20 },
+      });
+    mockFetch((c) => {
+      if (c.url.endsWith("/models")) return json({ data: [{ id: "gpt-6-luna" }] });
+      if (c.url.endsWith("/responses")) return responsesOk();
+      return json({ error: { message: refusal, type: "invalid_request_error", param: null, code: null } }, 400);
+    });
+    const r = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as any;
+    expect(r).toMatchObject({ ok: true, error: null });
+    expect(calls.map((c) => new URL(c.url).pathname)).toEqual(["/v1/models", "/v1/chat/completions", "/v1/responses"]);
+
+    const { provider, model } = await env.mod.service.llm.resolve({ tier: "balanced" });
+    expect(model).toBe("gpt-6-luna");
+    const before = calls.length;
+    const out = await provider.chat({ model, system: "s", messages: [{ role: "user", content: "go" }], tools: [{ name: "connection_check", description: "x", parameters: { type: "object" } }] });
+    expect(out.toolCalls).toEqual([{ id: "call_x", name: "connection_check", arguments: '{"ok":true}' }]);
+    expect(calls.slice(before).map((c) => new URL(c.url).pathname)).toEqual(["/v1/responses"]);
+
+    // a new key may be another account: what was learned is dropped with it
+    await env.req("PATCH", `/api/providers/${p.id}`, { apiKey: "sk-proj-ROTATEDkeyabcdefghijklmnopQ1W2" });
+    const again = await env.mod.service.llm.resolve({ tier: "balanced" });
+    const mark = calls.length;
+    await again.provider.chat({ model, system: "s", messages: [{ role: "user", content: "go" }], tools: [{ name: "connection_check", description: "x", parameters: { type: "object" } }] });
+    expect(calls.slice(mark).map((c) => new URL(c.url).pathname)).toEqual(["/v1/chat/completions", "/v1/responses"]);
   });
 
   test("rate limited to 10 per minute with Retry-After", async () => {
@@ -383,7 +504,12 @@ describe("base URL change and the stored key", () => {
     expect(rekeyed).toMatchObject({ baseUrl: "https://attacker.example/v1", hasKey: true, keyHint: "WXYZ" });
     mockFetch(ok);
     await env.req("POST", `/api/providers/${p.id}/test`);
-    expect(calls.map((c) => [new URL(c.url).host, c.headers.get("authorization")])).toEqual([["attacker.example", `Bearer ${fresh}`]]);
+    // the model list, then the tool probe: both to the new host, both with the new key only
+    expect(calls.map((c) => [new URL(c.url).pathname, c.headers.get("authorization")])).toEqual([
+      ["/v1/models", `Bearer ${fresh}`],
+      ["/v1/chat/completions", `Bearer ${fresh}`],
+    ]);
+    expect(new Set(calls.map((c) => new URL(c.url).host))).toEqual(new Set(["attacker.example"]));
     for (const c of calls) expect(JSON.stringify([...c.headers.entries()])).not.toContain(OPENAI_KEY);
   });
 
@@ -409,7 +535,7 @@ describe("base URL change and the stored key", () => {
     // keyless custom endpoints are allowed: calls go out without any authorization header
     mockFetch(ok);
     await env.req("POST", `/api/providers/${p.id}/test`);
-    expect(calls.map((c) => c.headers.get("authorization"))).toEqual([null]);
+    expect(calls.map((c) => c.headers.get("authorization"))).toEqual([null, null]);
 
     const dropped = (await (await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://third.example.com/v1", apiKey: "" })).json()) as ProviderDTO;
     expect(dropped).toMatchObject({ baseUrl: "https://third.example.com/v1", hasKey: false, keyHint: null });
@@ -453,7 +579,10 @@ describe("base URL change and the stored key", () => {
     expect(row).toMatchObject({ baseUrl: "https://api.openai.com/v1", hasKey: true });
     mockFetch(ok);
     await env.req("POST", `/api/providers/${p.id}/test`);
-    expect(calls.map((c) => [new URL(c.url).host, c.headers.get("authorization")])).toEqual([["api.openai.com", `Bearer ${OPENAI_KEY}`]]);
+    expect(calls.map((c) => [new URL(c.url).host, c.headers.get("authorization")])).toEqual([
+      ["api.openai.com", `Bearer ${OPENAI_KEY}`],
+      ["api.openai.com", `Bearer ${OPENAI_KEY}`],
+    ]);
   });
 });
 
@@ -567,6 +696,100 @@ describe("tier routing", () => {
     await bad(routing([{ tier: "fast", providerId: o.id, model: "a" }, { tier: "fast", providerId: o.id, model: "b" }]), "invalid_body");
     await bad({ ...routing([]), roleTiers: { wizard: "deep" } }, "invalid_body");
     await bad({ ...routing([]), image: { providerId: o.id, model: "gpt-image-2" } }, "wrong_capability");
+  });
+
+  test("reasoning per tier: validated against the list, persisted, missing and default both mean default", async () => {
+    const o = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
+    const res = await env.req(
+      "PUT",
+      "/api/routing",
+      routing([
+        { tier: "fast", providerId: o.id, model: "gpt-4.1-mini", reasoning: "none" },
+        { tier: "balanced", providerId: o.id, model: "gpt-4.1", reasoning: "default" },
+        // a tier without its own provider keeps its effort: the model it borrows thinks at this level
+        { tier: "deep", providerId: null, model: null, reasoning: "high" },
+      ]),
+    );
+    expect(res.status).toBe(200);
+    const want = [
+      { tier: "fast", providerId: o.id, model: "gpt-4.1-mini", reasoning: "none" },
+      { tier: "balanced", providerId: o.id, model: "gpt-4.1" },
+      { tier: "deep", providerId: null, model: null, reasoning: "high" },
+    ];
+    expect(((await res.json()) as ModelRouting).tiers).toEqual(want as ModelRouting["tiers"]);
+    expect(((await (await env.req("GET", "/api/routing")).json()) as ModelRouting).tiers).toEqual(want as ModelRouting["tiers"]);
+
+    for (const reasoning of ["extreme", "", 3, null]) {
+      const bad = await env.req("PUT", "/api/routing", routing([{ tier: "fast", providerId: o.id, model: "gpt-4.1-mini", reasoning } as never]));
+      expect([reasoning, bad.status]).toEqual([reasoning, 422]);
+      expect(((await bad.json()) as any).error.code).toBe("invalid_body");
+    }
+    // a stored value from an older or hand-edited row is read back safely
+    const { createProvidersRepo } = await import("./repo");
+    await createProvidersRepo(env.db).putRouting({ ...routing([{ tier: "fast", providerId: o.id, model: "m", reasoning: "turbo" as never }]) }, 1);
+    const read = ((await (await env.req("GET", "/api/routing")).json()) as ModelRouting).tiers[0]!;
+    expect(read).toEqual({ tier: "fast", providerId: o.id, model: "m" });
+  });
+
+  test("the router puts the tier's reasoning on every chat request of that tier; a request's own setting wins", async () => {
+    const o = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
+    await env.req(
+      "PUT",
+      "/api/routing",
+      routing(
+        [
+          { tier: "fast", providerId: null, model: null, reasoning: "none" },
+          { tier: "balanced", providerId: o.id, model: "gpt-5.5", reasoning: "high" },
+          { tier: "deep", providerId: null, model: null },
+        ],
+        { reviewer: "fast" },
+      ),
+    );
+    mockFetch(() => json({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 3, completion_tokens: 1 } }));
+    const ask = async (r: Awaited<ReturnType<typeof env.mod.service.llm.resolve>>, reasoning?: "low") => {
+      await r.provider.chat({ model: r.model, system: "s", messages: [{ role: "user", content: "go" }], ...(reasoning ? { reasoning } : {}) });
+      return JSON.parse(calls.at(-1)!.body!).reasoning_effort;
+    };
+    const balanced = await env.mod.service.llm.resolve({ tier: "balanced" });
+    expect(balanced.reasoning).toBe("high");
+    expect(await ask(balanced)).toBe("high");
+    expect(await ask(balanced, "low")).toBe("low");
+    // fast borrows balanced's model at its own effort; deep borrows it at the model's default (nothing sent)
+    const fast = await env.mod.service.llm.resolve({ tier: "fast" });
+    expect([fast.model, await ask(fast)]).toEqual(["gpt-5.5", "none"]);
+    const deep = await env.mod.service.llm.resolve({ tier: "deep" });
+    expect(deep.reasoning).toBeUndefined();
+    expect(await ask(deep)).toBeUndefined();
+    // a role override resolves to that tier's effort
+    expect(await ask(await env.mod.service.llm.resolve({ tier: "deep", role: "reviewer" }))).toBe("none");
+    // one adapter underneath: the same breaker serves every tier
+    expect(Object.getPrototypeOf(balanced.provider)).toBe(deep.provider);
+    expect((await env.mod.service.llm.resolve({ tier: "balanced" })).provider).toBe(balanced.provider);
+  });
+
+  test("an Anthropic tier with reasoning thinks within the output cap", async () => {
+    const a = await add(env, { preset: "anthropic", apiKey: ANTHROPIC_KEY });
+    await env.req("PUT", "/api/routing", routing([{ tier: "deep", providerId: a.id, model: "claude-opus-5-5", reasoning: "medium" }]));
+    mockFetch(() => json({ model: "claude-opus-5-5", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: { input_tokens: 3, output_tokens: 1 } }));
+    const r = await env.mod.service.llm.resolve({ tier: "deep" });
+    await r.provider.chat({ model: r.model, system: "s", messages: [{ role: "user", content: "go" }], maxOutputTokens: 16_000, temperature: 0.2 });
+    const body = JSON.parse(calls[0]!.body!);
+    expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 8192 });
+    expect(body.temperature).toBe(1);
+    expect(body.max_tokens).toBe(16_000);
+  });
+
+  test("the connection test probes at the tier's effort, with room to think", async () => {
+    const o = await add(env, { preset: "openai", apiKey: OPENAI_KEY });
+    await env.req("PUT", "/api/routing", routing([{ tier: "balanced", providerId: o.id, model: "gpt-5.5", reasoning: "medium" }]));
+    mockFetch((c) =>
+      c.url.endsWith("/models")
+        ? json({ data: [{ id: "gpt-5.5" }] })
+        : json({ choices: [{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "connection_check", arguments: "{}" } }] }, finish_reason: "tool_calls" }] }),
+    );
+    const r = (await (await env.req("POST", `/api/providers/${o.id}/test`)).json()) as any;
+    expect(r.ok).toBe(true);
+    expect(JSON.parse(calls[1]!.body!)).toMatchObject({ model: "gpt-5.5", reasoning_effort: "medium", max_completion_tokens: 4096 });
   });
 });
 

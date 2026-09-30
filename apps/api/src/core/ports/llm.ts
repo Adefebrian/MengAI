@@ -3,7 +3,7 @@
 // Provider-agnostic chat port. Two adapters implement it: openai_chat (every
 // OpenAI-compatible vendor) and anthropic_messages (native cache_control).
 // The context module owns prompt layout; adapters only translate it.
-import type { AgentRole, ProviderModel, ProviderProtocol, Tier } from "@mengai/shared";
+import type { AgentRole, ProviderModel, ProviderProtocol, ReasoningEffort, Tier } from "@mengai/shared";
 
 export type ChatRole = "system" | "user" | "assistant" | "tool";
 
@@ -44,8 +44,19 @@ export interface ChatRequest {
   messages: ChatMessage[];
   tools?: ToolSpec[];
   toolChoice?: "auto" | "none" | "required";
+  /** let the model call several tools in one turn; left out when unset (vendor default) */
+  parallelToolCalls?: boolean;
   maxOutputTokens?: number;
   temperature?: number;
+  topP?: number;
+  /**
+   * How hard the model thinks, set per tier by the owner (the router fills it
+   * in). Missing or "default": nothing is sent and the model decides.
+   * OpenAI-compatible: reasoning_effort (reasoning.effort on the Responses
+   * API). Anthropic: none is no thinking; low, medium and high are a thinking
+   * budget under the output cap. A model that refuses it has it healed away.
+   */
+  reasoning?: ReasoningEffort;
   /** Stable routing key for vendor prompt caches (OpenAI prompt_cache_key). */
   cacheKey?: string;
   /** Mark system + tools as one cached prefix (breakpoint 1). */
@@ -89,12 +100,19 @@ export type LlmErrorKind =
   | "aborted"
   | "server";
 
+/**
+ * Finer reason on top of the kind, for failures a caller words for the owner.
+ * tools_unsupported: the model cannot call tools at all, so no cat can run on it.
+ */
+export type LlmErrorCode = "tools_unsupported";
+
 export class LlmError extends Error {
   constructor(
     public readonly kind: LlmErrorKind,
     message: string,
     public readonly status: number | null = null,
     public readonly retryAfterMs: number | null = null,
+    public readonly code: LlmErrorCode | null = null,
   ) {
     super(message);
     this.name = "LlmError";
@@ -117,6 +135,8 @@ export interface ResolvedModel {
   model: string;
   /** best known context window in tokens (default 128k when unknown) */
   contextWindow: number;
+  /** the tier's reasoning effort, already applied to every provider.chat call; missing means default */
+  reasoning?: ReasoningEffort;
 }
 
 /** Implemented by the providers module: tier (and optional role override) -> concrete model. */

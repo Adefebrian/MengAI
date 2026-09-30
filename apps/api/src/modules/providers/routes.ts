@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /api/providers and /api/routing. Validation, rate limits and status codes
 // only; every decision lives in the service.
-import { AGENT_ROLES, PROVIDER_CAPS, TIERS, type AgentRole, type ModelRouting, type Tier } from "@mengai/shared";
+import { AGENT_ROLES, PROVIDER_CAPS, REASONING_EFFORTS, TIERS, type AgentRole, type ModelRouting, type Tier } from "@mengai/shared";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { consumeLimit, TooManyRequestsError, type LimitResult } from "../../core/hardening";
@@ -51,7 +51,17 @@ const Mapping = z.object({ providerId: Id.nullable(), model: ModelId.nullable() 
 export const RoutingSchema = z
   .object({
     tiers: z
-      .array(z.object({ tier: z.enum(TIERS), providerId: Id.nullable(), model: ModelId.nullable() }).strict())
+      .array(
+        z
+          .object({
+            tier: z.enum(TIERS),
+            providerId: Id.nullable(),
+            model: ModelId.nullable(),
+            /** missing means default; kept for a tier without its own provider too */
+            reasoning: z.enum(REASONING_EFFORTS).optional(),
+          })
+          .strict(),
+      )
       .max(TIERS.length)
       .refine((ts) => new Set(ts.map((t) => t.tier)).size === ts.length, "each tier at most once"),
     roleTiers: z

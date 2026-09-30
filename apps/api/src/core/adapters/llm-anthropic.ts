@@ -5,6 +5,15 @@
 // cacheSystem, and on every message flagged cacheBreakpoint, never more than
 // 4 breakpoints per request (the API limit). Usage is normalized so
 // inputTokens is the full prompt: input + cache writes + cache reads.
+// Known refusals (temperature must be 1 with thinking, temperature and
+// top_p together, a forced tool_choice with thinking, no assistant prefill,
+// no tools at all) self-heal through llm-quirks, per provider and model.
+// The owner's per-tier reasoning effort is extended thinking: none and
+// default send none; low, medium and high get a budget under the output cap.
+// While thinking: temperature 1, no top_p, a forced tool_choice relaxed to
+// auto (JEV be.thinking_forced_tool), and the tool turn being continued
+// starts with the thinking blocks the model wrote for it (kept per tool call
+// id); a turn whose thinking was not kept runs without thinking.
 import type { ProviderModel } from "@mengai/shared";
 import { LlmError } from "../ports/llm";
 import type { ChatMessage, ChatRequest, ChatResult, ContentPart, LlmProvider, ToolCall, Usage } from "../ports/llm";
@@ -18,6 +27,20 @@ import {
   type FetchFn,
   type UrlGuardOptions,
 } from "./llm-openai";
+import {
+  cloneQuirks,
+  createEchoStore,
+  createQuirkStore,
+  diagnose,
+  emptyQuirks,
+  NO_TOOLS_RE,
+  refusalContext,
+  thinkingFor,
+  toolsUnsupportedError,
+  type EchoStore,
+  type QuirkStore,
+  type WorkingQuirks,
+} from "./llm-quirks";
 
 export const ANTHROPIC_VERSION = "2023-06-01";
 export const MAX_CACHE_BREAKPOINTS = 4;
@@ -35,10 +58,15 @@ export interface AnthropicChatConfig {
   timeoutMs?: number;
   fetch?: FetchFn;
   now?: () => number;
+  /** what this provider taught about each model (see llm-quirks); one store per provider row */
+  quirks?: QuirkStore;
 }
 
 type Json = Record<string, unknown>;
 type Block = Json;
+
+/** At most this many heals per call; every heal must change the request. */
+const MAX_HEALS = 4;
 
 const EPHEMERAL = { type: "ephemeral" } as const;
 
@@ -88,6 +116,32 @@ export interface AnthropicBody {
   breakpoints: number;
 }
 
+/** The thinking blocks kept for an assistant tool turn, by its first tool call id. */
+function keptThinking(m: ChatMessage | undefined, echo: EchoStore | undefined): Block[] | null {
+  const id = m?.role === "assistant" ? m.toolCalls?.[0]?.id : undefined;
+  const kept = id ? echo?.get(id)?.thinking : undefined;
+  return Array.isArray(kept) && kept.length ? (kept as Block[]) : null;
+}
+
+/**
+ * The tool turn a thinking request continues: the last assistant message
+ * when it called tools. Anthropic wants it to start with its own thinking
+ * blocks; null thinking means it has none kept (or it merges into an earlier
+ * assistant message), so the call must run without thinking.
+ */
+function continuedTurn(messages: ChatMessage[], echo: EchoStore | undefined): { index: number; thinking: Block[] | null } | null {
+  let at = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role === "assistant") {
+      at = i;
+      break;
+    }
+  }
+  if (at < 0 || !messages[at]!.toolCalls?.length) return null;
+  const merged = messages[at - 1]?.role === "assistant";
+  return { index: at, thinking: merged ? null : keptThinking(messages[at], echo) };
+}
+
 /**
  * Builds the Messages body. Breakpoint priority when over the limit of 4:
  * system first (it caches tools + system, the prefix every agent of a role
@@ -95,30 +149,44 @@ export interface AnthropicBody {
  * prefix), then the last-tool marker, which is redundant when the system
  * block is marked because tools precede system in Anthropic's prefix order.
  */
-export function buildAnthropicBody(req: ChatRequest, stream: boolean): AnthropicBody {
+export function buildAnthropicBody(req: ChatRequest, stream: boolean, quirks?: WorkingQuirks, echo?: EchoStore): AnthropicBody {
+  const q = quirks ?? cloneQuirks(undefined);
+  const maxTokens = req.maxOutputTokens ?? DEFAULT_MAX_TOKENS;
+  let thinking = thinkingFor(req, maxTokens, q);
+  const turn = thinking ? continuedTurn(req.messages, echo) : null;
+  if (turn && !turn.thinking) thinking = null;
+  // thinking takes no assistant prefill: a conversation left ending on an assistant turn runs without it
+  const prefill = req.messages[req.messages.length - 1]?.role === "assistant" && req.responseFormat !== "json" && !q.userLast;
+  if (prefill) thinking = null;
   const messages: Array<{ role: "user" | "assistant"; content: Block[] }> = [];
   const marks: Block[] = [];
-  for (const m of req.messages) {
+  req.messages.forEach((m, i) => {
     const role = m.role === "assistant" ? "assistant" : "user";
     let blocks = blocksFor(m);
     if (blocks.length === 0) blocks = [{ type: "text", text: "(empty)" }];
+    if (thinking && turn?.thinking && i === turn.index) blocks = [...turn.thinking.map((b) => ({ ...b })), ...blocks];
     const last = messages[messages.length - 1];
     if (last && last.role === role) last.content.push(...blocks);
     else messages.push({ role, content: blocks });
     if (m.cacheBreakpoint) marks.push(blocks[blocks.length - 1]!);
-  }
+  });
   if (req.responseFormat === "json") {
     const tail = messages[messages.length - 1];
     const note = { type: "text", text: "Respond with one JSON object only, no prose." };
     if (tail && tail.role === "user") tail.content.push(note);
     else messages.push({ role: "user", content: [note] });
   }
+  // models without assistant prefill: the conversation always ends on a user turn
+  if (q.userLast && messages[messages.length - 1]?.role === "assistant") {
+    messages.push({ role: "user", content: [{ type: "text", text: "Continue." }] });
+  }
 
   const body: Json = {
     model: req.model,
-    max_tokens: req.maxOutputTokens ?? DEFAULT_MAX_TOKENS,
+    max_tokens: maxTokens,
     messages,
   };
+  if (thinking) body.thinking = thinking;
   let used = 0;
   if (req.system) {
     const sys: Block = { type: "text", text: req.system };
@@ -140,11 +208,23 @@ export function buildAnthropicBody(req: ChatRequest, stream: boolean): Anthropic
       used++;
     }
     body.tools = tools;
-    if (req.toolChoice === "required") body.tool_choice = { type: "any" };
-    else if (req.toolChoice === "none") body.tool_choice = { type: "none" };
-    else if (req.toolChoice === "auto") body.tool_choice = { type: "auto" };
+    if (!q.drop.has("tool_choice")) {
+      // thinking takes only auto or none: a forced choice is relaxed to auto, the tools stay
+      const forced = req.toolChoice === "required" ? (thinking ? "auto" : "any") : null;
+      const type = forced ?? (req.toolChoice === "none" ? "none" : req.toolChoice === "auto" || req.parallelToolCalls === false ? "auto" : null);
+      if (type) body.tool_choice = req.parallelToolCalls === false && type !== "none" ? { type, disable_parallel_tool_use: true } : { type };
+    }
   }
-  if (req.temperature !== undefined) body.temperature = req.temperature;
+  if (thinking) {
+    // thinking runs at temperature 1 only, and top_p is left to its default
+    if (!q.drop.has("temperature")) body.temperature = 1;
+  } else {
+    if (req.temperature !== undefined) {
+      if (q.temperatureOne) body.temperature = 1;
+      else if (!q.drop.has("temperature")) body.temperature = req.temperature;
+    }
+    if (req.topP !== undefined && !q.drop.has("top_p")) body.top_p = req.topP;
+  }
   if (stream) body.stream = true;
   return { body, breakpoints: used };
 }
@@ -167,6 +247,13 @@ function mapStop(reason: unknown, toolCalls: number): ChatResult["stopReason"] {
   if (reason === "max_tokens" || reason === "model_context_window_exceeded") return "length";
   if (reason === "refusal") return "filter";
   return "end";
+}
+
+/** Keeps the thinking blocks of a tool turn under its first tool call id, so the next request can start that turn with them. */
+export function keepThinking(echo: EchoStore, content: Block[]): void {
+  const thinking = content.filter((b) => b.type === "thinking" || b.type === "redacted_thinking");
+  const firstTool = content.find((b) => b.type === "tool_use");
+  if (thinking.length && firstTool && typeof firstTool.id === "string" && firstTool.id) echo.set(firstTool.id, { thinking });
 }
 
 export function parseAnthropicResponse(j: Json, fallbackModel: string): Omit<ChatResult, "latencyMs" | "retries"> {
@@ -200,6 +287,8 @@ export function createAnthropicChat(cfg: AnthropicChatConfig): LlmProvider {
   const now = cfg.now ?? Date.now;
   const vendor = cfg.label ?? "anthropic";
   const guard = createUrlGuard(cfg.guard, now);
+  const store = cfg.quirks ?? createQuirkStore();
+  const echo = createEchoStore();
   const doFetch = (url: string, init: RequestInit) => (cfg.fetch ?? globalThis.fetch)(url, { ...init, redirect: "manual" });
   const headers = (): Record<string, string> => ({
     "content-type": "application/json",
@@ -214,7 +303,7 @@ export function createAnthropicChat(cfg: AnthropicChatConfig): LlmProvider {
     let model = req.model;
     let stop: unknown = null;
     let usage: Json = {};
-    const blocks = new Map<number, { type: string; id: string; name: string; json: string }>();
+    const blocks = new Map<number, { type: string; id: string; name: string; json: string; thinking: string; signature: string; data: string }>();
     try {
       for await (const ev of readSse(res.body)) {
         let j: Json;
@@ -234,7 +323,15 @@ export function createAnthropicChat(cfg: AnthropicChatConfig): LlmProvider {
           usage = { ...usage, ...((m.usage ?? {}) as Json) };
         } else if (type === "content_block_start") {
           const b = (j.content_block ?? {}) as Json;
-          blocks.set(Number(j.index ?? blocks.size), { type: String(b.type), id: String(b.id ?? ""), name: String(b.name ?? ""), json: "" });
+          blocks.set(Number(j.index ?? blocks.size), {
+            type: String(b.type),
+            id: String(b.id ?? ""),
+            name: String(b.name ?? ""),
+            json: "",
+            thinking: typeof b.thinking === "string" ? b.thinking : "",
+            signature: typeof b.signature === "string" ? b.signature : "",
+            data: typeof b.data === "string" ? b.data : "",
+          });
           if (b.type === "text" && typeof b.text === "string" && b.text) {
             text += b.text;
             req.onDelta?.(b.text);
@@ -247,6 +344,12 @@ export function createAnthropicChat(cfg: AnthropicChatConfig): LlmProvider {
           } else if (d.type === "input_json_delta" && typeof d.partial_json === "string") {
             const b = blocks.get(Number(j.index));
             if (b) b.json += d.partial_json;
+          } else if (d.type === "thinking_delta" && typeof d.thinking === "string") {
+            const b = blocks.get(Number(j.index));
+            if (b) b.thinking += d.thinking;
+          } else if (d.type === "signature_delta" && typeof d.signature === "string") {
+            const b = blocks.get(Number(j.index));
+            if (b) b.signature += d.signature;
           }
         } else if (type === "message_delta") {
           const d = (j.delta ?? {}) as Json;
@@ -260,10 +363,16 @@ export function createAnthropicChat(cfg: AnthropicChatConfig): LlmProvider {
     } catch (e) {
       throw transportError(e, req.signal, vendor);
     }
-    const toolCalls: ToolCall[] = [...blocks.entries()]
-      .filter(([, b]) => b.type === "tool_use")
-      .sort((a, b) => a[0] - b[0])
-      .map(([i, b]) => ({ id: b.id || `toolu_${i}`, name: b.name, arguments: b.json || "{}" }));
+    const ordered = [...blocks.entries()].sort((a, b) => a[0] - b[0]);
+    const toolCalls: ToolCall[] = ordered.filter(([, b]) => b.type === "tool_use").map(([i, b]) => ({ id: b.id || `toolu_${i}`, name: b.name, arguments: b.json || "{}" }));
+    keepThinking(
+      echo,
+      ordered.map(([, b]): Block => {
+        if (b.type === "thinking") return { type: "thinking", thinking: b.thinking, signature: b.signature };
+        if (b.type === "redacted_thinking") return { type: "redacted_thinking", data: b.data };
+        return { type: b.type, id: b.id };
+      }),
+    );
     return { text, toolCalls, stopReason: mapStop(stop, toolCalls.length), usage: normalizeAnthropicUsage(usage), model };
   }
 
@@ -274,20 +383,40 @@ export function createAnthropicChat(cfg: AnthropicChatConfig): LlmProvider {
       const started = now();
       const url = anthropicUrl(cfg.baseUrl, "/messages");
       await guard(url);
-      const stream = typeof req.onDelta === "function";
-      const { body } = buildAnthropicBody(req, stream);
+      const hasTools = Boolean(req.tools?.length);
+      const q = cloneQuirks(store.get(req.model));
+      if (hasTools && q.noTools) throw toolsUnsupportedError(vendor, req.model);
+      const noTools = (status: number): LlmError => {
+        store.set(req.model, { ...(store.get(req.model) ?? emptyQuirks()), noTools: true });
+        return toolsUnsupportedError(vendor, req.model, status);
+      };
+      let healed = false;
+      let stream = false;
       let res: Response;
-      try {
-        res = await doFetch(url, {
-          method: "POST",
-          headers: { ...headers(), accept: stream ? "text/event-stream" : "application/json" },
-          body: JSON.stringify(body),
-          signal: withTimeout(req.signal, cfg.timeoutMs ?? (stream ? 300_000 : 180_000)),
-        });
-      } catch (e) {
-        throw transportError(e, req.signal, vendor);
+      for (let heal = 0; ; heal++) {
+        stream = typeof req.onDelta === "function" && !q.noStream;
+        const { body } = buildAnthropicBody(req, stream, q, echo);
+        try {
+          res = await doFetch(url, {
+            method: "POST",
+            headers: { ...headers(), accept: stream ? "text/event-stream" : "application/json" },
+            body: JSON.stringify(body),
+            signal: withTimeout(req.signal, cfg.timeoutMs ?? (stream ? 300_000 : 180_000)),
+          });
+        } catch (e) {
+          throw transportError(e, req.signal, vendor);
+        }
+        if (res.ok) break;
+        const errText = await res.text().catch(() => "");
+        if (res.status === 404 && hasTools && NO_TOOLS_RE.test(errText)) throw noTools(res.status);
+        if ((res.status !== 400 && res.status !== 422) || heal >= MAX_HEALS) throw httpError(res.status, errText, res.headers, vendor);
+        const verdict = diagnose(refusalContext({ status: res.status, text: errText, sent: body, wire: "anthropic", hasTools, official: false }), q);
+        if (verdict === "tools_unsupported") throw noTools(res.status);
+        if (verdict.length === 0) throw httpError(res.status, errText, res.headers, vendor);
+        healed = true;
       }
-      if (!res.ok) throw httpError(res.status, await res.text().catch(() => ""), res.headers, vendor);
+      // remembered only once the vendor accepted the healed request
+      if (healed) store.set(req.model, q);
       let out: Omit<ChatResult, "latencyMs" | "retries">;
       if (stream && !(res.headers.get("content-type") ?? "").includes("application/json")) {
         out = await readStream(res, req);
@@ -299,7 +428,8 @@ export function createAnthropicChat(cfg: AnthropicChatConfig): LlmProvider {
           throw transportError(e, req.signal, vendor);
         }
         out = parseAnthropicResponse(j, req.model);
-        if (stream && out.text) req.onDelta?.(out.text);
+        if (Array.isArray(j.content)) keepThinking(echo, j.content as Block[]);
+        if (req.onDelta && out.text) req.onDelta(out.text);
       }
       return { ...out, latencyMs: now() - started, retries: 0 };
     },

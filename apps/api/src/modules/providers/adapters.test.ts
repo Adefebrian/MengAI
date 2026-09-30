@@ -248,7 +248,7 @@ describe("llm-openai", () => {
     expect(JSON.parse(calls[2]!.body!).prompt_cache_key).toBeUndefined();
   });
 
-  test("a reasoning model that refuses tools on chat completions is retried with reasoning_effort none, remembered per model", async () => {
+  test("off the official host, a reasoning model that refuses tools on chat completions is retried with reasoning_effort none, remembered per model", async () => {
     const tool = { name: "create_tasks", description: "plan", parameters: { type: "object", properties: {} } };
     const refusal = "Function tools with reasoning_effort are not supported for gpt-6-luna in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.";
     mockFetch((c) => {
@@ -256,7 +256,8 @@ describe("llm-openai", () => {
       if (body.tools && body.reasoning_effort !== "none") return json({ error: { message: refusal, type: "invalid_request_error" } }, 400);
       return json({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
     });
-    const p = openai("https://api.openai.com/v1");
+    // a gateway forwarding OpenAI's refusal; the official host takes the Responses path instead (quirks.test.ts)
+    const p = openai("https://agentrouter.org/v1");
     const req = { ...baseReq, model: "gpt-6-luna", tools: [tool] };
     expect((await p.chat(req)).text).toBe("ok");
     expect(calls).toHaveLength(2);

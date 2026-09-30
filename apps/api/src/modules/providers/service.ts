@@ -4,9 +4,15 @@
 // (MediaRouter), the JEV judge binding and connection tests. Keys live in
 // the vault under "provider:<id>" and are registered with redact() the
 // moment they are seen; no DTO, log line or error message ever carries one.
+// Each chat provider row owns one quirk store (llm-quirks): what the
+// connection test learns about a model (a renamed field, the Responses
+// path, no tools at all) is where the crew's calls start. Each tier carries
+// the owner's reasoning effort; the router puts it on every chat request of
+// that tier, and the adapters heal it away for a model that refuses it.
 import {
   AGENT_ROLES,
   PROVIDER_PRESETS,
+  REASONING_EFFORTS,
   TIERS,
   findPreset,
   type AgentRole,
@@ -17,12 +23,15 @@ import {
   type ProviderPreset,
   type ProviderProtocol,
   type ProviderTestResult,
+  type ReasoningEffort,
   type Tier,
+  type TierMapping,
   type UpdateProviderBody,
 } from "@mengai/shared";
 import { createJevJudge } from "../../core/adapters/judge-jev";
 import { createAnthropicChat } from "../../core/adapters/llm-anthropic";
 import { assertSafeUrl, createOpenAiChat, UnsafeUrlError, type FetchFn, type LookupFn } from "../../core/adapters/llm-openai";
+import { createQuirkStore, TOOLS_ADVICE, TOOLS_PROBE_FAIL, type QuirkStore } from "../../core/adapters/llm-quirks";
 import { withRetry, type ResilientLlm, type RetryPolicy } from "../../core/adapters/llm-retry";
 import { createFalMedia } from "../../core/adapters/media-fal";
 import { createGeminiMedia } from "../../core/adapters/media-gemini";
@@ -30,7 +39,7 @@ import { createOpenAiMedia, type MediaAdapterConfig } from "../../core/adapters/
 import { createReplicateMedia } from "../../core/adapters/media-replicate";
 import type { ModuleContext } from "../../core/module";
 import type { Judge } from "../../core/ports/judge";
-import { LlmError, type LlmProvider, type LlmRouter, type ResolvedModel } from "../../core/ports/llm";
+import { LlmError, type ChatRequest, type LlmProvider, type LlmRouter, type ResolvedModel } from "../../core/ports/llm";
 import type { MediaProvider, MediaRouter } from "../../core/ports/media";
 import type { ProvidersService, UsageService } from "../../core/services";
 import { HttpError, notFound } from "../../lib/http";
@@ -57,6 +66,14 @@ export interface ProvidersModuleService extends ProvidersService {
   setRouting(input: ModelRouting): Promise<ModelRouting>;
   /** loads every stored key once so redact() masks them from the first log line; returns how many */
   warm(): Promise<number>;
+}
+
+interface ProbeResult {
+  models: ProviderModel[];
+  /** ok, with something the owner should know */
+  note?: string;
+  /** not ok, but the models are still worth showing (the owner picks another one) */
+  fail?: string;
 }
 
 const CHAT_PROTOCOLS: ReadonlySet<ProviderProtocol> = new Set(["openai_chat", "anthropic_messages"]);
@@ -153,6 +170,67 @@ function dedupeModels(models: ProviderModel[]): ProviderModel[] {
   return out;
 }
 
+/**
+ * The connection test's tool probe: one tiny tool the model is asked to call.
+ * The cap leaves room for a reasoning model to think briefly before calling.
+ */
+const PROBE_TOOL = {
+  name: "connection_check",
+  description: "Confirms the connection test. Call it once with ok set to true.",
+  parameters: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] },
+};
+const PROBE_MAX_TOKENS = 512;
+
+/** Room to think before the tool call when the tier asks for reasoning (still a tiny request). */
+const PROBE_THINKING_MAX_TOKENS = 4096;
+
+/** The probe runs at the tier's own effort, so what it learns (a refused effort, the Responses path) is what the crew meets. */
+function toolProbe(model: string, reasoning: ReasoningEffort | undefined, signal?: AbortSignal): ChatRequest {
+  const thinks = reasoning === "low" || reasoning === "medium" || reasoning === "high";
+  return {
+    model,
+    system: "",
+    messages: [{ role: "user", content: "Connection test: call the connection_check tool with ok set to true." }],
+    tools: [PROBE_TOOL],
+    toolChoice: "required",
+    maxOutputTokens: thinks ? PROBE_THINKING_MAX_TOKENS : PROBE_MAX_TOKENS,
+    temperature: 0,
+    ...(reasoning ? { reasoning } : {}),
+    signal,
+  };
+}
+
+/** The tier's effort as stored: a known value other than default, else nothing (missing means default). */
+function effortOf(m: Partial<TierMapping> | undefined): ReasoningEffort | undefined {
+  const r = m?.reasoning;
+  return r && r !== "default" && (REASONING_EFFORTS as readonly string[]).includes(r) ? r : undefined;
+}
+
+/**
+ * The resolved provider with the tier's effort on every chat request that
+ * does not set its own. The wrapper inherits everything else (id, breaker,
+ * listModels) from the cached adapter, so no state is duplicated.
+ */
+const reasoningWrappers = new WeakMap<LlmProvider, Map<ReasoningEffort, LlmProvider>>();
+
+export function withReasoning<P extends LlmProvider>(provider: P, reasoning: ReasoningEffort | undefined): P {
+  if (!reasoning) return provider;
+  let byEffort = reasoningWrappers.get(provider);
+  if (!byEffort) {
+    byEffort = new Map();
+    reasoningWrappers.set(provider, byEffort);
+  }
+  const hit = byEffort.get(reasoning);
+  if (hit) return hit as P;
+  const wrapped = Object.create(provider) as P;
+  Object.defineProperty(wrapped, "chat", {
+    value: (req: ChatRequest) => provider.chat(req.reasoning ? req : { ...req, reasoning }),
+    enumerable: true,
+  });
+  byEffort.set(reasoning, wrapped);
+  return wrapped;
+}
+
 function describe(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   const clean = redact(msg).replace(/\s+/g, " ").trim();
@@ -171,10 +249,12 @@ export function defaultRouting(): ModelRouting {
 /** Coerces any stored or submitted routing into the full canonical shape. */
 export function normalizeRouting(r: Partial<ModelRouting> | null | undefined): ModelRouting {
   if (!r) return defaultRouting();
-  const tiers = TIERS.map((tier) => {
+  const tiers = TIERS.map((tier): TierMapping => {
     const m = Array.isArray(r.tiers) ? r.tiers.find((x) => x && x.tier === tier) : undefined;
     const providerId = m?.providerId ?? null;
-    return { tier, providerId, model: providerId ? m?.model ?? null : null };
+    // kept on a tier without its own provider too: a borrowed model still thinks at this tier's effort
+    const reasoning = effortOf(m);
+    return { tier, providerId, model: providerId ? m?.model ?? null : null, ...(reasoning ? { reasoning } : {}) };
   });
   const roleTiers: Partial<Record<AgentRole, Tier>> = {};
   for (const [role, tier] of Object.entries(r.roleTiers ?? {})) {
@@ -192,6 +272,7 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
   const log = ctx.logger.child({ module: "providers" });
   const mode = ctx.config.mode;
   const llmCache = new Map<string, { stamp: number; llm: Promise<ResilientLlm> }>();
+  const quirkStores = new Map<string, QuirkStore>();
   const mediaCache = new Map<string, { stamp: number; media: Promise<MediaProvider> }>();
 
   const presetOf = (row: ProviderRow): ProviderPreset | undefined => findPreset(row.preset);
@@ -229,6 +310,16 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
     return MEDIA_PROTOCOLS.has(row.protocol) && row.caps.includes(kind) && (row.keyRef !== null || !keyRequired(row));
   }
 
+  /** One store per provider row, shared by the routed adapter and the connection test. */
+  function quirksFor(id: string): QuirkStore {
+    let q = quirkStores.get(id);
+    if (!q) {
+      q = createQuirkStore();
+      quirkStores.set(id, q);
+    }
+    return q;
+  }
+
   async function rawLlm(row: ProviderRow): Promise<LlmProvider> {
     const apiKey = await keyFor(row);
     const cfg = {
@@ -238,6 +329,7 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
       guard: { mode, localPreset: !!presetOf(row)?.local, lookup: deps.lookup },
       label: row.label,
       fetch: deps.fetch,
+      quirks: quirksFor(row.id),
     };
     return row.protocol === "anthropic_messages" ? createAnthropicChat(cfg) : createOpenAiChat(cfg);
   }
@@ -283,6 +375,8 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
   function forget(id: string): void {
     llmCache.delete(id);
     mediaCache.delete(id);
+    // a new URL or key may be another vendor: nothing learned about the old one carries over
+    quirkStores.delete(id);
   }
 
   function windowFor(row: ProviderRow, model: string): number {
@@ -340,7 +434,15 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
       const routing = await loadRouting();
       const effective = (role && routing.roleTiers[role]) || tier;
       const hit = pickChat(effective, routing, await repo.list());
-      if (hit) return { provider: await llmFor(hit.row), model: hit.model, contextWindow: windowFor(hit.row, hit.model) };
+      if (hit) {
+        const reasoning = effortOf(routing.tiers.find((t) => t.tier === effective));
+        return {
+          provider: withReasoning(await llmFor(hit.row), reasoning),
+          model: hit.model,
+          contextWindow: windowFor(hit.row, hit.model),
+          ...(reasoning ? { reasoning } : {}),
+        };
+      }
       throw new LlmError(
         "not_found",
         `No chat model is configured for the ${effective} tier. Add any provider with a model, or map a model to a tier, in Providers.`,
@@ -384,24 +486,57 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
     return apiKey ? { baseUrl: row.baseUrl, apiKey } : null;
   });
 
-  /** Throws on failure; `note` is an ok result the vendor cannot confirm up front. */
-  async function probe(row: ProviderRow, signal?: AbortSignal): Promise<{ models: ProviderModel[]; note?: string }> {
-    const preset = presetOf(row);
+  /** The model the crew would use from this row (a tier mapped to it, else its first chat model, else the first listed) and that tier's effort. */
+  async function crewModel(row: ProviderRow, listed: ProviderModel[]): Promise<{ model: string; reasoning?: ReasoningEffort } | null> {
+    const routing = await loadRouting();
+    for (const tier of ["balanced", "fast", "deep"] as const) {
+      const m = routing.tiers.find((t) => t.tier === tier);
+      if (m?.providerId === row.id && m.model) return { model: m.model, reasoning: effortOf(m) };
+    }
+    const model = firstChatModel(row) ?? listed[0]?.id ?? null;
+    return model ? { model } : null;
+  }
+
+  /**
+   * A chat provider's test: the model list when the vendor has one, then one
+   * tiny tool call with the model the crew would use, because a model that
+   * cannot call tools cannot run a cat. JEV be.connection_test_tools: a model
+   * that refuses tools fails the test (the key works, the crew would not);
+   * a model that answers without calling the tool passes with a note.
+   */
+  async function probeChat(row: ProviderRow, signal?: AbortSignal): Promise<ProbeResult> {
+    const chat = await rawLlm(row);
+    let models: ProviderModel[] = [];
+    try {
+      models = await chat.listModels(signal);
+    } catch (e) {
+      if (!(e instanceof LlmError) || (e.kind !== "not_found" && e.kind !== "bad_request")) throw e;
+    }
+    const crew = await crewModel(row, models);
+    if (!crew) {
+      if (models.length === 0) throw new Error("this endpoint has no model list; add a model id and test again");
+      return { models, note: "no model to test tool calls with; pick a model and test again" };
+    }
+    const { model } = crew;
+    try {
+      const r = await chat.chat(toolProbe(model, crew.reasoning, signal));
+      if (r.toolCalls.length > 0) return { models };
+      return { models, note: `${model} answered without calling the test tool; if cats stall, ${TOOLS_ADVICE}` };
+    } catch (e) {
+      if (!(e instanceof LlmError) || e.code !== "tools_unsupported") throw e;
+    }
+    // the vendor refused tools for this model: a plain ping tells a working key from a dead one
+    await chat.chat({ model, system: "", messages: [{ role: "user", content: "ping" }], maxOutputTokens: 16, signal });
+    return { models, fail: `${TOOLS_PROBE_FAIL} (model ${model})` };
+  }
+
+  /** Throws on failure; `note` is an ok result the vendor cannot confirm up front; `fail` is a failed test that still lists models. */
+  async function probe(row: ProviderRow, signal?: AbortSignal): Promise<ProbeResult> {
     if (keyRequired(row) && !row.keyRef) throw new Error("no API key is stored for this provider");
     switch (row.protocol) {
       case "openai_chat":
-      case "anthropic_messages": {
-        const chat = await rawLlm(row);
-        try {
-          return { models: await chat.listModels(signal) };
-        } catch (e) {
-          if (!(e instanceof LlmError) || (e.kind !== "not_found" && e.kind !== "bad_request")) throw e;
-          const model = row.models[0]?.id ?? preset?.suggestedModels[0] ?? null;
-          if (!model) throw new Error("this endpoint has no model list; add a model id and test again");
-          await chat.chat({ model, system: "", messages: [{ role: "user", content: "ping" }], maxOutputTokens: 1, temperature: 0, signal });
-          return { models: [] };
-        }
-      }
+      case "anthropic_messages":
+        return probeChat(row, signal);
       case "openai_images": {
         const cfg = await mediaCfg(row);
         return { models: await createOpenAiChat({ id: row.id, baseUrl: row.baseUrl, apiKey: cfg.apiKey, guard: { mode, lookup: deps.lookup }, label: row.label, fetch: deps.fetch }).listModels(signal) };
@@ -580,8 +715,8 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
       try {
         const r = await probe(row, signal);
         models = r.models;
-        error = r.note ?? null;
-        ok = true;
+        error = r.fail ?? r.note ?? null;
+        ok = !r.fail;
       } catch (e) {
         error = describe(e);
       }
