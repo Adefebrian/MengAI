@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act } from "react";

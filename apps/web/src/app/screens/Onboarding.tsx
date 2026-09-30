@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The engine gate, inside the app shell. MengAI has no accounts and the
 // website keeps nothing, so there is nothing to sign in to and no code to
 // copy: the crew engine runs on the owner's own Mac, and this page finds it

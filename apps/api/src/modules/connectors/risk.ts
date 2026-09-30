@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Tool names and risk. Tool names are namespaced by connector label
 // ("binance.get_ticker"); providers reject dots in function names, so the
 // model sees a safe alias ("binance__get_ticker") and the tools service

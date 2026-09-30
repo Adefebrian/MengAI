@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The smooth-scroll lifecycle, the refresh sources, the SplitText reveal, and
 // the count-up, each driven with fakes for gsap, Lenis, and the DOM (bun
 // test from this folder, no install).

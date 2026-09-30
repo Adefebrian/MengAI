@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // MediaFrame: every image, video, canvas, or live product view on a kit
 // page. A fixed aspect ratio (no layout shift), the direction's media
 // radius, a full hairline, and a caption below the media, never over it.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Workspace access for scans. Every listing and read goes through the
 // injected WorkspaceService, which jails paths to the project root (realpath
 // checked, no symlink escape). This module never touches the filesystem.

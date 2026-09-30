@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Google Gemini media adapter (gemini_media): images through
 // models/<m>:generateContent (inlineData parts) or models/imagen-*:predict,
 // video through models/veo-*:predictLongRunning plus operation polling.

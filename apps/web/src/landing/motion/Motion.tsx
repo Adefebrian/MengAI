@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The landing's motion, from the main bundle: a tiny leaf that claims the
 // page for the GSAP engine before the kit's own motion layer arms (so there
 // is exactly one owner of every entrance), fades the hero text in on first

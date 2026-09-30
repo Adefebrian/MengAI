@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Server-sent events transport for GET /api/events. Subscribes first and
 // buffers live events while the table replay runs, so nothing is lost or
 // duplicated between replay and live (dedupe by seq). A heartbeat comment

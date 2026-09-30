@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What a project workspace can preview, in order: a package.json script
 // (dev, then start, then preview) run with the project's own package
 // manager, else a static index.html in the root, dist, build, public or out.

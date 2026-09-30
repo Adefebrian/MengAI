@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Scenario fixtures (JSON) validated at load, plus the fixture tool schemas
 // used when no ToolsService is injected. A scenario is one agent working one
 // task: role, brief, task packet and the exact steps (tool names, arguments,

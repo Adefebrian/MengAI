@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The runs side of the capabilities: a fund run through the real engine
 // with the real company templates (seeded roles, the CIO, the fund tracker,
 // the P&L report spec), the capability context and per-step tool specs every

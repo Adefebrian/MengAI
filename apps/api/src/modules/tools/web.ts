@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // web_fetch support: SSRF guard (public hosts only, every redirect hop is
 // re-checked), a 2 MB streaming body cap, a hard timeout, and HTML reduced
 // to readable text with Bun's HTMLRewriter (linear, no regex backtracking).

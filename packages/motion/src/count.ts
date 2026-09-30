@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // StatRow, Bento, and quote figures count up once on entry (R07 count-up,
 // mu.number-ticker), on the GSAP ticker so the page keeps one clock. The
 // kit's parser and formatter are passed in (the module never re-implements

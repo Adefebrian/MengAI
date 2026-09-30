@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Assets module tests on the shared test kit: image flow with a fake
 // MediaProvider, video polling with fake timers, file route headers and
 // ranges, delete, resume. The workspace fake jails to a temp folder.

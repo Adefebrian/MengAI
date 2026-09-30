@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Top-level route split: "/" is the landing, "/app/*" is the app frame
 // (the engine gate, then the crew screens). No hash carries anything: there
 // is no pairing link and no launch token to forward.

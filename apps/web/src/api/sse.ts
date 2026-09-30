@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A server-sent events reader over fetch, for a client built on an
 // injected fetch (the demo server in the page, tests) or a runtime with no
 // EventSource. It has the EventSourceLike shape the run store already

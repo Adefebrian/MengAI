@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Demo crew (MENGAI_DEMO=1). A scripted LlmRouter that plays one believable
 // company day through the real orchestrator, tools and workspace, so one run
 // shows every scenario the office scene choreographs and every beat of the

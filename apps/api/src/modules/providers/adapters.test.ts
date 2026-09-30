@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Adapter contract tests with a mocked global fetch (no network, no DNS).
 import { afterEach, describe, expect, test } from "bun:test";
 import { createJevJudge } from "../../core/adapters/judge-jev";

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The building: the slab, the floors, the back walls with their doors and
 // windows, the cutaway low walls, and the furniture that is not a desk (the
 // CEO's lounge, the meeting table, the pantry, the rack, the bookshelf, the

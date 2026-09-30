@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Pure text helpers for the context module: head + tail truncation, fixed
 // caps, the extractive summary fallback and the tool output dedupe pointer.
 // Everything here is deterministic so rendered prompts stay cache-stable.

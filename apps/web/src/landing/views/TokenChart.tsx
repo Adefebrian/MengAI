@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Billable input tokens per benchmark scenario, legacy engine against v2,
 // from docs/reports/token-benchmark.md (data/bench.ts). Two bars per row on
 // one shared scale, labelled in words, no legend swatches. The bars grow

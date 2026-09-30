@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // spring(): a damped harmonic oscillator evaluated in closed form at a
 // frame. No accumulated state and no time step, so the same frame always
 // returns the same value (scrubbing backward is exact, not a replay).

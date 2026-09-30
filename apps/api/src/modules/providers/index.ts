@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // providers module: BYOK registry, tier and media routing, JEV transport.
 // Owns two top-level segments, /api/providers and /api/routing, so it
 // returns one Hono app with mountPath "" (core/app.ts mounts it at /api).

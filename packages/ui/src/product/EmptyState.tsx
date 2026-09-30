@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // EmptyState (Astryx): icon, a title, one sentence, at most one action. It
 // fills its region, so an empty list never collapses to nothing.
 import type { ReactNode } from "react";

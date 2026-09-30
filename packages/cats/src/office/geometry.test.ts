@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The floor plan: every piece inside the slab, no two desks on one spot,
 // and every walk between any two places stays on the lanes, clear of every
 // desk, table, counter, shelf and easel, at every width and crew size.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // GSAP, registered once, with the JAL curve and token readers. Every GSAP
 // plugin is free (since the 2024 Webflow licensing change), so SplitText and
 // CustomEase ship from the public package.

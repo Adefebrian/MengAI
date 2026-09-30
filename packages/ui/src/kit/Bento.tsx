@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // BentoGrid and BentoTile: a fully occupied grid of unequal tiles, each one
 // real claim or view. The layout is a declared area map (CSS
 // grid-template-areas rows), validated before render:

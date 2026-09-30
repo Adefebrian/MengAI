@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Motion logic for the cat: the reduced motion query, the activity dwell,
 // the seeded quirk schedule, the offscreen and hidden-tab pause, the calm
 // limit, the catch, and pointer follow. Every loop itself is a CSS keyframe

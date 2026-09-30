@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // llm-retry wrapper: backoff, Retry-After, non-retryable kinds, abort,
 // concurrency gate and circuit breaker, driven by fake timers.
 import { afterEach, describe, expect, jest, test } from "bun:test";

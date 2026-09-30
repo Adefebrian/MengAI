@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A tiny history router. One external store over window.location (read
 // with useSyncExternalStore), navigate() pushes or replaces a history
 // entry, and <Link> turns plain same-origin clicks into navigation while

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The shared crew roster: one name wears one coat everywhere. The Office
 // preview and the crew board read it, so Cemong is the tuxedo engineer on
 // the landing and in the preview alike.

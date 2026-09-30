@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Default USD prices per 1M tokens, used to show cost and enforce USD budgets.
 // Vendors change prices: these are defaults the owner can override in
 // Settings (stored server side). Unknown models cost 0 and are flagged.

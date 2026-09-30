@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The motion tokens as Framer Motion transitions, one source for every beat
 // on the app (tokens.css: --dur-*, --dur-*-exit, --ease-standard,
 // --stagger-item). Transform and opacity only. Under OS reduced motion or

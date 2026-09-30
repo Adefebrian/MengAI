@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // CTABand: the page's close. Start aligned on the grid, carrying proof from
 // the page's own world (a price, a delivery promise, a SpecRail). Never a
 // centered heading and one button on plain ground with nothing from the

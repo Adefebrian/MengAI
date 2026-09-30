@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Kit preview build: bundles both pages with Bun.build into preview/dist.
 //   bun packages/ui/src/kit/preview/build.ts
 // React and react-dom resolve from the workspace web app so the bundle holds

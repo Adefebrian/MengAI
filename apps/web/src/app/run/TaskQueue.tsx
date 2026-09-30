@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The task queue (JEV ui.region_gate rows, ui.component_recipe core.list
 // 0.93 with layer an.R21 0.74, motion tier 1): every task in the group of
 // its status, the way a team's board reads top to bottom: Doing, In review,

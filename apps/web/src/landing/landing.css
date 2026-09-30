@@ -1,3 +1,5 @@
+/* Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+   SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
 /* MengAI landing. Styles for the landing's own parts only: every kit
    composition keeps kit.css, and every control keeps its JAL Core spec in
    ui.css (jal-segmented, jal-icon-btn). Tokens by name only; the five type

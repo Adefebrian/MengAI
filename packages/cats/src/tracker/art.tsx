@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // DeliveryTracker art: the stop pins with their stage pictograms and the
 // courier, all flat fills and the one ink-muted contour of the cat family.
 //

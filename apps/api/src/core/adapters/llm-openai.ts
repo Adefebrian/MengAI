@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // OpenAI Chat Completions adapter for every openai_chat preset (OpenAI,
 // DeepSeek, OpenRouter, Gemini compat, Groq, Mistral, Ollama, custom...).
 // This file also hosts the small HTTP kit the sibling provider adapters

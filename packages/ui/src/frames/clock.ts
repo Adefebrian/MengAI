@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The frame clock. Driven by elapsed wall time, never by counting rAF
 // callbacks: a 120Hz display, a dropped frame, or a throttled tab all land
 // on the frame the timeline says it should be at. It emits only when the

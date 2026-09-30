@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Line icons from reicon.dev (MIT, https://reicon.dev), the fallback source:
 // koboyo, the first source, needs a signed-in key this build did not have.
 // Outline weight on the 24 grid, one stroke voice, currentColor only. Every

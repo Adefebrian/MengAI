@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // memory brain repo: role_outcomes and strategies. Portable SQL only
 // (Bun.SQL on SQLite and Postgres): every ${value} is a bound parameter,
 // JSON is TEXT, booleans are 0/1.

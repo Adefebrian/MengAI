@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Local sidecar entrypoint (desktop app). The Tauri shell spawns the
 // compiled binary with MENGAI_MODE=local, MENGAI_DATA_DIR, MENGAI_WEB_DIR,
 // MENGAI_HANDS_BIN and optional MENGAI_PORT and MENGAI_SITE_ORIGINS. Once

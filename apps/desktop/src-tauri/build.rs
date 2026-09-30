@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Build script: makes sure the externalBin path exists so `cargo check` works
 // on a fresh clone (tauri-build refuses to run without it), then runs
 // tauri-build with an app ACL manifest so `pick_folder` is gated by a

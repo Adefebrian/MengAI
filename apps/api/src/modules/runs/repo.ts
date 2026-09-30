@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // SQL for the runs module: runs, agents, tasks, handoffs, plus the per-call
 // tool_calls log, the per-agent context_snapshots (X-ray and mind) the engine
 // writes, the project's dynamic roles and the runtime brain decisions.

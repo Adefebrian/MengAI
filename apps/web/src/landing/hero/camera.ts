@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The hero frame's camera, as pure math (critic fix round 2: the hero is a
 // tight crop of the desk rows at about 1.5x cat scale, never the full floor
 // the lifecycle section shows). The Office plans its floor for the width it

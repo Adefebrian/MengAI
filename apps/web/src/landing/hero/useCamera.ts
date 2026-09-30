@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The hero camera in the browser: measures the Office the frame holds (its
 // plan from the SVG view box, each desk's box, the whiteboard), keeps the
 // crop to the wall and the first desk rows, and moves one transform between

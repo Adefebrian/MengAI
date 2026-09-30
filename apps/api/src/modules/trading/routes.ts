@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /api/trading: settings, orders, positions, the owner's decision on a live
 // order, and the trading venues (exchange or broker connections and their
 // learning pass). zod on every body and query; every write is rate limited.

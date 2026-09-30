@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import { describe, expect, test } from "bun:test";
 import { ACTIVITIES, AGENT_ROLES, ACTIVITY_LABEL } from "@mengai/shared";
 import { LIVE_CAP, QUIRKS, QUIRK_MAX_GAP_MS, QUIRK_MIN_GAP_MS, dwellWait, lookAt, quirkSchedule, seededRandom } from "./motion";

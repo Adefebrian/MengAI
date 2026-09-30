@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The capability tools: find_tools and lazy loading of connector tools per
 // task, role scoping, the approval path for destructive and sensitive tools,
 // the refusal of direct order placement, trading grants, and the audit in

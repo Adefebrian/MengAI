@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Row decoding helpers. Bun.SQL returns Postgres int8 as string and SQLite
 // integers as number; JSON columns are TEXT in both dialects.
 export function num(v: unknown): number {

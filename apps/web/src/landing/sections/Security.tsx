@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Privacy and security (kit.bento.lead-right; critic fix round 2: the six
 // icon cells became the app's own controls on labelled sample data). JEV
 // ui.region_gate sec_views kept (relevance 1.82, bento 0.58);

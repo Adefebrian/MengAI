@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // fal.ai queue adapter (fal_queue): submit to <base>/<model>, poll
 // <base>/<owner>/<app>/requests/<id>/status, fetch the result and download
 // the output URLs. Images are awaited in-call; video is a job the caller

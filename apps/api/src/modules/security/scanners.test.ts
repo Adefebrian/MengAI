@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Pure scanner tests: lockfile parsers, secret rules and masking, config
 // rules, gitignore matching, CVSS scoring. Secret-shaped fixtures are built
 // by concatenation so no credential pattern is ever committed literally.

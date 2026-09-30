@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The two system glyphs the kit needs by default, reused from the JAL Core
 // control set in ui.css (the select chevron and the checkbox check), so no
 // third icon voice appears. Any other icon comes from koboyo first, then

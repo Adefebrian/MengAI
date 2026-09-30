@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The brain's pure rules: loop engineering (evidence, self-check, step
 // budget), the runtime JEV decision plans and their runner, dynamic roles,
 // the tracker stages and the org rules. No engine, no model.

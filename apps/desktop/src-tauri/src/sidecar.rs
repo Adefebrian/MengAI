@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! The Bun API sidecar: spawn, ready handshake, output draining, shutdown.
 //!
 //! Contract (docs/architecture.md section 17): env MENGAI_MODE=local,

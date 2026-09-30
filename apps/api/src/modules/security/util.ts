@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Small helpers shared by the security scanners: hashing, entropy, masking,
 // placeholder detection and severity ordering.
 import type { FindingStatus, ScanKind, Severity } from "@mengai/shared";

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Pure Player decisions, kept out of the component so they are testable
 // without a DOM and so the rules read in one place.
 import { clampFrame } from "./clock";

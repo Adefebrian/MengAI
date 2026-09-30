@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Service and route tests for the security module, on the shared test kit.
 // The workspace is an in-memory fake with the real read semantics (1-based
 // line ranges, byte-capped reads) so paging is exercised too.

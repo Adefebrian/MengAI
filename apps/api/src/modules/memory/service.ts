@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // memory service: self-learning without prompt rewrites. Lessons are short
 // facts agents learned; BM25 picks the few that matter for a task, outcomes
 // score them (score = (wins + 1) / (uses + 2), uses counted when a use

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // GET /api/decisions?runId=&limit=  -> DecisionDTO[]
 //   query: runId?: string (id chars, 1 to 64), limit?: number (1 to MAX_LIST_LIMIT,
 //          default DEFAULT_LIST_LIMIT); 422 invalid_query otherwise

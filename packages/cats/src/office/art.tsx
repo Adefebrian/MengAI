@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The office furniture, drawn as a three-quarter cutaway: every block has
 // a top face seen from above and a front face seen face on. Flat fills,
 // tonal steps and hairlines only (no gradient, no shadow, no glow). Every

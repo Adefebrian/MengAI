@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Public contract of the DeliveryTracker: the on-demand style progress
 // tracker (think a food delivery app) that follows a run from the goal to
 // shipped. A courier cat rides a flat route through one stop per stage; the

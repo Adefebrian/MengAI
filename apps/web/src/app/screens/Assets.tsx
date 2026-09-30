@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Assets (/app/assets): images and short clips made with the owner's own
 // routed media model. The visible page head was dropped by JEV (relevance
 // 1.46), so the screen title is for assistive tech only. The create form

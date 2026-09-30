@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Deterministic ContextService double that follows the v2 prompt layout in
 // docs/architecture.md section 7. The evals tests replay through it because the
 // real context module is built in parallel; in production the evals module

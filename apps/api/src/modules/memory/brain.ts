@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The memory side of the crew's brain: what the crew learns across runs.
 //   role outcomes     win or loss per finished unit of work, with its cause,
 //                     per role key (a base role or a dynamic role)

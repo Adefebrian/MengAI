@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /office: the living cat company on a scripted loop, three ways, in two
 // companies (a software studio and a hedge fund trading floor). The full
 // scene as the run page shows it (crew of 4, 8 or 12), the compact hero the

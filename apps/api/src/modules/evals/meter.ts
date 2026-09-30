@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Prompt metering shared by the eval replay and the ScriptedProvider.
 // One counting rule for every policy: the same estimator over the same
 // serialized pieces (system, tool schemas, messages), plus a fixed per-message

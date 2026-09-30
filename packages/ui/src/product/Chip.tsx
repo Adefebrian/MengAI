@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A text chip (JAL Core Token): a short label in a full hairline box, for
 // dependencies, scopes and tags. Static, never a control, never a dot. An
 // optional icon carries the state so the word never relies on color.

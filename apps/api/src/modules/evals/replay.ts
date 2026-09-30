@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Replays a scenario suite under the legacy policy and the v2 policy and
 // meters every call with the same estimator (the ContextService's).
 //   legacy: fixed 2,076 + 1,800 static tokens, the legacy engine's 4,000-char output

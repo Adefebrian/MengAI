@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The strategy lab: autonomous prompt engineering for one role (base or
 // dynamic) or one cat. Deterministic apart from the one fast-tier call the
 // memory module makes with strategyPrompt():

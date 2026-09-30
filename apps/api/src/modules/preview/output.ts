@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Dev server output: a redacted ring buffer of the last lines, and the
 // "Local: http://localhost:5173/" style URL the server prints. Only
 // 127.0.0.1 and localhost count, never a LAN address, never a port the

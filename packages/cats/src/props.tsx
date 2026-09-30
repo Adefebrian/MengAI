@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The flat art a cat works with: one drawing per beat, in rig coordinates
 // (160 x 160 viewBox), plus each role's own object drawn small for the free
 // corner. Flat fills and the one rig line only (cats.css p-* classes). No

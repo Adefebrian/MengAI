@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Cat: the living cat character. One flat SVG rig (rig.tsx) in a square
 // stage of the requested size; nothing ever leaves that box. Motion layers:
 //   beat      role x activity: its own art and loop (poses.ts beatFor), held

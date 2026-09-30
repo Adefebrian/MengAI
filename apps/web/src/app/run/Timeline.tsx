@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The observation log (JEV: rows, ui.component_recipe an.R21 0.62,
 // motion.choreography reveal): newest first, grouped by the cat that did
 // the work, the way a shift log reads. A new line fades in at the top of

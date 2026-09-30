@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /api/runs routes: validate with zod, delegate to the service, no logic.
 import { COMPANY_KINDS } from "@mengai/shared";
 import type { Context } from "hono";

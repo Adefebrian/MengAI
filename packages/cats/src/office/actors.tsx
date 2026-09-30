@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The cats of the office, drawn inside the one scene SVG. The seated cat is
 // the real rig (rig.tsx) with every role x activity beat, so a cat at its
 // desk works exactly like the Cat component. Three more views share the

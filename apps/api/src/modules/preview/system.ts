@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The real ports behind the preview service: Bun.spawn in its own process
 // group (under the engine port guard, lib/engine-guard.ts), a transient
 // listen to test a port, and the OS file manager. The file manager gets an

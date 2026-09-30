@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Global kill switch. Modules register stop hooks at wiring time; trigger()
 // runs every hook at once (a stuck hook cannot delay the others past its
 // timeout), sums what they report, and publishes the `killswitch` event.

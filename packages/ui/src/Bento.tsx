@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Gap-consistent bento grid primitive. One gap value per breakpoint, every
 // card in a grid shares the same corner radius, padding, and border weight;
 // visual weight varies only by span, never by inconsistent chrome.

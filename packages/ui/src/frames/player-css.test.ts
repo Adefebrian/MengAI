@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
@@ -10,7 +12,9 @@ const rules = playerCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
 describe("player.css", () => {
   test("is copied verbatim into ui.css", () => {
-    expect(uiCss.includes(playerCss.trim())).toBe(true);
+    // every file carries its own license header, so the copy is compared without it
+    const body = playerCss.replace(/^\/\* Copyright[\s\S]*?\*\/\n/, "");
+    expect(uiCss.includes(body.trim())).toBe(true);
   });
 
   test("uses tokens only: no gradient, shadow, raw hex, emoji, or long dash", () => {

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Resilience wrapper around any LlmProvider: transient errors (429, 5xx,
 // 529, network, timeout) retried up to 3 times with exponential backoff and
 // jitter, Retry-After honored; context_length, bad_request, auth and

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // In-memory Kv (local mode, and the server fallback when Redis is down).
 // LRU by insertion order of a Map: every read or write moves the key to the
 // end, the oldest key is evicted past maxEntries. TTLs are checked lazily on

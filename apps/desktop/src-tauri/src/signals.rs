@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! kill(2) and killpg(2) for the sidecar. The std library can only SIGKILL a
 //! single child; the shutdown contract needs SIGTERM first and a process
 //! group kill after 3 s (the group also holds the hands helper), plus SIGKILL

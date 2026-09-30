@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Who sits where as the crew changes: desks are handed out by role once,
 // then kept; a hire takes a free desk or the next one, a leaver stays until
 // it has walked out and leaves its desk free, a new crew starts over.

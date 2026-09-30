@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The director on a fake clock: beats play in order per cat, cats who are
 // not involved keep working, every beat reports done once, asks park at the
 // CEO until the answer, meetings seat and release the crew, a new plan

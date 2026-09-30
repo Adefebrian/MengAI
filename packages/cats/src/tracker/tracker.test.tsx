@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // DeliveryTracker: one stop per stage with its pictogram, ticks behind the
 // courier, the returned stop and the Round tag during a loop, the U-turn on
 // a move back, the arrival once, stills under reduced motion, selection

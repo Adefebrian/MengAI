@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The office director: one light scheduler for the whole scene. It owns
 // every cat's place on the floor and plays the story beats as small
 // scripts (stand up, walk the lanes, hand over, sit back down), queued per

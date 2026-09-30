@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Product decision catalog, adapted from the JAL jal-jev catalog. Pure code:
 // each planner turns a DecisionService input into a DecisionPlan with
 //   1. a precheck (hard rules decided in code, JEV is not asked),

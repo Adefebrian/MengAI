@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Preview-only views for the kit preview: live-looking data views of the
 // sample product (a desk air monitor) built from kit roles, and an authored
 // SVG wordmark. No drawn product: a product shot is a real photo or an

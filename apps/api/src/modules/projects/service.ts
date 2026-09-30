@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // ProjectsService: project records bound to a jailed workspace root.
 // Default workspaces live under config.workspacesDir as <slug>-<id8>. In
 // local mode the owner may bind an existing folder instead; it must be a

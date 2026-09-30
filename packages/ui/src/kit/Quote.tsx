@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Quote: one real, attributed quote, carried by type alone (the heading
 // step, the direction's display face). No left rule, no quote-mark glyph
 // as ornament, no card. Real people only: never a stock placeholder name.

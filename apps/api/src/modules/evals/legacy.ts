@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The legacy Briworkers prompt policy, ported from the Go engine so the
 // benchmark replays what legacy actually sent:
 //   - a fixed 2,076-token system prompt and 20 tool schemas (~1,800 tokens) on every call

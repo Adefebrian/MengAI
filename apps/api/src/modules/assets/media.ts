@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Media helpers for the assets module: magic-byte sniffing, the mime
 // allowlist we are willing to serve inline, file extensions, and default
 // per-unit price estimates for cost records.

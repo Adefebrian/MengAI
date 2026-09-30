@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Number, money and time formatting. Figures are en-US grouped and meant
 // to sit in tabular mono (the .num class), so live counts never jitter.
 const INT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });

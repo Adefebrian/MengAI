@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Fakes for the runs tests: a scripted LlmRouter and in-memory stand-ins for
 // every service the orchestrator depends on. Test-only; nothing imports this
 // outside *.test.ts files.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // users and sessions tables (this module only). Session tokens are stored as
 // sha256 hex, never in the clear.
 import { num } from "../../lib/sql";

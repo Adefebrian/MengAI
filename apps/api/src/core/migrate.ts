@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Applies migrations/<dialect>/*.sql in order, once each, recorded in
 // schema_migrations. Used by the server entry, the desktop entry and tests.
 //

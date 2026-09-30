@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Typed env schema for the MengAI API (local sidecar and self-hosted server).
 //
 // Validation is fail-fast but never runs at import time: importing this file

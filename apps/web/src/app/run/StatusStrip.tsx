@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The live figures (JEV ui.region_gate kept at relevance 1.85 once the
 // tracker took over the cat-voice line; container card at low confidence,
 // the primary since neither neighbour is a card): tasks done, cats at

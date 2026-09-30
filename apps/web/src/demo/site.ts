@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What the sample crew built: the warung-kas daily sales report with its
 // new CSV export, as a tiny static site. build.ts writes these files to
 // dist/demo-site/, so Open in new tab has a real page to open, and the

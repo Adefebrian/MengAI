@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // DeliveryTracker model: pure helpers, so the component, the preview and the
 // tests read the same facts. A stop is done before the current one, the
 // current one is active, the rest are to do; a stop the run went back from

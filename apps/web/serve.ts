@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // apps/web/serve.ts - the process entrypoint that actually listens.
 //
 // Deliberately separate from ./server.ts. Bun auto-serves the default export of

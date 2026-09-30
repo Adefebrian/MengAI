@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Live preview and Open folder, from the bundled demo with no API: a
 // shipped run leads with the preview (Start preview, then the frame with
 // its URL, widths, Reload, Open in new tab and Stop, in a sandboxed

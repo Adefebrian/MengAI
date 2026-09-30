@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // events table: append-only log. seq comes from the insert (autoincrement in
 // SQLite, identity in Postgres); data is JSON text.
 import type { EventType, MengaiEvent } from "@mengai/shared";

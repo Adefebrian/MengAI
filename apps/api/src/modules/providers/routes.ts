@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /api/providers and /api/routing. Validation, rate limits and status codes
 // only; every decision lives in the service.
 import { AGENT_ROLES, PROVIDER_CAPS, TIERS, type AgentRole, type ModelRouting, type Tier } from "@mengai/shared";

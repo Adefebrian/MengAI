@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The credit and the license terms, in one place for the landing, the app
 // and the page head (LICENSE, NOTICE and BRAND.md at the repo root are the
 // source of truth). MengAI is source available: the code is

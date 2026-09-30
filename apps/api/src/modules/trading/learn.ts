@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The learning pass: what the data engineer cat does with a venue that just
 // connected, read-only. It reads the tool list, asks for the markets, reads
 // one ticker (trying the symbol forms a venue may use), reads the balances,

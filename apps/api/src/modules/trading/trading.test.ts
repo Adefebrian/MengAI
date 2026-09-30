@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Trading: the paper broker's math, every live-order gate, the risk review,
 // the owner's decision, auto trade, the venue tool, open limit orders, the
 // kill switch, and the routes. A fake venue stands in for the connectors.

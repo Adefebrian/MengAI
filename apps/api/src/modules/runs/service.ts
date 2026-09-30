@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // RunsService: run lifecycle, estimates, snapshots and control. Holds one
 // RunEngine per live run; runs that are not live (paused by a restart) are
 // rebuilt from the tables on the first call that needs them.

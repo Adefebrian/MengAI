@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Dynamic roles: a cat (the CEO or any crew cat) asks for a role the base
 // eight do not name, "Launch tester" or "Accessibility auditor". Runtime JEV
 // orch.role decides whether an existing role fits or a new one is needed and

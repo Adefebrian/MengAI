@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What the tools module needs beyond core/services: the connectors and the
 // trading services (structural, injected by core/container.ts), and the
 // capability context the runs engine adds to a tool call (company, role key,

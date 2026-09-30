@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The footer (kit.footer.inline). JEV ui.region_gate footer kept (0.95,
 // relevance 1.92, plain_spacing 0.94); ui.component_recipe
 // kit.footer.inline (0.85), on the page's center axis since round C

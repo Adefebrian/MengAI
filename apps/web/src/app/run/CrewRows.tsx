@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The crew as rows (JEV ui.region_gate rows 0.82, ui.component_recipe
 // core.list 0.9, the fade-up layer refused at 0.42): one button row per
 // cat, the cat in its pose at the start of each row like the observation

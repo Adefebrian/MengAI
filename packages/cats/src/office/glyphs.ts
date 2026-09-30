@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // reicon.dev outline glyphs (MIT, reicon@1.2.4, Outline weight), the same
 // vendored paths packages/ui ships (koboyo has no key on this machine). Drawn
 // in currentColor inside the office art at 11 to 12 px.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! Process tree of the sidecar, for the quit and force stop sweep.
 //!
 //! The engine starts live previews, runner commands and connectors detached

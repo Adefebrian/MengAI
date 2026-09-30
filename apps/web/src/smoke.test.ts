@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Browser smoke test: does the built SPA actually render in a real browser.
 // Uses puppeteer-core against the OS's installed Chromium/Chrome, never the
 // heavy bundled Puppeteer download. Gated: when no system Chromium and no

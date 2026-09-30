@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // SmoothScroll: Lenis as the page's one smooth scroll, on the one clock.
 //
 //   <Page direction="D9">

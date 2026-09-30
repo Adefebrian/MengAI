@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! Kill switch client: one HTTP/1.1 POST to the sidecar on 127.0.0.1, with the
 //! per-launch control token when the engine issued one (local mode has no
 //! auth, so it may not). Host is the exact loopback address the engine

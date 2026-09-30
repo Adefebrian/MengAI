@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A request that blocks a cat (JEV ui.component_recipe
 // core.notification.actionable; on the run screen it rises in with an.R01,
 // 0.97): the warning surface with one full hairline, an icon and a title

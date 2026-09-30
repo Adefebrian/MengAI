@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Kit preview, page B: the same system in another direction (D3
 // blueprint_hairline by default), with the opt-in motion module on: Lenis
 // smooth scroll on the GSAP clock and KitMotion at tier 3 (split-line

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // HTTP surface for generated assets (mounted at /api/assets). Parse and
 // validate, call the service, shape the response. The file route adds the
 // serving headers (stored mime, nosniff, sandbox CSP) and byte ranges so

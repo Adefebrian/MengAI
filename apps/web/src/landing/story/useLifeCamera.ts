@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The lifecycle floor on a phone (critic round 2, life-375): below 640 px
 // the whole floor is seen through one fixed window, reserved from the first
 // frame, so the floor never grows under a reader as the story adds desks

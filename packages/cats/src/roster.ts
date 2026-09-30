@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The shared crew roster: one name, coat, seed and default role per cat, so
 // every scene that shows a named cat (the landing's stories, the Office
 // preview, the run page) gives the same cat the same coat. Cemong is always

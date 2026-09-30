@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Test helpers for packages/cats: a React root on the happy-dom document,
 // a reduced motion switch, and a controllable IntersectionObserver.
 import { act, type ReactNode } from "react";

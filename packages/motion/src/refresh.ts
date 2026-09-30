@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Scroll measurement refresh: Lenis's limit and every ScrollTrigger's start
 // and end are measured, so they go stale when fonts swap in, when the
 // scroller resizes, or when content changes height (a late image, a

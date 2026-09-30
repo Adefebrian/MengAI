@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Pose and beat model: what the rig shows for a role, a status and an
 // activity. Pure data and pure helpers, no React, so the web app and the
 // tests share one table.

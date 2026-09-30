@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Company kinds, external connectors (MCP and HTTP APIs) and trading. MengAI
 // is a general cat company: the same crew engine runs a software studio or a
 // hedge fund, and any agent can use tools from connectors the owner adds.

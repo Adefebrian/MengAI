@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // OpenAI media adapter (openai_images): gpt-image models through
 // POST /images/generations (base64 output), Sora through /videos jobs.
 // Also hosts the media kit the other media adapters share: guarded binary

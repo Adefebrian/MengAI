@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Settings (/app/settings): the defaults every run starts from and how
 // much the app and the cats move. Regions per JEV ui.region_gate: head
 // plain, budgets card, company divided (2.93; its card primary sat on the

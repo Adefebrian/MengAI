@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The MengAI mark: the official paw logo (packages/ui/src/brand, served at
 // /brand/mengai-logo-192.png, drawn at 28 px) beside the wordmark. Used in
 // the header and the footer. The image is decorative: the wordmark beside

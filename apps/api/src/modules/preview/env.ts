@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The complete environment of a preview process. Built from scratch: PATH,
 // HOME, LANG, PORT, HOST=127.0.0.1, BROWSER=none and NODE_ENV=development,
 // nothing else. Provider keys, the vault and every MENGAI_* variable never

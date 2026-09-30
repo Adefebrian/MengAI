@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Office floor plan: a pure function of the crew, the container width, the
 // variant and the theme, so the scene, the director and the tests share one
 // plan. Units are CSS pixels at the planned width (the world is planned at

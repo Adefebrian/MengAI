@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // apps/web/server.ts - serves the SPA built by build.ts. Plain Hono +
 // hono/bun static serving, no Vite dev server, no Next.js.
 import { Hono } from "hono";

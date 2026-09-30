@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // HTTP API connectors: a base URL, an auth header filled from the vault, and
 // tools. With an OpenAPI 3 document (JSON) each operation becomes a tool
 // with a JSON schema of its path, query and header parameters and its JSON

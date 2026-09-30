@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // ToolsService: role-filtered specs and execution of every non-control
 // tool. Each call: parse and validate args against the spec, check the role
 // may use the tool, run it jailed to the project workspace, redact the

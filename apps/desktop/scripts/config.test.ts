@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Static checks for the desktop shell: config JSON is valid and wired to the
 // sidecar contract, the sidecar file name matches the target triple the api
 // build emits, and the Rust constants agree with packages/shared. No network,
@@ -64,7 +66,7 @@ describe("tauri.conf.json", () => {
     expect(all).not.toContain("*");
   });
 
-  test("macOS signing inputs exist: hardened runtime, entitlements, usage strings", async () => {
+  test("macOS signing inputs exist: hardened runtime, entitlements, credit, no automation permission claims", async () => {
     const mac = (await json("tauri.conf.json")).bundle.macOS;
     expect(mac.hardenedRuntime).toBe(true);
     expect(mac.signingIdentity).toBeNull();
@@ -77,8 +79,10 @@ describe("tauri.conf.json", () => {
       expect(entitlements).toContain(`<key>${key}</key>`);
     }
     const plist = await read("Info.plist");
-    expect(plist).toContain("<key>NSAccessibilityUsageDescription</key>");
-    expect(plist).toContain("<key>NSScreenCaptureUsageDescription</key>");
+    // local computer automation is out of scope, so the app asks for no Accessibility or screen access
+    expect(plist).not.toContain("<key>NSAccessibilityUsageDescription</key>");
+    expect(plist).not.toContain("<key>NSScreenCaptureUsageDescription</key>");
+    expect(plist).toContain("Adefebrian (https://adefebrian.com)");
   });
 });
 

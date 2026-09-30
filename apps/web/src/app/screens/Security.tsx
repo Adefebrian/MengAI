@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Security (/app/security): scan a project, then triage what Cilok found.
 // The page head was dropped by JEV (relevance 1.23), so the title is for
 // assistive tech only. New scan (card) beside the scans (rows, the

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Sequence and Series: time structure. Children of a Sequence see a local
 // frame that starts at 0 on the Sequence's `from`, and are not rendered at
 // all outside its window. Series lays Sequences end to end.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The one clock. gsap.ticker owns the page's only requestAnimationFrame;
 // Lenis advances from it and ScrollTrigger updates from Lenis's scroll
 // event, so tweens, smooth scroll, and every trigger read the same frame

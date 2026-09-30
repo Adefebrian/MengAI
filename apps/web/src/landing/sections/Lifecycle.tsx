@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The lifecycle simulation (custom.lifecycle): one goal grows a whole
 // company, for a software studio or a hedge fund. Scripted, no model calls
 // (story/lifecycle.ts). JEV imm.concept c4 "The door is the company".

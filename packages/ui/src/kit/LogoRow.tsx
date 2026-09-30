@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // LogoRow: real customers or real platforms only, one monochrome treatment,
 // every mark aligned to one height, separated by gap alone (no cell
 // borders). A one-line label names the relationship ("Works with",

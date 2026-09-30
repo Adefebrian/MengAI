@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Records as rows (JAL Core List and Item): one container, rows flush
 // inside it, one hairline between rows, one left content line. A row is
 // one of three item types and a list uses one type: static text, a link

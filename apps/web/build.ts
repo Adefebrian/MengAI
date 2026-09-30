@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // apps/web/build.ts - bundle the React SPA with Bun.build(). No Vite,
 // no webpack, no Next.js: Bun is both the package manager and the bundler.
 //

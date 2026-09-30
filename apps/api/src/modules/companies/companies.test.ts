@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Company templates: the studio stays today's behaviour, the fund names its
 // roles on base archetypes with charters that never give advice, maps the
 // engine's beats onto COMPANY_STAGES.fund (forward only), rebuilds the stage

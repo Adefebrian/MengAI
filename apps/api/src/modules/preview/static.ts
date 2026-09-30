@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Static preview server: a tiny Bun.serve on 127.0.0.1 for projects with a
 // plain index.html. GET and HEAD only; the Host must be 127.0.0.1 or
 // localhost on its own port (a DNS rebinding page cannot read the files);

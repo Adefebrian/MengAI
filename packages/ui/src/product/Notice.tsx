@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Status notice: an icon with its own shape per tone, a title that names
 // the state, a tonal surface and one full hairline on all four sides.
 // Never a side stripe, never a bar, never a shadow.

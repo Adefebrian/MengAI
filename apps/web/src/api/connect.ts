@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Finding the local engine, once per page state. There is nothing to sign
 // in to: the page looks for the engine at each candidate address and uses
 // the first one that answers /api/health. One look at a time: a second

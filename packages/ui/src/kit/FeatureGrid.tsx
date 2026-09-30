@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // FeatureGrid: capabilities presented side by side. One anatomy per item:
 // an optional inline icon on the title row (never a tile above it), the
 // title (the item's only heading), one or two sentences, and per variant a

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A fake MCP server over stdio for the connector tests (bun fake-mcp.ts).
 // Newline-delimited JSON-RPC: initialize, tools/list (two pages), tools/call.
 // Tools: get_price (read), place_order (money), delete_note (destructive),

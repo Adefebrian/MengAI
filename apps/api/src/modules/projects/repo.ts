@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // projects table access. Only this module reads or writes `projects`.
 import type { Db } from "../../core/ports/db";
 import { num } from "../../lib/sql";

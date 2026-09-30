@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Which run changed a file. The tools module wraps each tool execution in
 // runWithFileOrigin(), so every file.changed event published while that call
 // runs (including writes made by services it calls) carries the run, agent

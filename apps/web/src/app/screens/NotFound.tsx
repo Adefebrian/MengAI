@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import { EmptyState } from "@mengai/ui/src/product";
 import { Link } from "../../router";
 import { Page, PageHead } from "../ui";

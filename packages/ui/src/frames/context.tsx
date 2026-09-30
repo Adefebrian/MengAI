@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Frame context: the only source of time inside a composition. Components
 // read the current frame with useCurrentFrame() and derive every visual
 // value from it. Nothing inside a composition may keep its own clock.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Read-only file viewer: the path and size above, the text in mono with
 // line numbers from a CSS counter, and one scroller in both directions, so
 // long lines scroll inside the view and never widen the page.

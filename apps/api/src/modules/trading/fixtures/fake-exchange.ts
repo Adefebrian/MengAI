@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A fake exchange MCP server over stdio for the venue tests (bun fake-exchange.ts).
 // Newline-delimited JSON-RPC: initialize, tools/list, tools/call. It checks
 // what a real exchange server would: the exchange id from its env, symbols in

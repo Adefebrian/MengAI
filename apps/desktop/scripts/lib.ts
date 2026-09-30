@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Shared helpers for the desktop build and dev scripts. Bun only.
 import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, readdir, rm } from "node:fs/promises";

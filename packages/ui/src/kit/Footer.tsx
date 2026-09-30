@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Footer: one archetype from the directions.md chrome table, named in the
 // direction contract. Never the default four-column Product, Company,
 // Resources, Legal block with a social row.

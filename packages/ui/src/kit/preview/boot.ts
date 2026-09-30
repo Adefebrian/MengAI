@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Shared boot for both preview pages: the direction from ?d=, and ?reduce=1
 // to preview reduced motion without an OS switch (it answers the reduced
 // motion query as matching for every script on the page, before any runs;

@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // tools/migrate.ts - minimal SQL migration runner for Postgres.
 //
 // Migrations live in migrations/*.sql, one file per migration, named

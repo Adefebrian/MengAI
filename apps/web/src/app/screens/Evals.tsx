@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Evals (/app/evals): the proof that the v2 context policy bills fewer
 // input tokens than legacy on the same scenarios. Head as a divided
 // section (JEV runner-up, the card primary matched its neighbour), then

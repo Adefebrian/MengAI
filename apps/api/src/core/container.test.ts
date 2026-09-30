@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Integration tests for the composition root: embedded migrations, runner
 // choice, every route in @mengai/shared Routes mounted under a session, and
 // the scripted demo crew driving a full run through the real orchestrator,

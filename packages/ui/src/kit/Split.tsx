@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Split: one statement beside one piece of proof, on asymmetric spans of
 // the 12 columns (text/media: 5/7, 7/5, 4/8, 8/4). The media slot takes a
 // MediaFrame, a live product fragment built from JAL components, or a

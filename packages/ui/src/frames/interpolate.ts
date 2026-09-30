@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // interpolate(): map a frame (or any number) through piecewise-linear
 // ranges, optionally eased per segment. Pure and deterministic, so every
 // composition is a function of the frame and nothing else.

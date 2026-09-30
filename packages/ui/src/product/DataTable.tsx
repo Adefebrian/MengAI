@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A real <table> on the Carbon DataTable anatomy in JAL Core: header row in
 // meta type, tabular mono for numbers, one hairline between rows, product
 // density from 1024px. Below 768px every row stacks into label and value

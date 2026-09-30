@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Eval harness: replays a fixture suite under the legacy and v2 prompt
 // policies through the injected ContextService, persists one eval_runs row
 // per policy and returns the savings on billable input tokens.

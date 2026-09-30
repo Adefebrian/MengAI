@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The venue desk: trading venues (an exchange or broker MCP server or API),
 // the learning pass after each connect, and what execution needs from a
 // learned venue (its price tool, its order tool and the arguments in the

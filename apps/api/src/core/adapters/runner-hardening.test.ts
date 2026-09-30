@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Regression tests for runner hardening: the workspace root cannot be
 // swapped for a symlink, git hooks and config stay protected when .git is
 // renamed or nested, .mengai is never created or written through a symlink,

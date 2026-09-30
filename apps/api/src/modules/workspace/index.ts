@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // workspace module: jailed file operations (service only, no routes, no tables).
 // Public surface: the factory, plus runWithFileOrigin so the tools module can
 // attribute file.changed events to the tool call that caused them, and the

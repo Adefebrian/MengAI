@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Process execution port for agent shell commands. The local adapter jails
 // every command with a Seatbelt profile (writes only inside writablePaths,
 // no reads of ~/.ssh, keychains or the app data dir, network only when

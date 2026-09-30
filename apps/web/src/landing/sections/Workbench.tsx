@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What you watch in the app (kit.bento.lead-left, JEV 0.98; tier 2 through
 // mu.R10 typing, choreography reveal): the code editor typing a real change
 // as the lead tile, the live timeline, Oyen's decision log and the minutes

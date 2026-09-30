@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Approvals (/app/approvals): what waits on the owner right now, and what
 // was decided before. The engine's approval path in this build is the live
 // order: a trader cat proposes it, the risk manager reviews it, and it

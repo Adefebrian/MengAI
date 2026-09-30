@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // S3-compatible blob store over Bun's built-in S3Client (server mode).
 // Keys go through the same validation as the fs store.
 import { S3Client } from "bun";

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // memory module public API: mounted at /api/memory, service handed to the
 // runs and tools modules through core/container.ts.
 import type { MountedModule, ModuleContext } from "../../core/module";

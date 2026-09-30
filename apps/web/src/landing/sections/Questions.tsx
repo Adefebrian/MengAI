@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Plain answers, with a smile (kit.faq.split). JEV ui.region_gate faq kept
 // (2.00, container rows 0.70); ui.component_recipe kit.faq.split (0.20,
 // low confidence, the top pick kept); tier 0. Nine short pairs as native

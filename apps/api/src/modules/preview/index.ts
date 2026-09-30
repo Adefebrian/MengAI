@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // preview module: Live preview (a project's dev script or static
 // index.html on 127.0.0.1:4300-4399) and Open folder, local engine only.
 // Service only: the projects module owns /api/projects/:id/preview and

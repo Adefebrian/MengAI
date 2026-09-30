@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The engine gate: with MengAI not running, /app shows the onboarding in
 // the cat voice (download the beta, open it, the page connects by itself,
 // or bun run dev) and keeps looking every 2 s; the moment the engine

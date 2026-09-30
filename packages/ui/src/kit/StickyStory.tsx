@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // StickyStory: a scroll story. At 1024 and up the whole story pins, the
 // viewport less the header: the steps (columns 1 to 5), each sized to its
 // content and a group gap apart, center as one dense list beside a sticky

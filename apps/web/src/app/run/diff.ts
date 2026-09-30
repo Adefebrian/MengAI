@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A readable word diff between two versions of a short text (a strategy
 // addendum is 120 tokens at most): the longest common subsequence over
 // words, whitespace kept with the word before it, so the parts read back

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Sheet and Drawer on the native <dialog> top layer: surface, one
 // border-strong hairline, the flat ink scrim, never a shadow. Below 640px
 // both are a bottom sheet (28 top corners, safe-area bottom). From 640px a

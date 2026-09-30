@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Composition: renders one frame of a frame-driven piece on a stage that
 // keeps the authored aspect ratio and scales the authored pixel canvas to
 // the container width. It has no clock; Player drives `frame`.

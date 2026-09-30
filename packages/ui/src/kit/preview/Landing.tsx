@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Kit preview, page A: a tidy product landing composed only from the kit,
 // with the kit's own zero-dependency motion (quiet entrances, count-up).
 // Sample product and sample content (a desk air monitor); not the app's

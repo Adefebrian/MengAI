@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Anthropic Messages adapter (anthropic_messages presets). Native prompt
 // caching: cache_control on the system block and the last tool when
 // cacheSystem, and on every message flagged cacheBreakpoint, never more than

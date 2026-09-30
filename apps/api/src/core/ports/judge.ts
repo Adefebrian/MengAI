@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // JEV decision port (POST https://api.typesafe.ai/v1/systemone). The jev
 // module owns the catalog, prechecks, thresholds and fallback; this port is
 // only the transport. Answer shapes follow the JEV API: choice answers carry

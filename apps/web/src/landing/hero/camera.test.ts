@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import { describe, expect, test } from "bun:test";
 import { CLOSE_MAX, PLAN_THREE, PLAN_TWO, TARGET_ZOOM, cropFor, cropRows, deskRows, focusShot, planWidthFor, sameShot, transformOf, union, wideShot } from "./camera";
 import { OPENING_NOTES, feedAt } from "../story/script";

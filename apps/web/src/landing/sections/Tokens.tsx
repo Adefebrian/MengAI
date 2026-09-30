@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Token efficiency (kit.stat-row.chart; critic fix round 2: the bento's
 // stat tiles carried an 80 px empty band between figure and caption, so
 // the figures now sit as a stat row sized to their content beside the

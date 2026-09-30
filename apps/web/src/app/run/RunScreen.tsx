@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The run page, the core of MengAI: the cat company at work on one goal.
 // Structure (JEV ui.region_gate, every region kept; containers in the
 // comments of each part): the run tracker pinned on top (the stages of the

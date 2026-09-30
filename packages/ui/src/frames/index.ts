@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // JAL frame core: frame-driven compositions played live in the browser.
 // Remotion's model (a picture is a pure function of the frame), rebuilt
 // natively with zero dependencies. Never install Remotion.

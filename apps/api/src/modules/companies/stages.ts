@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Tracker stages per company kind. The engine reports its studio beats (goal,
 // planned, hired, working with the task that started, review, testing,
 // shipped); a template maps them onto its own stages. The fund tracker moves

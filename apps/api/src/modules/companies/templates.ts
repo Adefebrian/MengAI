@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Company templates. MengAI is a general cat company: the same crew engine
 // runs a software studio (the default, today's behaviour) or a hedge fund.
 // A template names the CEO's title, the specialist roles (dynamic roles on

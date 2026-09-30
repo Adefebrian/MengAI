@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What the connectors module exposes and what it needs. The service is
 // injected by core/container.ts into the tools bridge and the trading
 // module; the process port below keeps Bun.spawn out of the service so the

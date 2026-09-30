@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Scripted LLM doubles for tests and the integration wave (replaying the real
 // orchestrator with no network). ScriptedProvider implements the LlmProvider
 // port: it answers from a script, meters every prompt with the same counting

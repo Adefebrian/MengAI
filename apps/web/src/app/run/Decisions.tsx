@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // JEV decisions (JEV: card, ui.component_recipe core.list.meter): a summary
 // line, then one row per decision with the catalog id in mono, the action
 // the engine took, the confidence as a tabular percent beside a short

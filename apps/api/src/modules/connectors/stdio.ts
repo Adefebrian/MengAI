@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // MCP stdio servers (local mode only). The command line is split without a
 // shell (no pipes, globs or expansion), the child gets an environment built
 // from scratch (PATH, HOME, LANG, TMPDIR, TERM) plus the owner's connector

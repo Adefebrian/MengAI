@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // ConnectorsService: the owner's MCP servers and HTTP APIs, their tools, and
 // the calls into them. Secrets go to the vault ("connector:<id>") and the
 // redactor, never back out. MCP stdio servers are local mode only and run as

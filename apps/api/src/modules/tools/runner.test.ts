@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Runner adapter tests (core/adapters/runner-plain.ts and runner-seatbelt.ts).
 // They live here because the tools module is the runner's only caller.
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";

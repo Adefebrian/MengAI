@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Live preview and Open folder: detection order, the minimal env, URL
 // parsing, the ring buffer, the process lifecycle with a fake spawner and a
 // fake probe fetch (ready, fallback port, exit, timeout, install), the cap

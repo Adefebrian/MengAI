@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Local automation port, backed by the services/hands Rust helper over
 // stdio JSON-RPC (contract in @mengai/shared/hands). Only the automation
 // module may call it, and only after its permission gate says yes.

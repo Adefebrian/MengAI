@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Run header (JEV ui.component_recipe core.page_header, plain spacing): the
 // goal as the page title, one meta line (status icon plus word, the
 // stream, the project, crew size, the start clock), and the run controls:

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // HTTP layer of the auth module. Server mode: the session cookie (HttpOnly,
 // SameSite=Strict, Secure, Path=/, 30 days, re-sent when the expiry slides
 // forward). Local mode reads no cookie and no header: every request that

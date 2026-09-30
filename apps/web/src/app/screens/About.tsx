@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // About (/app/about): who built MengAI, under which license (source
 // available, PolyForm Noncommercial 1.0.0, commercial use by permission), what runs,
 // and how this browser reaches it. Head plain (the card runner-up would box

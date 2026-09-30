@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Everything the run screen reads, in one hook: the live state (the demo
 // player or the REST snapshot plus the SSE stream), the call log for usage
 // per cat, the full event log for the replay of a finished run, the run

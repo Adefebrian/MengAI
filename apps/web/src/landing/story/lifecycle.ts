@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The lifecycle story: one goal grows a whole company, played by the full
 // Office floor (@mengai/cats, office-contract.ts) under the landing's
 // progress tracker and the what-is-in-its-head card. Two companies, one

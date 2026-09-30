@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Renders the MengAI app mark (flat cat head, white tile, no gradients) to
 // PNG with a tiny zero-dependency rasterizer, then lets the Tauri CLI derive
 // the macOS icon set. Run: bun run scripts/icons.ts

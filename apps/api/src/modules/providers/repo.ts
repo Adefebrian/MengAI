@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // providers repo: the providers table, plus the single "routing" row in the
 // settings table (the tier routing contract stores ModelRouting there).
 // The key itself never touches these tables: only key_ref and a 4 char hint.

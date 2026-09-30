@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! MengAI macOS shell (Tauri 2).
 //!
 //! Spawns the compiled Bun API sidecar, waits for its ready line, opens the

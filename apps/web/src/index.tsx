@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { CONSOLE_CREDIT } from "./credit";

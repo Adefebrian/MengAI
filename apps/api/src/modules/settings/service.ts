@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // SettingsService: defaults merged with stored overrides. Every module reads
 // settings through this service (injected by the container).
 import type { OwnerSettings } from "@mengai/shared";

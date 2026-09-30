@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The unlimited org: who hires whom, why, and when a struggling cat is let
 // go. Any cat can hire a helper at any depth; the owner's maxAgents and
 // maxDepth (0 = unlimited) and the run budget bound it, the scheduler's

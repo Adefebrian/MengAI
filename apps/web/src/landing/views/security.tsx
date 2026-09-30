@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The security views (sections/Security.tsx; critic fix round 2: real app
 // views on labelled sample data instead of icon cells). Each is the app's
 // own control in small, and each carries its state change once (JEV

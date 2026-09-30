@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! Main window on the sidecar origin, pinned there.
 //!
 //! The window loads http://127.0.0.1:<port>/app straight from the engine (local

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The crew's coats, one rule everywhere a cat is drawn: the lead (Oyen by
 // default) is always the ginger tabby, the landing and the roster's CEO, and
 // no two cats in one crew wear the same coat. The server assigns looks this

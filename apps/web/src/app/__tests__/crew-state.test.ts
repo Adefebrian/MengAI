@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Critic round 2: one coat per cat with the CEO pinned ginger, desk plates
 // and monitors fed from the same task state as the strip, meeting seats
 // from the live crew, the version history in version order.

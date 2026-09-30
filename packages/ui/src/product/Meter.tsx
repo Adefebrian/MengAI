@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A determinate meter: a label, the value as text, and a flat 4px track
 // whose ink fill scales from the start edge (transform only, no width
 // tween). The track itself is the ARIA meter, so no hidden element sits

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Shared test kit for every module: an in-memory SQLite Db with the real
 // migrations applied, a deterministic clock, and in-memory fakes for the
 // kv, vault, event sink and logger ports. Import from "../../testing".

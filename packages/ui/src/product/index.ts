@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // MengAI product components on JAL Core (styles in ./product.css, import
 // after tokens.css, ui.css and kit.css). No shadows, gradients, side
 // lines or emoji; every status is an icon plus a word.

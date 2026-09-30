@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // In-page anchors through Lenis. A same-page "#id" link scrolls with Lenis
 // (the page's one scroll owner) to the target minus the sticky header, on
 // the standard curve, instantly under reduced motion, then moves focus to

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Usage (JEV ui.component_recipe core.table, layer an.R36 0.76): four
 // tiles of one shape (tokens of budget, cache hit rate, cost, calls) with
 // figures in tabular mono at a modest step, never a giant number, each

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // KitMotion: GSAP upgrades of the kit's own motion, as one leaf component.
 // It takes over from the kit's IntersectionObserver layer (it sets
 // data-motion-engine="gsap" on .kit-page before the kit arms), so there is

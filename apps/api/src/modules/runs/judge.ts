@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The product's runtime brain decisions, asked of JEV through the Judge port
 // (the owner's jev key): the same plan shape as the jev module's catalog.
 //   prompt.adopt  adopt, keep or merge a candidate strategy addendum, from its offline evaluation

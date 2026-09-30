@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The preview's scripted timeline: a pure function of the tick, so the board
 // is reproducible. Eight steps per cycle; every cat plays its own role's
 // scenarios: Oyen plans and hands the settings task to Belang, Belang builds

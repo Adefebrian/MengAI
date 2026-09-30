@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Module wiring contract. Every domain module exports one factory from its
 // index.ts: `createXModule(ctx, deps) => MountedModule & { service }`.
 // core/container.ts builds the ports for the current mode, then creates the

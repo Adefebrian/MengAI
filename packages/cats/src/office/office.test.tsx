@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The Office component: every cat gets its own desk and floor actor at
 // every crew size, desks are selectable buttons with honest names, reduced
 // motion and `still` render no motion at all and write beats out, the hero

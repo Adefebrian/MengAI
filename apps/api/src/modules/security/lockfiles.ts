@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Lockfile parsers: text in, (name, version) pairs out. Pure functions, no
 // IO, tolerant of malformed input (a broken lockfile yields fewer packages,
 // never a thrown scan). Only exact resolved versions are returned; workspace,

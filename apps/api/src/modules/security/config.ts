@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Configuration review: Dockerfiles, compose files, CORS wildcards, cookies
 // without HttpOnly, debug flags and .env files that git does not ignore.
 // Line-based heuristics on purpose (no YAML or AST dependency); each rule

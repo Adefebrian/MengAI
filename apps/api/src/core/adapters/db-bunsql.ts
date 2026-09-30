@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Db port over Bun.SQL. The same tagged-template API serves SQLite (local
 // mode, tests) and Postgres (server mode). Postgres returns int8 columns as
 // strings: repos must read numbers through lib/sql num().

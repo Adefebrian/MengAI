@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The live store as the Office scene's props (packages/cats office-contract).
 // Pure functions only, so the run page, the replay and the tests read the
 // same shapes: the crew at its desks (energy, the file on each monitor, the

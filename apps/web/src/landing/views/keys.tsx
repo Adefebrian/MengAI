@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The keys view (sections/Keys.tsx; critic fix round 2: the feature list of
 // icon glyphs became one app view on labelled sample data, as the security
 // bento does). The app's Providers, Connectors and Trading settings in

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // usage service: cost math with the owner's price overrides, llm_calls
 // persistence and the aggregated report. No Hono here.
 import { DEFAULT_PRICES, costUsd, type LlmCallDTO, type ModelPrice, type UsageReport } from "@mengai/shared";

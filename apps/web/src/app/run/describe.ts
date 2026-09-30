@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // One timeline line per event worth reading. Tool calls are folded into
 // their results (the result carries the call's target), usage ticks and
 // routine status changes are left out, so the timeline stays a record of

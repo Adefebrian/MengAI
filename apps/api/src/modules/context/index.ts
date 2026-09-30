@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // context module public API. Service only (no routes): the runs module and
 // the evals harness receive `service` through core/container.ts.
 import type { MountedModule, ModuleContext } from "../../core/module";

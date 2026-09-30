@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Session guard and control-token check used by core/app.ts. The auth module
 // implements SessionAuth: server mode reads the session cookie; local mode has
 // no login and no token, so every request that passed the local guard (Host,

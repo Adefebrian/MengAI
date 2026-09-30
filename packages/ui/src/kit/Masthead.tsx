@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Masthead: the hero, and the only place the display role appears (one
 // display element per page). Display headline (the page h1), one lead line,
 // a primary action and at most one secondary, then the variant's proof or

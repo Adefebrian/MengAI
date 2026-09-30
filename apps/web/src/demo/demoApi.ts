@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Demo mode's server: an in-memory fetch that answers the same Routes the
 // real API serves, with sample data, so every screen renders the real
 // client path (ApiClient, errors, CSRF header) with no network at all.

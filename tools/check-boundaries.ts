@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Enforces the module boundaries described in skills/jal-architecture:
 //   - a module may only reach a sibling module through that sibling's
 //     index.ts (never a deep import into its internals)

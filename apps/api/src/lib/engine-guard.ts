@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Engine guard: the crew's own processes never reach the engine's port.
 //
 // The local engine has no login, so any process on the Mac that can open a

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Cat identity: a stable look and a friendly Indonesian name for every agent.
 // Pure and deterministic, so the API (which assigns names) and the web app
 // (which renders coats) always agree for the same agent id.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Line icons from reicon.dev (MIT, reicon@1.2.4, Outline weight), the
 // documented fallback: koboyo has no key on this machine (see the build
 // report). Each glyph is the vendored 24 by 24 outline, drawn in

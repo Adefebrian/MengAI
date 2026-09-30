@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The bundled demo run: a scripted event log in the exact wire shape of
 // /api/events, for /app/runs/demo?demo=1, the ui_audit pass and the
 // landing replay. Six cats, two handoffs to the reviewer, one review round

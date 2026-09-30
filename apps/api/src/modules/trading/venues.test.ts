@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Trading venues: a preset becomes a connector (secrets in the vault, mode
 // flags on the command), the data engineer's read-only learning pass, the
 // crew-wide skills and the memory layer notes, paper orders priced through

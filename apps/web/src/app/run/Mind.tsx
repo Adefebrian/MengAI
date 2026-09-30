@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What is in one cat's head (JEV ui.region_gate divided section inside the
 // cat drawer; ui.component_recipe core.divided_section 0.61, with the an.R22
 // disclosure layer at 0.62 and the mu.R01 fade-up at 0.63; motion tier 1).

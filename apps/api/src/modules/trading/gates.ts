@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The live-order gate. Every rule is mechanical; the first one that fails is
 // the reason the order waits. Conservative defaults: paper mode, and a max
 // order size or a daily loss limit of 0 blocks live orders (JEV

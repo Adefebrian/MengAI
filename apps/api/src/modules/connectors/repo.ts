@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // connectors table. The secret itself is never here: secret_ref points into
 // the vault and key_hint keeps the last 4 characters for recognition.
 import type { AgentRole, ConnectorKind, Risk } from "@mengai/shared";

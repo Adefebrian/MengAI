@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // One cat up close (JEV: card, ui.component_recipe core.panel.swap at
 // 0.82). The CatCard is the card: the cat on its cushion, who it is, what
 // it does, the task and the energy used. Under it, on the page ground: the

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Token estimator: chars divided by a per-model chars-per-token ratio. Every
 // model starts at 4.0 and self-calibrates from the prompt size the vendor
 // reports (exponential moving average of actual over estimated). Layout caps

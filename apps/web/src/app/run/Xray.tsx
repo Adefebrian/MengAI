@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Context X-ray (JEV: card, ui.component_recipe core.list 0.79 with layer
 // an.R36 0.73): pick a cat, see what fills its prompt. The prompt against
 // its budget as one meter, then one row per layer, stable layers first:

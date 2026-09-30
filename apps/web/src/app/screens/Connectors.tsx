@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Connectors (/app/connectors): the outside tools the crew may use, MCP
 // servers (a local command or a remote URL) and HTTP APIs. Regions per JEV
 // ui.region_gate: head plain (1.84), connectors as rows (2.93), the add

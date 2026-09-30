@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Easing functions for the JAL frame core. Every function maps [0, 1] to
 // [0, 1] with f(0) = 0 and f(1) = 1. There is deliberately no bounce,
 // elastic, or back easing here: JAL motion law bans overshoot. `Easing.jal`

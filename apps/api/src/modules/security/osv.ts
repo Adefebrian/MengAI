@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // OSV client (https://osv.dev). Sends only package names, versions and
 // ecosystems; never file contents, paths or project names. Callers must
 // check network consent before calling. fetch is injected so tests never

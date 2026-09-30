@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Cat-voice status lines for agent.status. Every line is built from the tool
 // name and a few safe argument fields (a file name, a command word, a host,
 // a short query), never from tool output, then redacted and clipped to

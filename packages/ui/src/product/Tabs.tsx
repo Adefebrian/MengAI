@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Tabs (JAL Core): 44 tall, selected = layer-2 fill + weight 600 + ink,
 // one full-width hairline under the list, never an underline or a stripe.
 // One tab stop; Left and Right move focus, Home and End jump, Enter or

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Security scanning of the owner's own workspace (defensive only). One pass
 // over the jailed file tree feeds three scanners (lockfile deps + OSV,
 // committed secrets, config review); findings are fingerprinted, deduped,

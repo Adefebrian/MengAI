@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Motion module (opt-in): Lenis smooth scroll on the GSAP clock, plus GSAP
 // upgrades of the kit's own motion. Copy into packages/motion; see README.md.
 export { SmoothScroll, useLenis, useScrollRefresh, useLenisStop } from "./SmoothScroll";

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Shared icon wrapper. Every icon in the product renders through this
 // component so size, stroke width, and color token are enforced centrally,
 // never per usage.

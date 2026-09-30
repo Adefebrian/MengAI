@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Status as an icon plus a word, never color alone and never a dot. The
 // pill variant sits on a status-tinted fill (Badge spec); the plain variant
 // is the icon in the status tone beside an ink word, for dense rows.

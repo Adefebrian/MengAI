@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Image and video generation port (BYOK). Adapters: openai_images,
 // gemini_media, fal_queue, replicate. Video is always an async job.
 import type { ProviderProtocol } from "@mengai/shared";

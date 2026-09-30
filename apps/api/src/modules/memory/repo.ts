@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // memory repo: lessons, lesson_uses, skills, and the run_digest rows of
 // summaries. Portable SQL only (Bun.SQL on SQLite and Postgres): every
 // ${value} is a bound parameter, optional filters use cast(x as text) so

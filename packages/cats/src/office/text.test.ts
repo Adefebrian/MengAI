@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Text in the art: chips and plates never end in an ellipsis mid-word.
 // A task's short title keeps two or three content words, a chip falls back
 // to the verb and its head noun, a meeting's title to its kind.

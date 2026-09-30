@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Page, Section, SectionHead, Figure: the frame every kit composition sits in.
 //
 // Page      the root. Carries data-direction (D1 to D13, or a project's own

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What the preview module exposes and what it needs. The service is
 // injected by core/container.ts into the projects module, which owns the
 // /api/projects/:id/preview and /reveal routes and hands over the project's

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 import { describe, expect, test } from "bun:test";
 import { CAT_NAMES } from "@mengai/shared";
 import { COMPANIES, COMPANY_KINDS, FUND, HEAD_KEYS, LIFE_LABEL, STUDIO, TRACKER_STOP_ID, cellsAt, lifeAt, lifeBeats, lifeEnergy, lifeLabel, meetingStep, roomOf, stageWords, trackerAt, type Company } from "./lifecycle";

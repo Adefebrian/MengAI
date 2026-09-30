@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // HTTP surface for security scans (mounted at /api/security). Parse and
 // validate, call the service, shape the response. No business logic here.
 import { FINDING_STATUSES, SCAN_KINDS, SEVERITIES } from "@mengai/shared";

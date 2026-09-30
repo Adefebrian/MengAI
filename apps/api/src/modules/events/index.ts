@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // events module: append-only event log, EventSink for every other module,
 // SSE stream with Last-Event-ID replay. Public surface only.
 import type { ModuleContext, MountedModule } from "../../core/module";

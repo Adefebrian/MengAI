@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // usage module: owns llm_calls, prices and cost math. Mounted at /api/usage.
 import type { MountedModule, ModuleContext } from "../../core/module";
 import { usageRoutes } from "./routes";

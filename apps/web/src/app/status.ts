@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Every status the app shows, as a tone, an icon and a word. Meaning never
 // rides on color alone.
 import type { GlyphName, StatusTone } from "@mengai/ui/src/product";

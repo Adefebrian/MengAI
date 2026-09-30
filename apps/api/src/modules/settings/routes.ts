@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // GET /api/settings, PATCH /api/settings. Validation only, no logic.
 import type { OwnerSettings } from "@mengai/shared";
 import { Hono } from "hono";

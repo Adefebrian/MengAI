@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Home (/app): what is live, a new run with its estimate and budget beside
 // the runs it creates, the projects the crew may touch (each with Open
 // folder, and an add form under them: the engine has no native folder

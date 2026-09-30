@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Committed credential detection: provider-shaped rules first, then a
 // generic "secret-looking name = high-entropy literal" rule. Every finding
 // carries only a masked value; the raw match never leaves this function.

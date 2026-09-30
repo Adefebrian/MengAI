@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Image and video generation (BYOK). The provider comes from MediaRouter,
 // bytes land in the blob store under assets/<id>.<ext>, an optional copy
 // goes into the workspace assets/ folder through the workspace jail, cost is

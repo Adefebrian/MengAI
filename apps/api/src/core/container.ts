@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Composition root. Builds the ports for the mode, applies migrations, then
 // creates every module in dependency order (docs/architecture.md section 17)
 // and mounts them through core/app.ts. Cross-module wiring happens only here:

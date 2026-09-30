@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The run tracker, pinned at the top of the run page like tracking an
 // order in a delivery app: the DeliveryTracker from @mengai/cats (the CEO
 // cat rides a flat route through the stages of the company kind, studio or

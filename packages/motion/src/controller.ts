@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The smooth-scroll lifecycle as plain logic: when Lenis exists, what it is
 // given, and what is torn down. SmoothScroll feeds it the real Lenis, gsap
 // ticker, and ScrollTrigger; the tests feed it fakes. No React, no browser.

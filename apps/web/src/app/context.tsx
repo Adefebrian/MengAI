@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What every app screen shares: the API client (the local engine or the
 // demo server), the engine it came from, the owner settings, and the local
 // cat motion choice. There is no session: nobody signs in to anything.

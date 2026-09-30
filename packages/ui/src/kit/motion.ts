@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The kit's zero-dependency motion layer (T0 CSS plus T1 IntersectionObserver).
 //
 // Markup carries intent only: data-motion="rise" on a block (a section head,

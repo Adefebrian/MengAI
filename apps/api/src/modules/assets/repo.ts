@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Persistence for generated assets. Owns the assets table only.
 import type { AssetDTO, AssetKind, AssetStatus } from "@mengai/shared";
 import type { Db } from "../../core/ports/db";

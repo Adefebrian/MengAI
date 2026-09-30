@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Plain process runner (Linux containers, server mode) and the shared exec
 // core the Seatbelt runner builds on. Every command gets an env built from
 // scratch (PATH, HOME = workspace, TMPDIR inside the workspace, LANG, TERM;

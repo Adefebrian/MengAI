@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Plays a scripted story on one timer: the current step, the play count,
 // and the queue of one-shot beats the Office scene drains through
 // onBeatDone. One player serves both stories on the page: the hero's day

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The proof strip under the hero (kit.logo-row.row, attached). JEV
 // ui.region_gate hero_logos kept (relevance 1.75; divided_section 0.34 low,
 // it matches the lifecycle band below, so the runner-up plain_spacing, the

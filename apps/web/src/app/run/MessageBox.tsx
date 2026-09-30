@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Message the CEO cat (JEV: core.composer): one 44px field and Send on one
 // row, a reserved status line under it, so the confirmation never moves
 // the page. It sits pinned at the foot of the company feed.

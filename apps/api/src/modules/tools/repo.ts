@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // tool_calls table: one row per executed (non-control) tool call, args and
 // output already redacted by the service before they get here.
 import type { ToolCallDetail } from "@mengai/shared";

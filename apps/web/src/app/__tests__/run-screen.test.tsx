@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The run page renders the cat company at work from the bundled demo, with
 // no API: the office with every cat, the status line in cat voice, the
 // meetings and CEO calls, the code editor on the file the crew touched

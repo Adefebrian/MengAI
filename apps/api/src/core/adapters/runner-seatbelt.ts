@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // macOS runner: every agent command runs under sandbox-exec with a profile
 // generated per call. The profile denies by default, allows reading the OS
 // and toolchains, allows writes only strictly inside writablePaths (the

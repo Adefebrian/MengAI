@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // REST contract: request bodies and response shapes per route. The API
 // validates every body with zod against these shapes; the web client is a
 // thin typed fetch wrapper over the same types. Errors are always

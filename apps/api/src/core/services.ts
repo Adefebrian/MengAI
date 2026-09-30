@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Cross-module service contracts. A module that needs another module's
 // behavior depends on the interface here and receives the implementation
 // from core/container.ts (dependency injection). The implementing module

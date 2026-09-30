@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // PricingTable: Carbon-structured pricing. Two to four plans in the
 // hairline cell grid, one anatomy each: name (the plan's heading), price in
 // tabular mono with its unit and period, one summary line, the included

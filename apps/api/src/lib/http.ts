@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Route helpers shared by every module: one error shape, zod body parsing,
 // typed ids. Handlers throw HttpError; core/app.ts turns it into JSON.
 import type { Context } from "hono";

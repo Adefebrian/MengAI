@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Cats preview: the crew board on a scripted timeline that cycles every
 // scenario (each role plays its own work beats, with handoffs, a catch, an
 // error, a stop, approvals, done, and a budget running low), the scenario

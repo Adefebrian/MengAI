@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Minimal JSON Schema validator for the subset the tool specs use: object
 // (properties, required), string (enum, minLength, maxLength), integer and
 // number (minimum, maximum), boolean, array (items, minItems, maxItems).

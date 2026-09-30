@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Relational database port. One tagged-template API for both dialects
 // (Bun.SQL speaks SQLite locally and Postgres on the server). Modules write
 // portable SQL: TEXT ids, BIGINT epoch-ms timestamps, JSON stored as TEXT,

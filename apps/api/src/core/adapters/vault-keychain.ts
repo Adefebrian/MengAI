@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Local mode vault: the macOS keychain through Bun.secrets. Service is the
 // app bundle id, the account name is the secret ref. Values handed out are
 // registered with the redactor so any echo of them is scrubbed.

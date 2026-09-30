@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Provider-agnostic chat port. Two adapters implement it: openai_chat (every
 // OpenAI-compatible vendor) and anthropic_messages (native cache_control).
 // The context module owns prompt layout; adapters only translate it.

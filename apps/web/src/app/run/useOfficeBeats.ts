@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The beat queue behind the Office scene. Every new event in the shown
 // state (the live stream, or the replay stepping forward) is folded from the
 // state before it, so a beat sees the transition that started it. The first

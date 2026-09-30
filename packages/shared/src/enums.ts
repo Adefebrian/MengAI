@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Closed vocabularies shared by the API, the web app, the desktop shell and
 // the cat renderer. Every list is a const tuple so the union type and the
 // runtime list can never drift apart.

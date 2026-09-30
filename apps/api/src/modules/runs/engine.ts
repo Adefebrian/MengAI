@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // One async controller per run: the scheduler, the agent loop, handoffs, the
 // review loop, guards, budgets, mood and every state change the UI renders.
 // The engine is the single writer of its run's agents and tasks while it is

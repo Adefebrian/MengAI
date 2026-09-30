@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The preview borrows react-dom from the workspace web app (packages/ui has
 // no react-dom dependency). build.ts resolves this alias at bundle time.
 declare module "@kit-preview/react-dom-client" {

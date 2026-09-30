@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // providers module: CRUD over HTTP, key hygiene (vault only, never in a DTO,
 // row or log line), SSRF guard, connection test, tier routing with the
 // gpt-4o-mini default, media routing and the JEV binding. Fetch is mocked.

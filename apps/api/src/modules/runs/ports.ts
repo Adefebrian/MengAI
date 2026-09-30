@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What the runs module needs from the rest of the monolith. Every entry is a
 // service interface from core/services.ts (or a port), injected by
 // core/container.ts. The orchestrator never imports another module.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // runs module: the orchestrator. Mounted at /api/runs; stopAll is registered
 // on the kill switch. The only public export of this module.
 import type { ModuleContext, MountedModule } from "../../core/module";

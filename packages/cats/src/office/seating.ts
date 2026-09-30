@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Who sits where as the crew changes: the desks are handed out once (by
 // role, so each team shares a pod) and then kept. A hire takes the first
 // free desk or the next one at the end; a cat that leaves walks out first

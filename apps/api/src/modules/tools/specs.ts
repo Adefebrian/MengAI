@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The tool registry: one compact JSON Schema spec per TOOL_NAMES entry.
 // Every schema costs input tokens on every call, so descriptions stay short
 // (under 60 words) and parameters carry only what a handler needs.

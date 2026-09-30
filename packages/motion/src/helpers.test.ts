@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Pure helpers of the motion module, tested with fakes: no browser, no
 // lenis or gsap install needed (bun test from this folder).
 import { describe, expect, test } from "bun:test";

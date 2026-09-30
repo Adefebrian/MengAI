@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The code editor (JEV ui.region_gate card, ui.component_recipe
 // core.tpl.ide 1.0 with layers an.R22 file tree 0.73 and mu.R01 line
 // entrance 0.82, motion tier 1): the workspace tree beside a read-only

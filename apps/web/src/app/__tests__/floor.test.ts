@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The floor's beats as data: the plan is dealt in order, cards move to the
 // cat that works them, a review that asks for changes bounces the card back
 // to its maker with the next round, the handoff carries it forward again,

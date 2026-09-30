@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The paper broker's math: fills against a position with an average price,
 // realized P&L on the part that closes, unrealized P&L at the last price.
 // Shorts are allowed (qty below zero). Pure; amounts rounded to cents and

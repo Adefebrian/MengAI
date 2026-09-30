@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Security middleware, applied by core/app.ts in this order:
 //   request context (id + client ip) -> secure headers -> local guard (Host,
 //   Origin allowlist, JSON-only mutations) -> CORS allowlist -> body cap ->

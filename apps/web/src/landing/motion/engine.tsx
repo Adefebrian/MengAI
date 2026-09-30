@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The landing's motion engine, loaded on "/" only (a lazy chunk, so the app
 // screens never pay for it): the JAL motion module on one clock.
 //   SmoothScroll  Lenis as the page's one smooth scroll (off under reduced

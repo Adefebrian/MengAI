@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Foreign JSON Schemas (MCP inputSchema, OpenAPI parameters and bodies) cut
 // down to the subset the tool validator and the prompt need: type,
 // properties, required, items, enum and bounds, short descriptions. Every

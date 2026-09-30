@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Server entrypoint (self-hosted web). Validates env, applies migrations,
 // wires every module through core/container.ts and listens. Importing this
 // file has no side effects: the listen only happens when it is run directly.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The connectors and trading screens, the company settings and the run
 // tracker render from the bundled demo, with no API: every connector with
 // its state and roles and no secret on the page, the trading desk with the

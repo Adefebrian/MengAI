@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Live preview of what the crew built (JEV ui.region_gate: implement 0.83,
 // relevance 2.71, divided section 0.76 over plain spacing 0.15). The local
 // engine runs the project's own dev script, or serves its index.html, on a

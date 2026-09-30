@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What the trading module exposes and needs. The venue is the connectors
 // service, structurally: a live order goes out through one connector tool,
 // a price tool of a connector gives the paper broker its last price, and a

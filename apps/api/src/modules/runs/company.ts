@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The company layer of the orchestrator. The lead is the CEO cat: crew
 // questions (ask_human) reach the lead first and only what the lead cannot
 // settle goes to the owner. The crew meets on its own: a kickoff after the

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Engine guard (lib/engine-guard.ts): the rules, the wrap, the log-once
 // fallback, and on this Mac the real thing: inside each profile curl and a
 // Bun fetch to the engine port fail on every loopback spelling, while

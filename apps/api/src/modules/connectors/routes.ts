@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /api/connectors: validate with zod, rate limit the writes, delegate to the
 // service. Secrets are accepted once and never returned.
 import { AGENT_ROLES, CONNECTOR_KINDS } from "@mengai/shared";

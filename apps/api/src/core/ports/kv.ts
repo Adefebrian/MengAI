@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Small key-value port: rate limits, response cache, short locks, dedupe.
 // local mode = in-memory LRU, server mode = Redis (Bun RedisClient).
 export interface Kv {

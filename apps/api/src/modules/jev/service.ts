@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // DecisionService: runs a catalog plan end to end.
 //   precheck in code -> kv cache (10 min, identical decisionId + state + questions,
 //   verified answers that fit the questions only)

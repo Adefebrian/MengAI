@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Trading (/app/trading): the exchanges and brokers the crew trades
 // through, how far it may go with money, the orders it proposed and the
 // book. Regions per JEV ui.region_gate: the no-advice note in plain spacing

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The frame's company feed: the app's notices on sample data (JEV
 // ui.region_gate hero_chips kept, relevance 2.02, container plain_spacing
 // as the runner-up to the frame's own card; ui.component_recipe

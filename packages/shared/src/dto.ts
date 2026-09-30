@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Wire DTOs. Every timestamp is epoch milliseconds, every id a UUIDv7 string.
 // These are the only shapes the API returns and the web app renders. Secrets
 // never appear here: providers expose a 4 character key hint at most.

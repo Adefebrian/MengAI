@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Secret redaction for logs, events, tool outputs, errors and JEV state.
 // Two layers: exact values of every key the vault handed out this process
 // (registerSecret), then pattern rules for common key shapes. Redaction is a

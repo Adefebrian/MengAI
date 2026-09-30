@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Text inside the office art: the art is one aria-hidden SVG, so every
 // label is fitted to its box here (an ellipsis when it would not fit, the
 // full value stays in the desk button's accessible name). Widths come from a

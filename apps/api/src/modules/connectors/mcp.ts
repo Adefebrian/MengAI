@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A small MCP client: JSON-RPC 2.0 over stdio (newline-delimited JSON on the
 // server's stdin and stdout) or streamable HTTP (POST per message, answered
 // with JSON or an SSE stream, Mcp-Session-Id kept across calls). Only what

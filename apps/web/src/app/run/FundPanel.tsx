@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The trading desk of a hedge fund run (JEV ui.region_gate rows,
 // relevance 2.85; ui.component_recipe core.list 0.58; motion tier 1): the
 // orders this run's crew proposed, decided or filled, with Approve and

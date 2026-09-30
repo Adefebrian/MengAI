@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Key value rows: a description list, label in ink-muted over or beside
 // the value, one hairline between pairs. Numbers read in tabular mono.
 import type { ReactNode } from "react";

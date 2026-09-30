@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // decisions table only. Portable SQL over the Db port (SQLite and Postgres).
 import type { DecisionDTO } from "@mengai/shared";
 import type { Db } from "../../core/ports/db";

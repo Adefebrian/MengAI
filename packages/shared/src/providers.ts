@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // BYOK provider presets. A preset only pre-fills the form: the user can edit
 // the base URL and type any model id. Everything that speaks OpenAI Chat
 // Completions or Anthropic Messages works through the two chat adapters, so

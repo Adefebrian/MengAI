@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // CompaniesService: the template catalog the runs module reads through DI.
 // Templates are code, not rows: a run stores only its kind.
 import { COMPANY_KINDS, type AgentRole, type CompanyKind, type RunStage, type RunStatus } from "@mengai/shared";

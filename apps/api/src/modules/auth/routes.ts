@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // POST /api/auth/{launch,setup,login,logout}. Validation and cookies only;
 // the rules live in service.ts. All of /api/auth is public (core/auth).
 // Local mode: launch answers the local owner (no token is checked and no

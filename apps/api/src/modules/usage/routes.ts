@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // GET /api/usage: aggregated usage report. Validation only, no logic.
 import { Hono } from "hono";
 import { z } from "zod";

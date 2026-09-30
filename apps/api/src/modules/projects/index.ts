@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // projects module: project CRUD, the workspace root binding, and the live
 // preview and open folder routes (delegated to the preview module).
 // Mounted at /api/projects (see Routes in @mengai/shared).

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Secret storage for BYOK keys. local mode = OS keychain (Bun.secrets),
 // server mode = envelope encryption (AES-256-GCM, KEK from env) in the DB.
 // A secret value is only ever read by the adapter that sends it to its

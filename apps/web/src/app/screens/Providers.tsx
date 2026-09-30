@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Providers (/app/providers): bring your own key. Connected providers as
 // rows with a real connection test (JEV core.list.actions), the add form
 // beside them (card, the key field never echoes and clears after save; the

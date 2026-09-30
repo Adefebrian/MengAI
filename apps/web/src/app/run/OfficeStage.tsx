@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The run page hero: the living office from @mengai/cats. The scene is
 // looked up on the package at runtime, so this page builds and runs while
 // the cats package is still growing its Office: until it exports one, or if

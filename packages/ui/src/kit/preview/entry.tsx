@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Kit preview, page A: /landing?d=D1 renders the tidy product landing in one
 // direction with the kit's own motion. Page B is /motion (motion-entry.tsx).
 import { createRoot } from "@kit-preview/react-dom-client";

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // EngineMedia: an image or a clip the crew engine made, in the kit's
 // MediaFrame shape (the same figure, frame and ratio classes, so kit.css
 // draws it exactly like a MediaFrame). The difference is the load mode:

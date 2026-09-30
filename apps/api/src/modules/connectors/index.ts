@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // connectors module: the owner's MCP servers (stdio in the Mac app,
 // streamable HTTP anywhere) and HTTP APIs (optional OpenAPI 3 import), their
 // namespaced tools and the calls into them. Mounted at /api/connectors; the

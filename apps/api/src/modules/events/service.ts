@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // EventSink implementation plus in-process fan-out. publish() redacts the
 // payload, appends it (seq from the insert) and then notifies subscribers.
 // Publishes are serialized so subscribers always see seq in order.

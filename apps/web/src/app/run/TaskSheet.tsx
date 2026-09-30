@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // One task up close, opened from its card on the floor (JEV: card, the
 // JAL Core Sheet spec): what it is, who holds it, what it waits on, how
 // it is judged, what came of it, and the two changes the owner may make

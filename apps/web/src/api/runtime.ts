@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The local engine this page talks to. MengAI has no accounts and no sign
 // in of any kind: the crew engine runs on the owner's own Mac (the MengAI
 // app, or `bun run dev` from the repo) on 127.0.0.1, and this page, served

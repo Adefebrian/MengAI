@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A small syntax highlighter for the read-only editor, no dependency: one
 // pass over the whole file (so a block comment or a template string can
 // span lines), then the tokens are cut into lines. Languages: ts, tsx, js,

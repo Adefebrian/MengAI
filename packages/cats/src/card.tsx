@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // CatCard: one agent at a glance (JEV ui.component_recipe: core.card.row).
 // The cat sits on its flat cushion in its own reserved square at the start;
 // the text has its own rows beside it: name and role, status, a two line

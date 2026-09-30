@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Demo mode's answers for the newer routes: what is in a cat's head, the
 // connectors and the trading desk. Sample data, scripted for the page,
 // never a recording. Secrets typed into the demo are never kept: a

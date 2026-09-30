@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The live picture of one run: a pure reducer over MengaiEvent plus a
 // tiny external store for useSyncExternalStore. First paint comes from the
 // GET /api/runs/:id snapshot; the SSE stream (EventSource on /api/events)

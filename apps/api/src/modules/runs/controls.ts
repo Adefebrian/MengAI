@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Argument parsing for the control tools the runs module executes inline.
 // The tools module owns the JSON schemas the model sees; models still drift
 // (a string where a list is expected, "description" instead of "spec"), so

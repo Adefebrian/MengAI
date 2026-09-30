@@ -1,3 +1,5 @@
+/* Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+   SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
 /* Cats preview only: the board grid, the scenario index, the rows, the sizes.
    Tokens only, same law as cats.css. Every track is minmax(0, 1fr) and
    every child min-width 0, so nothing leaves its cell at 320. */

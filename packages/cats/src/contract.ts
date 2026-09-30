@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Public contract of @mengai/cats. The web app codes against these props;
 // packages/cats owns the rendering (flat SVG rig, CSS keyframes, reduced
 // motion stills). Keep this file stable: both sides build in parallel.

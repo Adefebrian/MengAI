@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // GET /api/events: SSE stream. Query: runId (optional), after (seq).
 // Last-Event-ID (sent by EventSource on reconnect) wins over `after`.
 import { Hono } from "hono";

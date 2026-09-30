@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // @mengai/cats: the living cat character system. The contracts (props and
 // handoffLayoutId in ./contract, the office scene in ./office-contract) are
 // frozen; this package owns the rendering: a flat SVG rig, CSS keyframe

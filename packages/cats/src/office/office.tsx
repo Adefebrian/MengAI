@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Office: the living cat company (contract in ../office-contract.ts).
 //
 // One aria-hidden SVG draws the whole floor as a three-quarter cutaway

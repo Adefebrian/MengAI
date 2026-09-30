@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Platform tests: config, hardening, auth flows through the full app, the
 // no-auth local engine (Host check, exact Origin allowlist with a 403,
 // writes only with an allowlisted Origin except the kill switch, Origin-less

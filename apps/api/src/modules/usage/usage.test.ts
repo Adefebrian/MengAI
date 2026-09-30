@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // usage module: cost math with overrides, persistence, redaction of errors,
 // listCalls ordering and the GET /api/usage aggregate (byModel, byRole).
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";

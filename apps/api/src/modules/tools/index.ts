@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // tools module: the tool registry (specs per role) and execution of every
 // non-control tool. Service only; the runs module drives it.
 import type { MountedModule, ModuleContext } from "../../core/module";

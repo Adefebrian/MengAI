@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The boards on the walls: the CEO's plan whiteboard, where each plan card
 // is a note that slides to its new column when its status changes (a CSS
 // transform transition on the note, keyed by card id), and the meeting

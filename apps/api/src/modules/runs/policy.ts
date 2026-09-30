@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Pure orchestration policy: limits, mood, repeat guards, estimate math and
 // text bounding. No I/O here, so every rule is unit-testable on its own.
 import type { AgentRole, Mood } from "@mengai/shared";

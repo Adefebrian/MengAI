@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /api/projects routes: validate, delegate to the service, shape the reply.
 // Live preview and Open folder (local engine only) are rate limited per ip:
 // they start processes on the owner's computer.

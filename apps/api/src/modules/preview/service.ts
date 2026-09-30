@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // PreviewService: runs what the crew built so the owner can look at it.
 // Local engine only. One preview per project, at most three at once (the
 // oldest stops to make room). A script preview installs dependencies when

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The two preview pages' ledgers (composition.variant in section order),
 // kept apart from the pages so tests can check them without loading the
 // motion module. Each page renders exactly this order (kit.test.tsx).

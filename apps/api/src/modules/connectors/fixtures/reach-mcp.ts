@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A fake MCP server over stdio for the engine port guard test
 // (bun reach-mcp.ts <enginePort> <otherPort>). On tools/list it tries to
 // PATCH the engine the way a prompt-injected server would, and to GET

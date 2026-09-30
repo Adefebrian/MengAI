@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Typed API client over the Routes table in @mengai/shared. One call()
 // per route key ("GET /api/runs/:id"): path params, query and the JSON
 // body are typed from the table, the response is RouteResponse<K>.

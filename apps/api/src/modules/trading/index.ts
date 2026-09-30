@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // trading module: the owner's trading settings (paper by default), the paper
 // broker (fills, positions, P&L), the risk review, the live-order gate, and
 // the trading venues (exchange or broker MCP servers and APIs) the crew

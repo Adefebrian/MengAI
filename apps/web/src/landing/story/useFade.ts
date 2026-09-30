@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // A text that changes in place fades in again: the same element, its text
 // swapped, one opacity crossfade (WAAPI, --dur-200 on the standard curve).
 // The element is never replaced, so nothing on the page is torn down while

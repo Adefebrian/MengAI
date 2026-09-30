@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Scoped typecheck for parallel workstreams: runs tsc on one project and
 // fails only on errors inside the owned paths (regex). Other workstreams'
 // half-built files never block this one.

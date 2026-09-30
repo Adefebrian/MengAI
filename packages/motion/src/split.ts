@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // SplitText line reveal for a display headline (R03 line mask reveal), as
 // logic over a small engine so it is tested with fakes.
 //

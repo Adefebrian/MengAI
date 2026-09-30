@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Server mode vault: envelope encryption with WebCrypto AES-256-GCM.
 // Each secret gets a fresh random 256-bit data key (DEK). The secret is
 // encrypted with the DEK, the DEK is encrypted ("wrapped") with the key

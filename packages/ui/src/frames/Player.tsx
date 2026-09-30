@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Player: plays a frame-driven composition live in the page. Play, pause,
 // a 44px scrub range, optional loop. Reduced motion shows the poster frame
 // and never autoplays (the viewer may still press play or scrub). The

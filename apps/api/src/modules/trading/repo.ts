@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // trading_settings, orders, positions and trading_venues. One owner
 // ("owner") like the rest of the schema; amounts are USD doubles,
 // quantities doubles.

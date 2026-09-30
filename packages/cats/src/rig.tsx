@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The cat rig: one flat vector family on a 160 x 160 viewBox, silhouette
 // first. Every named part is its own group so cats.css can move it:
 //   placement  the beat's paw and head offsets, as CSS transforms, so a

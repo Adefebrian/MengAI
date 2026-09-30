@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The company feed (JEV ui.region_gate card, ui.component_recipe core.ai_chat
 // with layer an.R21 at 0.78): the meetings the crew held and the requests
 // the CEO cat decided, in the order they happened, newest at the foot next

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The run report and its replay (JEV ui.region_gate divided section 0.68,
 // ui.component_recipe core.slider 0.97, motion tier 0): it sits right under
 // the office like a player. The outcome in a title that names it, the

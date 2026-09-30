@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Plays the bundled demo log into a run store: the first part lands at
 // once (the whole crew is on the board and one request waits on you), the
 // rest follows on a compressed clock. Like a real run, the crew waits on

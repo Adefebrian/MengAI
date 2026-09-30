@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Retrieval and near-duplicate math for lessons and skills. Zero-dependency:
 // a tokenizer with a light suffix stemmer, Okapi BM25 over a small corpus,
 // and word 3-shingle Jaccard similarity for merging near duplicates.

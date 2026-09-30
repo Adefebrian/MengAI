@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Standalone landing preview entry (not shipped): renders <Landing /> alone
 // so ui_audit and ui_shots can run while the rest of the web build moves.
 // Preview only: ?kind=fund switches the lifecycle to the hedge fund and

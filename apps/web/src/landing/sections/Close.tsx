@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The close (custom.close, round C: the owner asked for a centered,
 // professional SaaS close with the buttons under the text). No kit CTABand
 // variant centers (split, form and band all start align), so the close is

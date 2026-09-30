@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Path jail for every workspace operation. A relative or absolute path is
 // resolved lexically inside the real root first, then the nearest existing
 // ancestor is realpath'd and must still be inside the root, so `..`

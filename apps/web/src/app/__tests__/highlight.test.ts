@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The editor's highlighter and line diff: keywords and strings are marked,
 // a regex holding a quote never swallows the rest of the line, a block
 // comment spans lines, and only the lines the crew changed are fresh.

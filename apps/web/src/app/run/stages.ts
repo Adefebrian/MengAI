@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The run tracker model, like a delivery tracker: the company kind's stages
 // in order (COMPANY_STAGES), where the run is now, which stages are done,
 // and every time a failed check sent the run back (a run.stage move to an

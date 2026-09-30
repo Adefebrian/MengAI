@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The /app frame: the engine gate (find MengAI on this Mac), then every
 // screen inside the JAL Core AppShell (contained scroll, island header,
 // split bar with New run below 640px). There are no accounts and no sign

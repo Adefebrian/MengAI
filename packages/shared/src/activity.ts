@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Tool vocabulary and the tool -> cat activity map. The API emits the
 // activity with every tool.call event, the web app picks the cat pose from
 // it. One table, so the cat always shows what the agent is really doing.

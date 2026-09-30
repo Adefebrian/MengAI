@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The /office preview's scripted story: a pure function of the time into
 // the loop, so every run of the page plays the same company day, in two
 // companies. The day opens on desk work (every cat with a task at its desk,

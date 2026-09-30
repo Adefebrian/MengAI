@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Health: mode, version and what is configured, from injected callbacks.
 // A failing callback reports "not configured" instead of failing the check.
 import type { AutomationStatus, HealthDTO } from "@mengai/shared";

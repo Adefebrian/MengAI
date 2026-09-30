@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // providers service: BYOK registry, tier routing (LlmRouter), media routing
 // (MediaRouter), the JEV judge binding and connection tests. Keys live in
 // the vault under "provider:<id>" and are registered with redact() the

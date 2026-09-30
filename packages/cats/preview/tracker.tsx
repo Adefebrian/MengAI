@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /tracker: the DeliveryTracker on a scripted run, for both company kinds.
 // Each script walks every stage, and one check sends the work back once
 // (the studio's review, the fund's risk review), so the courier turns

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // auth module: owner account and cookie sessions (server mode); the local
 // owner with no login or token of any kind (local mode).
 // Exports the SessionAuth helpers core/app.ts plugs into the session guard,

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The brain as the benchmark pays for it, worst case: every cat carries a
 // full 120-token role addendum and a full 120-token addendum of its own,
 // every task pays the fast-tier critic (as if the evidence were always

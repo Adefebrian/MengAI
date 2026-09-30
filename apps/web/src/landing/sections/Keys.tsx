@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Bring your own API key (kit.split.inset; critic fix round 2: the feature
 // list whose only visuals were icon glyphs and mono labels became one app
 // view on labelled sample data, as the security bento does). JEV

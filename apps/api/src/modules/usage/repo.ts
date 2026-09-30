@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // usage repo: the llm_calls table only (plus a read-only join on agents for
 // the per-role breakdown, which the usage report contract asks for).
 import type { AgentRole, CallPurpose, LlmCallDTO, UsageTotals } from "@mengai/shared";

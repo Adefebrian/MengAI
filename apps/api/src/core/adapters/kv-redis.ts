@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Redis Kv over Bun's built-in RedisClient (server mode). Every key is
 // prefixed so one Redis can be shared. incr sets the TTL atomically in the
 // same round trip through a tiny Lua script.

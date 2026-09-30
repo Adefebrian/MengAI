@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The About page carries the credit and the new terms (source available
 // under the PolyForm Noncommercial License 1.0.0, free for personal and
 // noncommercial use, commercial use by written permission); engine media

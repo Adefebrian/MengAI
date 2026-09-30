@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Auth rules. Server mode: owner setup (once, SETUP_CODE), login (argon2id
 // via Bun.password, 5 per minute per ip) and session tokens (32 random bytes,
 // stored as sha256, 30 day sliding expiry) in an HttpOnly cookie.

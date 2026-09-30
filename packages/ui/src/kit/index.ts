@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // JAL Core composition kit. Every JAL page is composed from these; styles
 // live in ../kit.css (import after tokens.css and ui.css). The identity
 // model, the spacing ladder, the variants, the motion layer, and the page

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Symbols, prices and order arguments: the pure helpers the desk, the
 // learning pass and the paper broker share. The crew writes symbols in one
 // desk form (BTC-USD, BTC/USDT, AAPL); a learned venue gets its own form

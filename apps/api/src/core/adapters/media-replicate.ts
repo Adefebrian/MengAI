@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Replicate adapter (replicate): predictions API. owner/name models go to
 // /models/<owner>/<name>/predictions, owner/name:version to /predictions.
 // Images wait synchronously (Prefer: wait) and then poll; video returns the

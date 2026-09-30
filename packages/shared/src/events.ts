@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The live event stream. Every event is appended to the events table with a
 // global monotonic seq, then pushed over SSE (id: seq). Clients resume with
 // Last-Event-ID, so a reconnect never loses or duplicates an event.

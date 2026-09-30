@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // OpenAI-compatible chat adapter: the self-heal that retries without an
 // optional field only fires for allowlisted fields the vendor clearly calls
 // unsupported, and only remembers drops the vendor then accepted.

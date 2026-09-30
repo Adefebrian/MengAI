@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Cats preview server: bundles preview/app.tsx with Bun.build in memory,
 // then serves it with the JAL Core stylesheets and the vendored fonts.
 //   bun packages/cats/preview/serve.ts [port]      (default 4191)

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Persistence for the security module. Owns the scans and findings tables
 // only; portable SQL through the Db port.
 import type { FindingDTO, FindingStatus, ScanDTO, ScanKind, ScanStatus, Severity } from "@mengai/shared";

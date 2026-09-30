@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The hero story: a scripted morning in the cat company, played by the
 // Office scene (@mengai/cats, office-contract.ts) in its hero variant inside
 // the hero's product frame. It is a sample written for this page, never a

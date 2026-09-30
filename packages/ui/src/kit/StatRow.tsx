@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // StatRow: real figures read together. Each is a value in tabular figures
 // at the heading step (never a giant display numeral, never a hero), its
 // unit at meta size, and one short caption; the value counts up once on

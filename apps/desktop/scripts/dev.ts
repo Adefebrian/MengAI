@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Development run: build the web app and the sidecar once, stage them, then
 // `tauri dev` (debug shell, Rust hot rebuild). Rerun after web or api changes;
 // the shell always talks to the compiled sidecar, like the release app.

@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // JAL Core app-shell. Every screen renders inside it, so mobile is always a
 // real app-shell and never a shrunk desktop page:
 //   below 640px   pinned header (compact wordmark plus one action), content,

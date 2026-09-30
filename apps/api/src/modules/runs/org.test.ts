@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The brain in the live loop, through the real engine with scripted cats:
 // the self-check rounds, strategy tuning adopted by runtime JEV and injected
 // into the next step, dynamic roles, the unlimited org (hire or do it

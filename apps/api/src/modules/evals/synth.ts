@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Deterministic synthetic tool outputs of an exact size. The text looks like
 // what the tool returns (code, test runs, search hits, prose) so truncation,
 // line-based digests and token estimates behave as they do on real output.

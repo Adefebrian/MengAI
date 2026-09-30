@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Structured JSON-lines logger. One line per record on stderr (stdout is
 // reserved for the sidecar ready line). Every string, in the message and in
 // every nested field, goes through redact(); keys that name secrets are

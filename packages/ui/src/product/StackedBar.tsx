@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // One flat stacked bar (JAL Core Progress, stacked): each segment is a
 // share of the total, drawn as a flat block with a 2px surface gap, never a
 // gradient. Two neutral tones only, "strong" and "soft"; their meaning is

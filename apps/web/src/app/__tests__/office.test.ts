@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The office as data: the store maps to the Office scene's props, and every
 // scenario of the cat company becomes one beat, in order: a handoff walks a
 // card over, a question walks to the CEO, the CEO answers yes or no, a

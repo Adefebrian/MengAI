@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Memory (/app/memory): what the crew learned. Lessons in one divided
 // group per status with their record (JEV core.list.grouped.actions), then
 // the saved skills (card). A lesson only stays active while it keeps

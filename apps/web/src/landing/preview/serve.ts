@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Standalone landing preview (not shipped). Builds preview/entry.tsx with
 // Bun.build into an out directory outside the repo tree, then serves it:
 //   /          the landing

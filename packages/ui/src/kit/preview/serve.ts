@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Kit preview server: builds, then serves
 //   /            the compare board (page A in three directions, page B)
 //   /landing     page A, ?d=D1 (default D1), ?reduce=1 previews reduced motion

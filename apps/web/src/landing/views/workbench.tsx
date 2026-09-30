@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The workbench views (sections/Workbench.tsx): what the app shows while
 // the company works. The code editor types Cemong's real change line by line
 // when it scrolls into view (under 5 s, once per visit, every line shown at

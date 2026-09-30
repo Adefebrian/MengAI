@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The local engine connection layer: loopback-only addresses, where the
 // page looks, the probe that tells "not running" from "refuses this site",
 // the look that needs no sign in, a client that never carries a token or a

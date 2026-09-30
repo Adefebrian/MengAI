@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The run tracker: goal, planned, hired, working, review, testing, shipped.
 // The engine publishes run.stage whenever the run moves forward on it, and
 // loops back to working when a review fails. Pure, no I/O.

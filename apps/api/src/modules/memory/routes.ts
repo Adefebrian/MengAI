@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // /api/memory routes (see @mengai/shared Routes). Parse and validate only;
 // every rule lives in the service. Errors are HttpError, rendered by core/app.ts:
 // 400 invalid_json, 422 invalid_query / invalid_param / invalid_body, 404 not_found.

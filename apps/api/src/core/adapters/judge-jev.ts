@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // JEV transport (TypeSafe System One) behind the Judge port. POST
 // <baseUrl>/systemone with the owner's Bearer key and body
 // { state, model: "jev-latest", questions }. State is deep-redacted before

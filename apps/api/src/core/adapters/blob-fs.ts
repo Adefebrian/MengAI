@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Local blob store (local mode, and the server fallback when S3 is not
 // configured): files under <dataDir>/blobs. Keys are validated so a key can
 // never leave the root (no "..", no absolute paths, no dot segments), and the

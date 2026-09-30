@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Pure views over a RunState for the run screen: the crew in its groups,
 // the floor (each task card in its cat's lane and status column), and
 // usage per cat from the call log. No React here, so the replay and the tests

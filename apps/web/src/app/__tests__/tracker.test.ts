@@ -1,3 +1,5 @@
+// Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The run tracker, the crew that leaves, the trading desk and the version
 // diff, as data: the tracker follows run.stage (studio or fund stages), a
 // failed review loops back and marks the stage that sent it, a run from an
