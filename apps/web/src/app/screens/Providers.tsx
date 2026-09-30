@@ -209,7 +209,7 @@ function AddProvider({ presets, onAdded }: { presets: ProviderPreset[]; onAdded:
               if (urlError) setUrlError(null);
             }}
             placeholder={custom ? "https://your-endpoint/v1" : preset?.baseUrl}
-            hint={custom ? "Required. The URL of your own endpoint." : "Prefilled. Edit it for a proxy or a regional endpoint."}
+            hint={custom ? "Required. The base of your endpoint, for example https://llm.example.com/v1." : "Prefilled. Only the base, like https://api.openai.com/v1; a pasted endpoint path is trimmed."}
             error={urlError}
             spellCheck={false}
           />

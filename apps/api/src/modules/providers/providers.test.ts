@@ -290,6 +290,24 @@ describe("connection test", () => {
   });
 });
 
+describe("base URL cleanup", () => {
+  test("a pasted endpoint path is cut back to the base URL the adapter expects", async () => {
+    for (const [pasted, stored] of [
+      ["https://api.openai.com/v1/chat/completions", "https://api.openai.com/v1"],
+      ["https://api.openai.com/v1/responses/", "https://api.openai.com/v1"],
+      ["https://api.openai.com/v1/completions", "https://api.openai.com/v1"],
+      ["https://api.openai.com/v1/models?x=1", "https://api.openai.com/v1"],
+      ["https://api.openai.com/v1", "https://api.openai.com/v1"],
+    ] as const) {
+      const p = await add(env, { preset: "openai", apiKey: "sk-test-abcdefghijklmnopqrstu", baseUrl: pasted });
+      expect(p.baseUrl).toBe(stored);
+      await env.req("DELETE", `/api/providers/${p.id}`);
+    }
+    const a = await add(env, { preset: "anthropic", apiKey: "sk-ant-test-abcdefghijklmnop", baseUrl: "https://api.anthropic.com/v1/messages" });
+    expect(a.baseUrl).toBe("https://api.anthropic.com/v1");
+  });
+});
+
 describe("SSRF guard on create and update", () => {
   test("server mode rejects private base URLs and local presets", async () => {
     await env.db.close();

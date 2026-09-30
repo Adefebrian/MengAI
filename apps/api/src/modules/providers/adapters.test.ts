@@ -248,6 +248,27 @@ describe("llm-openai", () => {
     expect(JSON.parse(calls[2]!.body!).prompt_cache_key).toBeUndefined();
   });
 
+  test("a reasoning model that refuses tools on chat completions is retried with reasoning_effort none, remembered per model", async () => {
+    const tool = { name: "create_tasks", description: "plan", parameters: { type: "object", properties: {} } };
+    const refusal = "Function tools with reasoning_effort are not supported for gpt-6-luna in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.";
+    mockFetch((c) => {
+      const body = JSON.parse(c.body!);
+      if (body.tools && body.reasoning_effort !== "none") return json({ error: { message: refusal, type: "invalid_request_error" } }, 400);
+      return json({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    });
+    const p = openai("https://api.openai.com/v1");
+    const req = { ...baseReq, model: "gpt-6-luna", tools: [tool] };
+    expect((await p.chat(req)).text).toBe("ok");
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse(calls[1]!.body!).reasoning_effort).toBe("none");
+    await p.chat(req);
+    expect(calls).toHaveLength(3);
+    expect(JSON.parse(calls[2]!.body!).reasoning_effort).toBe("none");
+    // without tools nothing changes, and other models are untouched
+    await p.chat({ ...baseReq, model: "gpt-6-luna", tools: undefined });
+    expect(JSON.parse(calls[3]!.body!).reasoning_effort).toBeUndefined();
+  });
+
   const okChat = () => json({ choices: [{ message: { content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
 
   test("a JSON-mode value error is a bad_request and never turns JSON mode off", async () => {

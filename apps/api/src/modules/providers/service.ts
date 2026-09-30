@@ -111,8 +111,34 @@ function toDto(r: ProviderRow): ProviderDTO {
   };
 }
 
-function normalizeBaseUrl(raw: string): string {
-  return raw.trim().replace(/\/+$/, "");
+/**
+ * Endpoint paths the adapters add themselves. Owners often paste the full
+ * endpoint from a vendor's docs (".../v1/chat/completions", ".../v1/responses",
+ * ".../v1/messages"); the adapter would then call ".../chat/completions/chat/completions"
+ * and get a 404, so the tail is cut back to the base URL.
+ */
+const ENDPOINT_TAILS = [
+  "/chat/completions",
+  "/completions",
+  "/responses",
+  "/embeddings",
+  "/images/generations",
+  "/models",
+  "/messages",
+];
+
+export function normalizeBaseUrl(raw: string): string {
+  let url = raw.trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const tail of ENDPOINT_TAILS) {
+      if (url.toLowerCase().endsWith(tail) && url.length > tail.length + "https://x".length) {
+        url = url.slice(0, -tail.length).replace(/\/+$/, "");
+        changed = true;
+      }
+    }
+  }
+  return url;
 }
 
 function dedupeModels(models: ProviderModel[]): ProviderModel[] {

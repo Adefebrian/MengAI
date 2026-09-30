@@ -405,9 +405,12 @@ const ALTERNATIVES_RE = /\b(?:expected|one of|instead|use|allowed|valid|supporte
 const isMaxTokensField = (p: OptionalParam): p is MaxTokensField => p === "max_tokens" || p === "max_completion_tokens";
 const otherMaxTokensField = (f: MaxTokensField): MaxTokensField => (f === "max_tokens" ? "max_completion_tokens" : "max_tokens");
 
+/** A vendor refusing tools because reasoning is on for this model. */
+const REASONING_TOOLS_RE = /reasoning_effort[\s\S]*(function )?tools|tools[\s\S]*reasoning_effort/i;
+
 export function buildOpenAiBody(
   req: ChatRequest,
-  opts: { stream: boolean; maxTokensField: MaxTokensField; drop?: ReadonlySet<OptionalParam> },
+  opts: { stream: boolean; maxTokensField: MaxTokensField; drop?: ReadonlySet<OptionalParam>; reasoningNone?: boolean },
 ): Json {
   const drop = opts.drop ?? new Set<OptionalParam>();
   const body: Json = { model: req.model, messages: toOpenAiMessages(req.system, req.messages) };
@@ -417,6 +420,8 @@ export function buildOpenAiBody(
       function: { name: t.name, description: t.description, parameters: t.parameters },
     }));
     if (req.toolChoice) body.tool_choice = req.toolChoice;
+    // reasoning models that refuse tools on Chat Completions unless reasoning is off
+    if (opts.reasoningNone) body.reasoning_effort = "none";
   }
   // the output cap is never dropped (budget control); only its field name varies per vendor
   if (req.maxOutputTokens !== undefined) body[opts.maxTokensField] = req.maxOutputTokens;
@@ -538,6 +543,8 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
     cfg.maxTokensField ?? (/^https:\/\/api\.openai\.com(\/|$)/.test(cfg.baseUrl) ? "max_completion_tokens" : "max_tokens");
   /** per model: sticky drops and the max-tokens field name a vendor accepted after a heal */
   const dropped = new Map<string, ReadonlySet<OptionalParam>>();
+  /** models that only take tools on Chat Completions with reasoning_effort "none" */
+  const reasoningOff = new Set<string>();
   const tokenField = new Map<string, MaxTokensField>();
   const doFetch = (url: string, init: RequestInit) => (cfg.fetch ?? globalThis.fetch)(url, { ...init, redirect: "manual" });
 
@@ -622,7 +629,8 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
       let field = tokenField.get(req.model) ?? maxTokensField;
       let swapped = false;
       let healed = false;
-      let body = buildOpenAiBody(req, { stream, maxTokensField: field, drop });
+      let reasoningNone = Boolean(req.tools?.length) && reasoningOff.has(req.model);
+      let body = buildOpenAiBody(req, { stream, maxTokensField: field, drop, reasoningNone });
       let res = await post(url, body, stream, req.signal, timeoutMs);
       // Self-heal: a compatible vendor that calls an optional field unsupported is retried without it
       // (the max-tokens field is renamed, never removed). Anything else is a real bad_request.
@@ -641,9 +649,14 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
             changed = true;
           }
         }
+        // e.g. OpenAI: "Function tools with reasoning_effort are not supported for <model> in
+        // /v1/chat/completions ... set reasoning_effort to 'none'"
+        if (!reasoningNone && req.tools?.length && REASONING_TOOLS_RE.test(errText)) {
+          reasoningNone = changed = true;
+        }
         if (!changed) throw httpError(res.status, errText, res.headers, vendor);
         healed = true;
-        body = buildOpenAiBody(req, { stream, maxTokensField: field, drop });
+        body = buildOpenAiBody(req, { stream, maxTokensField: field, drop, reasoningNone });
         res = await post(url, body, stream, req.signal, timeoutMs);
       }
       if (!res.ok) throw httpError(res.status, await res.text().catch(() => ""), res.headers, vendor);
@@ -651,6 +664,7 @@ export function createOpenAiChat(cfg: OpenAiChatConfig): LlmProvider {
         // remember only what the vendor then accepted, and never JSON mode
         dropped.set(req.model, new Set([...drop].filter((p) => STICKY_DROPS.has(p))));
         if (swapped) tokenField.set(req.model, field);
+        if (reasoningNone) reasoningOff.add(req.model);
       }
       let out: Omit<ChatResult, "latencyMs" | "retries">;
       if (stream && !(res.headers.get("content-type") ?? "").includes("application/json")) {
