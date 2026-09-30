@@ -29,6 +29,20 @@ export const BUN_TO_RUST_TRIPLE: Record<string, string> = {
 };
 
 export const tauriCli = join(repoRoot, "node_modules", "@tauri-apps", "cli", "tauri.js");
+/** Where the release script leaves the final dmg (gitignored by the root `dist/` rule). */
+export const distDir = join(desktopDir, "dist");
+
+/** Arch label the Tauri dmg bundler puts in the file name, per Rust target triple. */
+export const DMG_ARCH: Record<string, string> = {
+  "aarch64-apple-darwin": "aarch64",
+  "x86_64-apple-darwin": "x64",
+};
+
+/** Ad-hoc signing identity for codesign and the Tauri bundler: signed, but by no one. */
+export const ADHOC_IDENTITY = "-";
+
+/** Entitlement the Bun runtime (JavaScriptCore JIT) cannot start without under the hardened runtime. */
+export const JIT_ENTITLEMENT = "com.apple.security.cs.allow-jit";
 
 export interface SidecarScript {
   bunTarget: string;
@@ -51,6 +65,70 @@ export async function readSidecarScript(): Promise<SidecarScript> {
   const script = pkg.scripts?.["build:sidecar"];
   if (!script) throw new Error("apps/api/package.json has no build:sidecar script");
   return parseSidecarScript(script);
+}
+
+export interface TauriConf {
+  productName: string;
+  version: string;
+  identifier: string;
+}
+
+export async function readTauriConf(): Promise<TauriConf> {
+  const conf = (await Bun.file(join(tauriDir, "tauri.conf.json")).json()) as Partial<TauriConf>;
+  if (!conf.productName || !conf.version || !conf.identifier) throw new Error("tauri.conf.json needs productName, version and identifier");
+  return { productName: conf.productName, version: conf.version, identifier: conf.identifier };
+}
+
+/** Cargo's output folder. Tauri honors CARGO_TARGET_DIR; a relative value resolves against src-tauri, where cargo runs. */
+export function cargoTargetDir(env: Record<string, string | undefined> = process.env): string {
+  const dir = env.CARGO_TARGET_DIR;
+  return dir ? resolve(tauriDir, dir) : join(tauriDir, "target");
+}
+
+export function bundleDir(triple: string, env: Record<string, string | undefined> = process.env): string {
+  return join(cargoTargetDir(env), triple, "release", "bundle");
+}
+
+/** File name of the dmg Tauri writes: `<productName>_<version>_<arch>.dmg`. */
+export function dmgName(productName: string, version: string, triple: string): string {
+  const arch = DMG_ARCH[triple];
+  if (!arch) throw new Error(`no dmg arch label for ${triple}`);
+  return `${productName}_${version}_${arch}.dmg`;
+}
+
+export interface ReleaseSigning {
+  /** Extra env for `tauri build`. */
+  env: Record<string, string>;
+  /** codesign identity: a Developer ID name, or "-" for ad-hoc. */
+  identity: string;
+  adhoc: boolean;
+  /** true when a full set of notarization credentials is present. */
+  notarize: boolean;
+}
+
+/**
+ * Signing and bundler env for a release build.
+ * - No APPLE_SIGNING_IDENTITY: ad-hoc ("-"). The app and the sidecar still carry
+ *   the hardened runtime and the JIT entitlements, so a local build behaves like
+ *   a signed one, but Gatekeeper rejects it on any other Mac.
+ * - Notarization credentials with an ad-hoc identity is a misconfiguration: fail.
+ * - CI=true makes the Tauri dmg bundler skip its Finder AppleScript (window
+ *   layout), which would otherwise ask for Automation access. MENGAI_DMG_LAYOUT=1
+ *   keeps the layout step for an interactive build on a signed-in desktop.
+ */
+export function releaseSigning(parent: Record<string, string | undefined> = process.env): ReleaseSigning {
+  const identity = parent.APPLE_SIGNING_IDENTITY?.trim() || ADHOC_IDENTITY;
+  const adhoc = identity === ADHOC_IDENTITY;
+  const apiKey = Boolean(parent.APPLE_API_ISSUER && parent.APPLE_API_KEY && parent.APPLE_API_KEY_PATH);
+  const appleId = Boolean(parent.APPLE_ID && parent.APPLE_PASSWORD && parent.APPLE_TEAM_ID);
+  const notarize = apiKey || appleId;
+  if (adhoc && notarize) {
+    throw new Error("notarization credentials are set but APPLE_SIGNING_IDENTITY is not: notarization needs a Developer ID Application identity");
+  }
+  const env: Record<string, string> = { APPLE_SIGNING_IDENTITY: identity };
+  if (parent.MENGAI_DMG_LAYOUT === "1") env.TAURI_BUNDLER_DMG_IGNORE_CI = "true";
+  else env.CI = "true";
+  return { env, identity, adhoc, notarize };
 }
 
 export function sidecarPath(triple: string): string {
@@ -96,6 +174,13 @@ export async function run(cmd: string[], cwd: string, env: Record<string, string
   if (code !== 0) throw new Error(`command failed with exit code ${code}: ${cmd.join(" ")}`);
 }
 
+/** Runs a command and returns its exit code and combined output (codesign prints most of its report to stderr). */
+export async function capture(cmd: string[], cwd: string = desktopDir): Promise<{ code: number; out: string }> {
+  const proc = Bun.spawn({ cmd, cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  return { code, out: out + err };
+}
+
 /** Runs the Tauri CLI under Bun (no node). */
 export function tauri(args: string[], env: Record<string, string> = {}): Promise<void> {
   return run([process.execPath, "--bun", tauriCli, ...args], desktopDir, env);
@@ -119,8 +204,8 @@ export async function syncDir(src: string, dest: string, opts: { keep?: string[]
   return copied;
 }
 
-/** Copies services/hands output into resources/hands when it exists. Optional in this wave. */
-export async function stageHands(triple: string, sign: boolean): Promise<string | null> {
+/** Copies services/hands output into resources/hands when it exists. Optional in this wave. identity: sign with it (release), null skips (dev). */
+export async function stageHands(triple: string, identity: string | null): Promise<string | null> {
   const candidates = [
     join(handsDir, "target", triple, "release", HANDS_BIN_NAME),
     join(handsDir, "target", "release", HANDS_BIN_NAME),
@@ -133,10 +218,11 @@ export async function stageHands(triple: string, sign: boolean): Promise<string 
   }
   await copyFile(found, dest);
   await chmod(dest, 0o755);
-  const identity = process.env.APPLE_SIGNING_IDENTITY;
-  if (sign && identity) {
+  if (identity) {
     // Resources are not signed by the Tauri bundler; notarization rejects an unsigned Mach-O.
-    await run(["codesign", "--force", "--options", "runtime", "--timestamp", "--sign", identity, dest], tauriDir);
+    // A secure timestamp needs a real identity, so ad-hoc skips it.
+    const timestamp = identity === ADHOC_IDENTITY ? [] : ["--timestamp"];
+    await run(["codesign", "--force", "--options", "runtime", ...timestamp, "--sign", identity, dest], tauriDir);
   }
   return dest;
 }

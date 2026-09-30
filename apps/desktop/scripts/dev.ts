@@ -10,7 +10,7 @@ await run([process.execPath, "run", "build"], webDir);
 await run([process.execPath, "run", "build:sidecar"], apiDir);
 await assertRealSidecar(sidecar.outfile);
 await syncDir(join(webDir, "dist"), join(tauriDir, "resources", "web"), { keep: [".gitkeep"] });
-await stageHands(sidecar.triple, false);
+await stageHands(sidecar.triple, null);
 
 // No devUrl: the window loads the sidecar, so the CLI's static dev server is off.
 await tauri(["dev", "--no-dev-server", "--no-dev-server-wait", ...process.argv.slice(2)]);

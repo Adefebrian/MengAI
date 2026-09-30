@@ -6,6 +6,7 @@
   "scripts": {
     "build": "bun run scripts/build.ts",
     "dev": "bun run scripts/dev.ts",
+    "smoke": "bun run scripts/smoke.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'no lint configured for apps/desktop' && exit 0"
