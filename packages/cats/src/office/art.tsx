@@ -8,7 +8,7 @@ import type { AgentStatus } from "@mengai/shared";
 import type { OfficeAgent } from "../office-contract";
 import type { Desk, OfficePlan, Rect } from "./geometry";
 import { GLYPHS, type GlyphId } from "./glyphs";
-import { fit, measure as measureWidth, type TextStyle } from "./text";
+import { chipTitleSized, fit, measure as measureWidth, type TextStyle } from "./text";
 
 export function textStyle(plan: OfficePlan, weight: 400 | 500 = 400, mono = false): TextStyle {
   return { size: plan.m.text === "n1" ? 13 : 11, weight, mono };
@@ -208,7 +208,7 @@ export function Bubble({ text, lane, anchor, plan, on }: { text: string; lane: R
  * Monitors: the screen for the activity, the fund's market screens
  * ------------------------------------------------------------------- */
 
-export type ScreenMode = "code" | "run" | "doc" | "review" | "web" | "design" | "scan" | "board" | "idle" | "chart" | "book" | "risk";
+export type ScreenMode = "code" | "run" | "doc" | "review" | "web" | "design" | "scan" | "board" | "idle" | "chart" | "book" | "risk" | "spark" | "ticket";
 
 const SCREEN_LABEL: Record<ScreenMode, string> = {
   code: "editor",
@@ -223,13 +223,34 @@ const SCREEN_LABEL: Record<ScreenMode, string> = {
   chart: "price",
   book: "order book",
   risk: "risk",
+  spark: "p&l",
+  ticket: "order",
 };
 
 export function screenLabel(mode: ScreenMode): string {
   return SCREEN_LABEL[mode];
 }
 
-export function screenFor(activity: string, role: string): ScreenMode {
+/** The screen a role keeps open between tool calls: the lead's plan board, the reviewer's diff, QA's test run. */
+const ROLE_SCREEN: Record<string, ScreenMode> = {
+  lead: "board",
+  engineer: "code",
+  designer: "design",
+  reviewer: "review",
+  qa: "run",
+  security: "scan",
+  researcher: "web",
+  operator: "run",
+};
+
+/**
+ * The activity-to-screen lookup: every activity shows a flat screen glyph
+ * (plan: board rows; test: terminal lines with pass ticks; review: red and
+ * green diff lines). An activity with no screen of its own (think, a
+ * handoff, an ask, a wait, a celebration) keeps the role's screen while the
+ * cat has work; the paw stays only for a resting cat or an empty seat.
+ */
+export function screenFor(activity: string, role: string, working = true): ScreenMode {
   switch (activity) {
     case "code":
       return role === "designer" ? "design" : "code";
@@ -248,13 +269,15 @@ export function screenFor(activity: string, role: string): ScreenMode {
       return "scan";
     case "plan":
       return "board";
-    default:
+    case "rest":
       return "idle";
+    default:
+      return working ? ROLE_SCREEN[role] ?? "code" : "idle";
   }
 }
 
-/** The fund's second screen: the order book while a trader executes, a backtest's output on a run, risk while it reviews or scans. */
-export function fundScreenFor(activity: string): ScreenMode {
+/** The fund's second screen: the order book while a trader executes, a backtest's output on a run, risk while it reviews or scans; between calls a P&L sparkline or an order ticket. */
+export function fundScreenFor(activity: string, role = "engineer", working = true): ScreenMode {
   switch (activity) {
     case "automate":
       return "book";
@@ -270,8 +293,13 @@ export function fundScreenFor(activity: string): ScreenMode {
       return "doc";
     case "plan":
       return "board";
-    default:
+    case "rest":
       return "idle";
+    default:
+      if (!working) return "idle";
+      if (role === "lead") return "board";
+      if (role === "reviewer" || role === "security") return "risk";
+      return role === "operator" || role === "qa" ? "ticket" : "spark";
   }
 }
 
@@ -445,16 +473,71 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed, note = false
       );
       break;
     case "doc":
-    case "review":
       content = (
         <>
-          {mode === "review" ? <rect className="of-highlight of-sweep" x={body.x + 2} y={inner.y - 2} width={body.w - 4} height={7} rx={1.5} style={{ ["--of-sweep" as string]: `${(rows - 2) * pitch}px` } as CSSProperties} /> : null}
           {Array.from({ length: rows }, (_, i) => (
-            <rect key={i} className={mode === "review" && i % 4 === 1 ? "of-code-c" : mode === "review" && i % 5 === 3 ? "of-code-b" : "of-code-d"} x={inner.x} y={inner.y + i * pitch} width={inner.w * (i % 4 === 3 ? 0.6 : 0.92)} height={3} rx={1.5} />
+            <rect key={i} className="of-code-d" x={inner.x} y={inner.y + i * pitch} width={inner.w * (i % 4 === 3 ? 0.6 : 0.92)} height={3} rx={1.5} />
           ))}
         </>
       );
       break;
+    case "review": {
+      // a diff: context lines, a removed line in red, added lines in green, each with its gutter mark
+      const kinds = ["ctx", "del", "add", "add", "ctx", "ctx", "del", "add"] as const;
+      content = (
+        <>
+          {Array.from({ length: rows }, (_, i) => {
+            const k = kinds[i % kinds.length]!;
+            const y = inner.y + i * pitch;
+            return (
+              <g key={i}>
+                {k === "ctx" ? null : <rect className={k === "add" ? "of-diff-add" : "of-diff-del"} x={body.x + 1} y={y - 2} width={body.w - 2} height={7} />}
+                {k === "add" ? <path className="of-diff-mark of-diff-mark-add" d={`M${inner.x - 1} ${y + 1.5} h4 M${inner.x + 1} ${y - 0.5} v4`} /> : k === "del" ? <path className="of-diff-mark of-diff-mark-del" d={`M${inner.x - 1} ${y + 1.5} h4`} /> : null}
+                <rect className={k === "add" ? "of-bull" : k === "del" ? "of-bear" : "of-code-d"} x={inner.x + 7} y={y} width={Math.max(6, (inner.w - 7) * (i % 3 === 2 ? 0.55 : 0.86))} height={3} rx={1.5} />
+              </g>
+            );
+          })}
+          <rect className="of-highlight-line of-sweep" x={body.x + 1} y={inner.y - 2} width={2} height={7} style={{ ["--of-sweep" as string]: `${(rows - 2) * pitch}px` } as CSSProperties} />
+        </>
+      );
+      break;
+    }
+    case "spark": {
+      // the day's P&L as a sparkline, two book rows under it
+      const pts = [0.62, 0.55, 0.66, 0.48, 0.52, 0.34, 0.4, 0.26, 0.3, 0.18];
+      const ch = Math.max(8, body.h * 0.5);
+      const step = inner.w / (pts.length - 1);
+      const d = pts.map((v, i) => `${i ? "L" : "M"}${(inner.x + i * step).toFixed(1)} ${(inner.y + v * ch).toFixed(1)}`).join(" ");
+      const rowsY = inner.y + ch + 6;
+      content = (
+        <>
+          <path className="of-price of-spark" d={d} />
+          {[0, 1].map((i) => (
+            <g key={i}>
+              <rect className="of-code-d" x={inner.x} y={rowsY + i * pitch} width={inner.w * 0.4} height={3} rx={1.5} />
+              <rect className={i === 0 ? "of-bull" : "of-bear"} x={inner.x + inner.w * (i === 0 ? 0.62 : 0.7)} y={rowsY + i * pitch} width={inner.w * (i === 0 ? 0.38 : 0.3)} height={3} rx={1.5} />
+            </g>
+          ))}
+        </>
+      );
+      break;
+    }
+    case "ticket": {
+      // an order ticket: symbol, size and price fields, the buy button
+      const fieldH = Math.max(5, Math.min(7, (body.h - 18) / 3));
+      content = (
+        <>
+          {[0, 1].map((i) => (
+            <g key={i}>
+              <rect className="of-code-d" x={inner.x} y={inner.y + i * (fieldH + 4) + 1} width={inner.w * 0.3} height={3} rx={1.5} />
+              <rect className="of-field" x={inner.x + inner.w * 0.38} y={inner.y + i * (fieldH + 4) - 1} width={inner.w * 0.62} height={fieldH} rx={2} />
+            </g>
+          ))}
+          <rect className="of-ticket-buy" x={inner.x} y={inner.y + 2 * (fieldH + 4)} width={inner.w} height={fieldH + 1} rx={2} />
+        </>
+      );
+      break;
+    }
     case "web":
       content = (
         <>
@@ -668,8 +751,13 @@ export function DeskCard({ desk, plan, name, role, status, task, stamp }: { desk
   const nameW = measureWidth(nameText, nameStyle);
   const icon = n1 ? 12 : 11;
   const sideRoom = avail - nameW - 6 - (mark ? icon + 3 : 0);
-  const side = fit(mark ? mark.word : role, sideRoom, bodyStyle);
-  const taskText = fit(task ?? "No task yet", avail, bodyStyle);
+  // the word beside the name is never cut: the body size, else the micro size; a role that fits neither is left out, a status keeps its icon
+  const sideWord = mark ? mark.word : role;
+  const sideSmall = n1 && measureWidth(sideWord, bodyStyle) > sideRoom && measureWidth(sideWord, MICRO) <= sideRoom;
+  const side = measureWidth(sideWord, sideSmall ? MICRO : bodyStyle) <= sideRoom ? sideWord : "";
+  const showMark = mark !== null && (side !== "" || avail - nameW - 6 >= icon);
+  const taskFit = task ? chipTitleSized(task, avail, bodyStyle, n1 ? MICRO : undefined) : { text: fit("No task yet", avail, bodyStyle), small: false };
+  const taskText = taskFit.text;
   const y1 = r.y + Math.round((r.h - lh * 2) / 2) + lh - 3;
   const y2 = y1 + lh;
   const sideX = r.x + pad + nameW + 6;
@@ -679,15 +767,13 @@ export function DeskCard({ desk, plan, name, role, status, task, stamp }: { desk
       <text className={`of-t of-t-${plan.m.text} of-ink of-medium`} x={r.x + pad} y={y1}>
         {nameText}
       </text>
+      {mark && showMark ? <Glyph name={mark.glyph} x={sideX} y={y1 - icon + 1} size={icon} className={`of-glyph of-tone-${mark.tone}`} /> : null}
       {side ? (
-        <>
-          {mark ? <Glyph name={mark.glyph} x={sideX} y={y1 - icon + 1} size={icon} className={`of-glyph of-tone-${mark.tone}`} /> : null}
-          <text className={`of-t of-t-${plan.m.text} ${mark ? `of-tone-${mark.tone}` : "of-muted"}`} x={sideX + (mark ? icon + 3 : 0)} y={y1}>
-            {side}
-          </text>
-        </>
+        <text className={`of-t of-t-${sideSmall ? "n2" : plan.m.text} ${mark ? `of-tone-${mark.tone}` : "of-muted"}`} x={sideX + (mark ? icon + 3 : 0)} y={y1}>
+          {side}
+        </text>
       ) : null}
-      <text className={`of-t of-t-${plan.m.text} ${task ? "of-muted" : "of-subtle"}`} x={r.x + pad} y={y2}>
+      <text className={`of-t of-t-${taskFit.small ? "n2" : plan.m.text} ${task ? "of-muted" : "of-subtle"}`} x={r.x + pad} y={y2}>
         {taskText}
       </text>
       {stamp ? (

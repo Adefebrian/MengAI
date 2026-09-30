@@ -1,13 +1,14 @@
 // The preview's scripted timeline: a pure function of the tick, so the board
 // is reproducible. Eight steps per cycle; every cat plays its own role's
 // scenarios: Oyen plans and hands the settings task to Belang, Belang builds
-// and tests it and hands the diff to Cemong, who returns it once and then
+// and tests it and hands the diff to Tempe, who returns it once and then
 // approves it; Tompel hunts a bug and hits an error, Gembul paints, Cimol
 // researches, Garong scans and flags, Moci reads the runbook and is
 // stopped. Tompel's budget runs low near the end of each cycle. A waiting cat
 // that starts working plays the catch. Sample content for the preview only.
 import { ACTIVITY_LABEL, ROLE_LABEL, type Activity, type AgentRole, type AgentStatus, type Coat, type Mood } from "@mengai/shared";
 import type { CatCardProps } from "../src/contract";
+import { rosterCrew } from "../src/roster";
 
 export interface CrewMember {
   id: string;
@@ -17,16 +18,8 @@ export interface CrewMember {
   seed: number;
 }
 
-export const CREW: CrewMember[] = [
-  { id: "a1", name: "Oyen", role: "lead", coat: "ginger", seed: 1187 },
-  { id: "a2", name: "Belang", role: "engineer", coat: "calico", seed: 2291 },
-  { id: "a3", name: "Cemong", role: "reviewer", coat: "siamese", seed: 5519 },
-  { id: "a4", name: "Tompel", role: "qa", coat: "cream", seed: 3373 },
-  { id: "a5", name: "Gembul", role: "designer", coat: "tabby", seed: 4447 },
-  { id: "a6", name: "Cimol", role: "researcher", coat: "tuxedo", seed: 6607 },
-  { id: "a7", name: "Garong", role: "security", coat: "gray", seed: 7703 },
-  { id: "a8", name: "Moci", role: "operator", coat: "black", seed: 8849 },
-];
+/** The board's crew, read from the shared roster (src/roster.ts) so every scene gives a cat the same coat. */
+export const CREW: CrewMember[] = rosterCrew(["Oyen", "Belang", "Tempe", "Tompel", "Gembul", "Cimol", "Garong", "Moci"]).map((c, i) => ({ id: `a${i + 1}`, name: c.name, role: c.role, coat: c.coat, seed: c.seed }));
 
 /** One step holds long enough for a full beat (2.5 loops of --loop-pulse) plus the dwell. */
 export const TICK_MS = 4400;
@@ -59,7 +52,7 @@ const SCRIPTS: Record<string, Step[]> = {
     { activity: "read", detail: "Picked up from Oyen", task: SETTINGS },
     { activity: "code", mood: "focused", detail: "Editing settings.tsx", task: SETTINGS },
     { activity: "run", mood: "focused", detail: "Running bun test", task: SETTINGS },
-    { activity: "handoff", detail: "Handing the diff to Cemong", task: SETTINGS },
+    { activity: "handoff", detail: "Handing the diff to Tempe", task: SETTINGS },
     { activity: "celebrate", status: "done", mood: "proud", detail: "Finished the settings page", task: SETTINGS },
     { activity: "think", detail: "Saving a skill", task: null },
   ],

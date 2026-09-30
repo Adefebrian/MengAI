@@ -10,7 +10,9 @@
 //            whiteboard or the meeting table, the right paw raised when it
 //            hands something over
 // All motion is CSS keyframes on transform and opacity, switched on by
-// data-pose on the floor actor; nothing moves under reduced motion.
+// data-pose on the floor actor; nothing moves under reduced motion. Every
+// floor cat stands on a flat contact ellipse, one tonal step darker than
+// the floor under it (no blur: a tonal step, not a shadow).
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { ACTIVITY_MIN_DWELL_MS } from "@mengai/shared";
 import type { OfficeAgent } from "../office-contract";
@@ -410,7 +412,10 @@ export function FloorActor({ agent, view, live, scale, floorCat, register, offsc
     body = (
       <g className={`cat of-cat${live ? " cat--live" : ""}`} {...catAttrs(agent)} style={{ "--cat-sw": String(1.5 / bu) } as CSSProperties}>
         <svg x={-50 * bu} y={-96 * bu} width={100 * bu} height={100 * bu} viewBox="0 0 100 100" overflow="visible">
-          <BackCatArt paw={view.paw} carry={view.carry} />
+          {/* docked beside a desk on its left, the cat turns so its raised paw reaches the desk */}
+          <g className="of-back-lean">
+            <BackCatArt paw={view.paw} carry={view.carry} />
+          </g>
         </svg>
       </g>
     );
@@ -442,6 +447,8 @@ export function FloorActor({ agent, view, live, scale, floorCat, register, offsc
       data-face="right"
     >
       <g key={view.moves} className="of-arrive">
+        {/* ground contact: a flat ellipse one tonal step darker than the floor, solid, no blur */}
+        <ellipse className="of-contact" data-pose={view.pose} cx={0} cy={-1} rx={(view.pose === "front" ? floorCat * 0.22 : view.pose === "back" ? 21 : 25) * (view.pose === "front" ? 1 : scale)} ry={4.5 * scale} />
         {body}
       </g>
     </g>

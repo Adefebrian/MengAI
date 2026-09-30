@@ -27,9 +27,14 @@
 //                through a doorway in its back wall
 // Every walk runs on lanes (horizontal) and spines (vertical), each with two
 // sub-lanes by direction, and a spot's own path in or out of its room, so a
-// cat never cuts through furniture. Visitors stand in front of a desk,
-// clear of both sub-lanes; walkers are depth sorted by their feet, so two
-// cats pass in front of each other, never through.
+// cat never cuts through furniture. Visitors dock beside a desk's monitor
+// (in the spine next to it, never in front of its name plate) and a cat that
+// stands up steps onto its aisle's lane, low enough that its head clears the
+// plate; walkers are depth sorted by their feet (against each other, and
+// against every furniture row through the occluders), so a cat behind a
+// desk's front edge goes behind the desk. Below 640px the full floor is
+// seen through a camera window about three widths tall (plan.camera) that
+// the scene moves to the room where the current beat plays.
 import { AGENT_ROLES, type AgentRole } from "@mengai/shared";
 
 export type OfficeVariant = "full" | "hero";
@@ -105,8 +110,8 @@ const FULL: Metrics = {
   deskMin: 196,
   maxCols: 4,
   leadDesk: 290,
-  aisle: 64,
-  corridor: 70,
+  aisle: 76,
+  corridor: 36,
   spine: 48,
   walker: 1.25,
   floorCat: 96,
@@ -133,13 +138,13 @@ const NARROW: Metrics = {
   deskMin: 130,
   maxCols: 2,
   leadDesk: 236,
-  aisle: 54,
-  corridor: 60,
+  aisle: 62,
+  corridor: 32,
   spine: 36,
   walker: 1.02,
   floorCat: 76,
   seatPitch: 60,
-  door: 46,
+  door: 42,
   speed: 128,
   ticker: 0,
   text: "n1",
@@ -210,6 +215,10 @@ export interface Spot {
   /** the way out when it differs (a room's other sub-lane): waypoints from the spot outward, then exitAttach on the lane */
   exit?: Pt[];
   exitAttach?: number;
+  /** where the thing the cat came for sits: its raised paw reaches that way */
+  lean?: "left" | "right";
+  /** the physical place, for reservations: two desks that share a spine share its docks */
+  key?: string;
 }
 
 export interface Desk {
@@ -239,9 +248,9 @@ export interface Desk {
   extra: Pt | null;
   /** chair back behind the cat */
   chair: Rect;
-  /** where this cat stands when it gets up */
+  /** where this cat stands when it gets up: on its aisle's lane, its head clear of the name plate */
   home: Spot;
-  /** where visitors stand in front of this desk, two slots */
+  /** the docks beside the monitor where visitors wait, never in front of the plate: beside the desk, then in front of that */
   visits: Spot[];
 }
 
@@ -359,6 +368,21 @@ export interface OfficePlan {
   theme: OfficeTheme;
   /** the fund's ticker board along the top of the rooms' back wall, null in the studio */
   ticker: Rect | null;
+  /**
+   * Furniture rows by their front edge, nearest the back first: a floor cat
+   * whose feet are above a row's front edge is behind that row, so the
+   * row's blocks are cut out of it (the scene's depth clip).
+   */
+  occluders: Occluder[];
+  /** below 640px on the full floor: the camera window's height; null when the whole floor shows */
+  camera: { h: number } | null;
+}
+
+export interface Occluder {
+  /** the front edge: feet above it are behind the row */
+  front: number;
+  /** the blocks drawn in front of a cat behind the row */
+  rects: Rect[];
 }
 
 export interface PlanOptions {
@@ -492,7 +516,7 @@ function ceoRoom(rect: Rect, lead: PlanAgent | null, m: Metrics, lane: number, f
   const doorH = m.wall - 14;
   const door = { x: rect.x + inset, y: floorTop - doorH, w: m.door, h: doorH };
   const wx = door.x + door.w / 2;
-  const boardX = door.x + door.w + 16;
+  const boardX = door.x + door.w + (rect.w < 400 ? 12 : 16);
   // the plan board comes first (JEV imm.concept c4): a window only when the board keeps room for titled columns
   const winW = rect.w >= 640 ? 88 : 0;
   const boardRight = rect.x + rect.w - inset - (winW ? winW + 14 : 0);
@@ -506,19 +530,39 @@ function ceoRoom(rect: Rect, lead: PlanAgent | null, m: Metrics, lane: number, f
   const cellTop = floorTop - m.bubble + 4;
   const desk = lead ? deskCell({ agentId: lead.id, role: lead.role, lead: true, x: deskLeft, y: cellTop, w: deskW, m }) : null;
   const deskBottom = desk ? desk.rect.y + desk.rect.h : floorTop + 120;
-  const visitY = deskBottom + Math.round(30 * m.walker);
-  const minFront = visitY + 30;
-  const front = frontAt ?? minFront;
+  const { inX, outX } = subLanes(wx);
+  // the row the crew walks along in front of the desk, in and out on two sub-rows
+  const rowIn = r1(deskBottom + Math.round(26 * m.walker));
+  const rowOut = r1(rowIn + Math.round(12 * m.walker));
   const catX = desk ? desk.rig.x + desk.cat / 2 : deskLeft + deskW / 2;
-  const visitors = [catX - 22, catX + 22].map((x) => roomSpot({ x: r1(x), y: visitY }, lane, wx));
+  // visitors dock beside the lead's monitor, left of the desk: beside it first, then in front of that (never on the plate)
+  const dockX = r1(deskLeft - Math.round(28 * m.walker));
+  const docks: Spot[] = [r1((desk?.top ?? floorTop + 60) + Math.round(16 * m.walker)), r1(deskBottom + Math.round(8 * m.walker))].map((y, i) => ({
+    p: { x: dockX, y },
+    lane,
+    attach: inX,
+    inner: [{ x: inX, y: rowIn }, { x: dockX, y: rowIn }],
+    exit: [{ x: dockX, y: rowOut }, { x: outX, y: rowOut }],
+    exitAttach: outX,
+    lean: "right",
+    key: `ceo:dock:${i}`,
+  }));
+  // the lead stands up in front of its drawer, or low enough that its head clears the plate
+  const homeX = desk?.drawer ? desk.drawer.x + desk.drawer.w / 2 : catX;
+  const homeY = r1(desk?.drawer ? rowIn : Math.max(rowIn, (desk ? desk.card.y + desk.card.h : deskBottom) + Math.round(52 * m.walker) + 2));
+  const home: Spot = { p: { x: r1(homeX), y: homeY }, lane, attach: inX, inner: [{ x: inX, y: homeY }], exit: [{ x: r1(homeX), y: Math.max(rowOut, homeY) }, { x: outX, y: Math.max(rowOut, homeY) }], exitAttach: outX };
+  const visitY = Math.max(rowOut, homeY);
+  const minFront = Math.round(visitY + 30);
+  const front = frontAt ?? minFront;
+  const visitors = docks;
   const board = roomSpot({ x: boardSpotX, y: boardY }, lane, wx);
-  const deskFull: Desk | null = desk ? { ...desk, home: roomSpot({ x: r1(catX), y: visitY }, lane, wx), visits: visitors } : null;
-  // the lounge: between the walkway and the desk, between the board row and the visitors' row
+  const deskFull: Desk | null = desk ? { ...desk, home, visits: visitors } : null;
+  // the lounge: between the walkway and the visitors' dock, between the board row and the visitors' row
   let lounge: Rect | null = null;
   const lx = wx + 32;
-  const lw = Math.min(180, deskLeft - 14 - lx);
+  const lw = Math.min(180, dockX - Math.round(30 * m.walker) - lx);
   const ly = boardY + 22;
-  const lh = Math.min(64, visitY - 64 * m.walker * 0.9 - 12 - ly);
+  const lh = Math.min(64, rowIn - 64 * m.walker * 0.9 - 12 - ly);
   if (lw >= 48 && lh >= 40) lounge = { x: r1(lx), y: r1(ly), w: r1(lw), h: r1(lh) };
   // a tall band (a big crew's meeting room sets it) leaves floor below the visitors' row: nobody walks there
   const credTop = visitY + 18;
@@ -526,12 +570,11 @@ function ceoRoom(rect: Rect, lead: PlanAgent | null, m: Metrics, lane: number, f
   const credX = wx + 34;
   const credW = rect.x + rect.w - 14 - credX;
   const credenza = credBottom - credTop >= 54 && credW >= 120 ? { x: r1(credX), y: r1(credTop), w: r1(credW), h: r1(credBottom - credTop) } : null;
-  const { outX } = subLanes(wx);
   const doorSpot: Spot = {
     p: { x: wx, y: floorTop + 6 },
     lane,
-    attach: subLanes(wx).inX,
-    inner: [{ x: subLanes(wx).inX, y: floorTop + 6 }],
+    attach: inX,
+    inner: [{ x: inX, y: floorTop + 6 }],
     exit: [{ x: outX, y: floorTop + 6 }],
     exitAttach: outX,
   };
@@ -662,7 +705,7 @@ function podGrid(o: {
   rack: boolean;
   skip: number;
   maxRows?: number;
-}): GridOut & { cols: number; dw: number; cellH: number; rowPitch: number; colX: (c: number) => number; shown: number } {
+}): GridOut & { cols: number; dw: number; cellH: number; rowPitch: number; colX: (c: number) => number; shown: number; onLane: (px: number, r: number) => Spot; docks: (c: number, r: number, deskTop: number, bottom: number) => Spot[] } {
   const { m, x0, inner, top } = o;
   const cols = columnsFor(inner, m);
   const gap = cols === 1 ? 0 : m.spine;
@@ -689,6 +732,24 @@ function podGrid(o: {
   let pantry: Pantry | null = null;
   let nap: OfficePlan["nap"] = null;
   let shown = 0;
+  /** A cat that stands up steps onto its aisle's lane: low enough that its head clears the name plate. */
+  const onLane = (px: number, r: number): Spot => {
+    const y = r1(top + r * rowPitch + cellH + m.aisle - 14 * m.walker);
+    return { p: { x: r1(px), y }, lane: o.laneBase + r, attach: r1(px), inner: [] };
+  };
+  /**
+   * The docks beside a desk's monitor: in the spine on its monitor side (the
+   * right spine for the first column, which has a wall on its left), beside
+   * the desk top first, then in front of that. Two desks that share a spine
+   * share its docks, so the keys name the place.
+   */
+  const docks = (c: number, r: number, deskTop: number, bottom: number): Spot[] => {
+    const k = cols === 1 ? 0 : Math.max(0, c - 1);
+    const x = r1(cols === 1 ? x0 + dw + m.spine / 2 : colX(k) + dw + gap / 2);
+    const lean: "left" | "right" = cols === 1 || c === 0 ? "left" : "right";
+    const lane = o.laneBase + r;
+    return [r1(deskTop + Math.round(16 * m.walker)), r1(bottom + Math.round(8 * m.walker))].map((y, slot) => ({ p: { x, y }, lane, attach: x, inner: [], lean, key: `dock:${lane}:${k}:${slot}` }));
+  };
   kinds.forEach((k, i) => {
     const r = Math.floor(i / cols);
     const c = i % cols;
@@ -703,7 +764,7 @@ function podGrid(o: {
     if (k.agent) {
       const cell = deskCell({ agentId: k.agent.id, role: k.agent.role, lead: false, x, y, w: dw, m });
       const catX = cell.rig.x + cell.cat / 2;
-      desks.push({ ...cell, home: at(catX), visits: [at(x + dw * 0.26), at(x + dw * 0.26 + Math.max(44 * m.walker, dw * 0.22))] });
+      desks.push({ ...cell, home: onLane(catX, r), visits: docks(c, r, cellTop, bottom) });
       shown++;
       return;
     }
@@ -731,7 +792,7 @@ function podGrid(o: {
   const spineAt = (left: number, w: number): VLane => ({ xD: r1(left + w * 0.32), xU: r1(left + w * 0.68), lanes: [] });
   if (cols === 1) spines.push(spineAt(x0 + dw, m.spine));
   for (let c = 0; c < cols - 1; c++) spines.push(spineAt(colX(c) + dw, gap));
-  return { desks, cells, lanes, spines, bottom: top + rows * rowPitch, pantry, nap, cols, dw, cellH, rowPitch, colX, shown };
+  return { desks, cells, lanes, spines, bottom: top + rows * rowPitch, pantry, nap, cols, dw, cellH, rowPitch, colX, shown, onLane, docks };
 }
 
 /**
@@ -819,7 +880,52 @@ export function planOffice(agents: PlanAgent[], rawWidth: number, variant: Offic
     hidden: [],
     theme,
     ticker: m.ticker ? { x: x0, y: m.cap + 3, w: inner, h: m.ticker - 6 } : null,
+    occluders: occludersOf(ceo.room.desk ? [ceo.room.desk, ...grid.desks] : grid.desks, grid.cells, meeting, pan ? pan.pantry : null),
+    camera: cameraFor(width, Math.round(height)),
   };
+}
+
+/** Below 640px the full floor is seen through a window about three widths tall; null when the whole floor fits it. */
+export function cameraFor(width: number, height: number): { h: number } | null {
+  if (width >= 640) return null;
+  const h = Math.round(width * CAMERA_RATIO);
+  return h < height ? { h } : null;
+}
+
+/** The narrow camera window's height, in widths (at 343px wide about one and a third phone screens). */
+export const CAMERA_RATIO = 2.9;
+
+/**
+ * Furniture rows by their front edge: the desks and cells of a grid row
+ * (and the lead's desk), the meeting table, the pantry counter. A floor cat
+ * behind a row has the row's blocks cut out of it.
+ */
+function occludersOf(desks: Desk[], cells: Cell[], meeting: MeetingRoom | null, pantryRoom: Pantry | null): Occluder[] {
+  const rows = new Map<number, Rect[]>();
+  const add = (front: number, r: Rect) => {
+    const k = Math.round(front);
+    const list = rows.get(k) ?? [];
+    list.push({ x: r1(r.x), y: r1(r.y), w: r1(r.w), h: r1(r.h) });
+    rows.set(k, list);
+  };
+  for (const d of desks) {
+    const bottom = d.rect.y + d.rect.h;
+    add(bottom, { x: d.rect.x, y: d.top, w: d.rect.w, h: bottom - d.top });
+  }
+  for (const c of cells) {
+    const bottom = c.rect.y + c.rect.h;
+    add(bottom, { x: c.rect.x, y: c.top, w: c.rect.w, h: bottom - c.top });
+  }
+  if (meeting) add(meeting.table.y + meeting.table.h, meeting.table);
+  if (pantryRoom && pantryRoom.kind === "room") add(pantryRoom.counter.y + pantryRoom.counter.h, pantryRoom.counter);
+  return [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([front, rects]) => ({ front, rects }));
+}
+
+/** How many occluders a cat with its feet at y stands in front of: its depth band. */
+export function bandOf(plan: OfficePlan, y: number): number {
+  let b = 0;
+  for (const o of plan.occluders) if (o.front <= y + 0.5) b++;
+  return b;
 }
 
 /** The most rows the hero shows; crew past them is left out of the hero (their beats finish at once). */
@@ -859,23 +965,31 @@ function planHero(agents: PlanAgent[], width: number, theme: OfficeTheme, keep: 
   const shownIds = new Set(grid.desks.map((d) => d.agentId));
   const hidden = allCrew.filter((a) => !shownIds.has(a.id)).map((a) => a.id);
   const { dw, cellH, colX } = grid;
-  const at = (x: number, r: number): Spot => ({ p: { x: r1(x), y: r1(top + r * grid.rowPitch + cellH + 30 * m.walker) }, lane: r, attach: r1(x), inner: [] });
   // the lead's desk fills the corner (JEV ui.region_gate hero_lounge 0.84: no lounge, and no cell stays empty)
   const cornerW = span * dw + (span - 1) * (cols === 1 ? 0 : m.spine);
   const cornerX = colX(0);
-  const leadCell = lead ? deskCell({ agentId: lead.id, role: lead.role, lead: true, x: cornerX, y: top, w: cornerW, m }) : null;
+  // the lead's desk keeps the row's height (its monitor and cat no taller than a crew desk's), so the aisle in front of it stays whole
+  const probe = deskCell({ agentId: "", role: "engineer", lead: false, x: 0, y: 0, w: dw, m });
+  const leadM: Metrics = { ...m, lead: Math.min(m.lead, probe.cat), monMax: Math.max(40, Math.min(m.monMax, Math.floor(probe.monitor.h / 0.62))) };
+  const leadCell = lead ? deskCell({ agentId: lead.id, role: lead.role, lead: true, x: cornerX, y: top, w: cornerW, m: leadM }) : null;
   const catX = leadCell ? leadCell.rig.x + leadCell.cat / 2 : cornerX + cornerW / 2;
-  const visitors = [at(catX - 20, 0), at(catX + 20, 0)];
-  const ceoDesk: Desk | null = leadCell ? { ...leadCell, home: at(catX, 0), visits: visitors } : null;
+  // visitors dock in the spine on the corner's right, beside the lead's desk (the first crew desk shares it)
+  const dockK = cols === 1 ? 0 : span - 1;
+  const dockX = r1(cols === 1 ? x0 + dw + m.spine / 2 : cornerX + cornerW + m.spine / 2);
+  const leadTop = leadCell ? leadCell.top : top + cellH - m.front - m.topDepth;
+  const leadBottom = leadCell ? leadCell.rect.y + leadCell.rect.h : top + cellH;
+  const visitors: Spot[] = [r1(leadTop + Math.round(16 * m.walker)), r1(leadBottom + Math.round(8 * m.walker))].map((y, slot) => ({ p: { x: dockX, y }, lane: 0, attach: dockX, inner: [], lean: "left", key: `dock:0:${dockK}:${slot}` }));
+  const ceoDesk: Desk | null = leadCell ? { ...leadCell, home: grid.onLane(catX, 0), visits: visitors } : null;
   // the board hangs on the wall over the corner
   const whiteboard = { x: x0 + 8, y: wallTop + 8, w: r1(Math.min(cornerW - 16, span === 2 ? cornerW - 16 : cornerW * 0.9)), h: m.wall - 18 };
-  const board = at(cornerX + Math.min(cornerW * 0.25, 60), 0);
+  const board = grid.onLane(cornerX + Math.min(cornerW * 0.25, 60), 0);
   const corner = { x: x0, y: top, w: cornerW, h: cellH };
   const ceo: CeoRoom = { kind: "corner", rect: corner, floorTop, whiteboard, desk: ceoDesk, visitors, board, door: board.p.x, lounge: null, credenza: null };
   // huddle spots along the corner's aisle, far end first
   const pitch = Math.round(40 * m.walker);
   const huddle: Spot[] = [];
-  for (let x = corner.x + cornerW - pitch / 2; x > corner.x + pitch / 2 && huddle.length < 10; x -= pitch) huddle.push(at(x, 0));
+  // on the aisle's lane, so the huddle sits clear of the lead's name plate
+  for (let x = corner.x + cornerW - pitch / 2; x > corner.x + pitch / 2 && huddle.length < 10; x -= pitch) huddle.push(grid.onLane(x, 0));
   const lanes = grid.lanes;
   const allLanes = lanes.map((_, i) => i);
   const spines = grid.spines.map((s) => ({ ...s, lanes: allLanes }));
@@ -910,6 +1024,8 @@ function planHero(agents: PlanAgent[], width: number, theme: OfficeTheme, keep: 
     hidden,
     theme,
     ticker: m.ticker ? { x: x0, y: m.cap + 3, w: inner, h: m.ticker - 6 } : null,
+    occluders: occludersOf(ceoDesk ? [ceoDesk, ...grid.desks] : grid.desks, grid.cells, null, null),
+    camera: null,
   };
 }
 

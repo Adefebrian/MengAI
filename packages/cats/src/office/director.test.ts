@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import type { AgentRole } from "@mengai/shared";
 import type { OfficeAgent, OfficeBeat, OfficeMeeting } from "../office-contract";
 import { Director, TIMING, daypartOf, samePlaces, type TimerHost } from "./director";
-import { deskOf, planOffice, type OfficeVariant } from "./geometry";
+import { bandOf, deskOf, planOffice, type OfficeVariant } from "./geometry";
 
 class FakeTimers implements TimerHost {
   t = 0;
@@ -192,8 +192,18 @@ describe("meetings", () => {
     notes: endedAt ? ["Done"] : [],
   });
 
+  test("a meeting already in session when the scene opens has its crew in the seats at once", async () => {
+    const { d, timers } = setup(6);
+    d.setMeetings([meeting(null)]);
+    await timers.advance(1);
+    for (const id of ["a0", "a1", "a2", "a3"]) expect(d.actor(id).where).toBe("seat");
+    expect(d.meetingView().seated.length).toBe(4);
+    expect(d.meetingView().running).toBe(true);
+  });
+
   test("attendees file into their seats with a stagger, a speaker takes turns, then they go back", async () => {
     const { d, timers } = setup(6);
+    await timers.advance(TIMING.opening + 10);
     d.setMeetings([meeting(null)]);
     await timers.advance(TIMING.stand + 5);
     // the stagger: the fourth attendee has not stood up yet
@@ -271,7 +281,7 @@ describe("the clock", () => {
 
   test("an idle cat goes for a coffee and comes back with a mug", async () => {
     const timers = new FakeTimers();
-    const d = new Director({ timers });
+    const d = new Director({ timers, ambient: false });
     const agents = [agent(0), agent(1, { status: "idle", activity: "rest" })];
     d.attach();
     d.setAgents(agents);
@@ -314,7 +324,7 @@ describe("the clock", () => {
 
   test("a nap: into the cat bed, then back to the desk", async () => {
     const timers = new FakeTimers();
-    const d = new Director({ timers });
+    const d = new Director({ timers, ambient: false });
     const agents = [agent(0), agent(1, { status: "idle", activity: "rest" }), agent(2), agent(3)];
     const plan = planOffice(agents, 375);
     expect(plan.nap).not.toBeNull();
@@ -346,10 +356,13 @@ describe("the clock", () => {
     expect(d.actor("a1").dozing).toBe(false);
   });
 
-  test("the windows follow the local hour in flat steps", () => {
-    expect(daypartOf(6)).toBe("dawn");
+  test("the windows follow the clock in three flat skies: day until 18:00, dusk, then night", () => {
+    expect(daypartOf(6)).toBe("day");
     expect(daypartOf(12)).toBe("day");
+    expect(daypartOf(17.9)).toBe("day");
     expect(daypartOf(18)).toBe("dusk");
+    expect(daypartOf(19.5)).toBe("dusk");
+    expect(daypartOf(20)).toBe("night");
     expect(daypartOf(23)).toBe("night");
     expect(daypartOf(2)).toBe("night");
     let hour = 12;
@@ -468,5 +481,124 @@ describe("the company", () => {
     d.setBeats([{ id: "v", kind: "deliver", fromId: "a1", taskTitle: "Hit the target" }]);
     await timers.advance(LONG);
     expect(d.bell()).toBe(bell + 1);
+  });
+});
+
+describe("wave b: docks, depth, ambient life, the camera, the story clock", () => {
+  test("a visitor docks beside the target's monitor, its paw toward the desk, and goes behind the desk's front edge", async () => {
+    const { d, timers, plan } = setup();
+    const slot = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    slot.setAttribute("data-slot", "");
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    slot.appendChild(el);
+    const layer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    layer.appendChild(slot);
+    d.clipBase = "t";
+    d.register("a1", el);
+    d.setBeats([{ id: "h", kind: "handoff", fromId: "a1", toId: "a2", taskTitle: "Ship it" }]);
+    const docks = deskOf(plan, "a2")!.visits;
+    let seen = false;
+    for (let t = 0; t < 20_000 && !seen; t += 100) {
+      await timers.advance(100);
+      const at = d.position("a1");
+      if (d.actor("a1").pose === "back" && at && docks.some((v) => v.p.x === at.x && v.p.y === at.y)) {
+        seen = true;
+        const dock = docks.find((v) => v.p.x === at.x && v.p.y === at.y)!;
+        expect(el.getAttribute("data-lean")).toBe(dock.lean!);
+        expect(slot.getAttribute("clip-path")).toBe(`url(#t-depth-${bandOf(plan, dock.p.y)})`);
+      }
+    }
+    expect(seen).toBe(true);
+    await timers.advance(LONG);
+    // back home on its aisle: in front of every row it sat behind
+    expect(d.actor("a1").where).toBe("desk");
+  });
+
+  test("ambient life: with idle cats about, one of them is nearly always out in the pantry, the bed or the corridor", async () => {
+    const timers = new FakeTimers();
+    const d = new Director({ timers });
+    const agents = [agent(0), ...[1, 2, 3, 4].map((i) => agent(i, { status: "idle", activity: "rest" }))];
+    d.attach();
+    d.setAgents(agents);
+    d.setPlan(planOffice(agents, 375));
+    await timers.advance(3000);
+    let out = 0;
+    let most = 0;
+    const samples = 200;
+    for (let i = 0; i < samples; i++) {
+      await timers.advance(1000);
+      const away = agents.filter((a) => d.actor(a.id).where !== "desk").length;
+      if (away > 0) out++;
+      most = Math.max(most, away);
+    }
+    expect(out / samples).toBeGreaterThan(0.7);
+    // one idle cat at a time (JEV motion.intensity ambient tier 1)
+    expect(most).toBe(1);
+    // the lead stays in the office
+    expect(d.actor("a0").where).toBe("desk");
+  });
+
+  test("the scene opens on its first idle cat already out on a break, not getting up", async () => {
+    const timers = new FakeTimers();
+    const d = new Director({ timers });
+    const agents = [agent(0), agent(1, { status: "idle", activity: "rest" }), agent(2)];
+    const plan = planOffice(agents, 375);
+    d.attach();
+    d.setAgents(agents);
+    d.setPlan(plan);
+    await timers.advance(TIMING.ambientFirst + 5);
+    const v = d.actor("a1");
+    expect(v.where === "floor" || v.where === "nap").toBe(true);
+    const at = d.position("a1")!;
+    const places = [...(plan.pantry?.spots ?? []), ...(plan.nap ? [plan.nap.spot] : [])].map((s) => s.p);
+    expect(places.some((p) => p.x === at.x && p.y === at.y) || (plan.corridor !== null && Math.abs(at.y - plan.lanes[0]!.yR) < 0.5)).toBe(true);
+    await timers.advance(LONG * 2);
+    expect(d.actor("a1").where).toBe("desk");
+  });
+
+  test("ambient life never takes a cat a beat is about to walk to", async () => {
+    const timers = new FakeTimers();
+    const d = new Director({ timers });
+    const agents = [agent(0), agent(1), agent(2, { status: "waiting", activity: "wait" })];
+    d.attach();
+    d.setAgents(agents);
+    d.setPlan(planOffice(agents, 375));
+    d.setBeats([{ id: "h", kind: "handoff", fromId: "a1", toId: "a2", taskTitle: "x" }]);
+    for (let t = 0; t < 6000; t += 200) {
+      await timers.advance(200);
+      expect(d.actor("a2").where).toBe("desk");
+    }
+  });
+
+  test("the camera looks where the beat plays, then at the meeting, then rests", async () => {
+    const { d, timers, plan } = setup(6, "full", 343);
+    expect(d.cameraFocus()).toBeNull();
+    d.setBeats([{ id: "r", kind: "review", reviewerId: "a1", ownerId: "a4", passed: true, taskTitle: "x" }]);
+    await timers.advance(1);
+    const desk = deskOf(plan, "a4")!;
+    expect(d.cameraFocus()).toBeCloseTo(desk.rect.y + desk.rect.h * 0.6, 0);
+    await timers.advance(LONG);
+    expect(d.cameraFocus()).toBeNull();
+    await timers.advance(TIMING.opening);
+    d.setMeetings([{ id: "m", kind: "sync", title: "Sync", agentIds: ["a1", "a2"], agenda: ["One"], endedAt: null, notes: [] }]);
+    expect(d.cameraFocus()).toBeCloseTo(plan.meeting!.table.y + plan.meeting!.table.h / 2, 0);
+    d.setMeetings([{ id: "m", kind: "sync", title: "Sync", agentIds: ["a1", "a2"], agenda: ["One"], endedAt: 1, notes: [] }]);
+    expect(d.cameraFocus()).toBeNull();
+  });
+
+  test("the story clock drives the sky: day, dusk, night only late; null goes back to the local hour", () => {
+    const timers = new FakeTimers();
+    const d = new Director({ timers, hour: () => 3 });
+    d.attach();
+    expect(d.daypart()).toBe("night");
+    d.setHour(9.5);
+    expect(d.daypart()).toBe("day");
+    expect(d.hourNow()).toBe(9.5);
+    d.setHour(18.4);
+    expect(d.daypart()).toBe("dusk");
+    d.setHour(21);
+    expect(d.daypart()).toBe("night");
+    d.setHour(null);
+    expect(d.hourNow()).toBe(3);
   });
 });

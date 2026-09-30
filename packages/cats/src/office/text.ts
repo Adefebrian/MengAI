@@ -61,3 +61,57 @@ export function baseName(file: string | null): string | null {
   const parts = file.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? null;
 }
+
+const STOP = new Set(["the", "a", "an", "of", "for", "to", "and", "with", "on", "in", "our", "my", "your", "its", "this", "that", "at", "by", "from", "into"]);
+
+/** A task's short title: its first three content words ("Build the settings form" is "Build settings form"). */
+export function shortTitle(title: string): string {
+  const words = title.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const content = words.filter((w) => !STOP.has(w.toLowerCase()));
+  return (content.length ? content : words).slice(0, 3).join(" ");
+}
+
+/**
+ * A title for a small chip or plate: the whole title when it fits, else its
+ * short title of two or three words, else the verb and its head noun
+ * ("Review form"), each tried at the style and then at the smaller one when
+ * given, so a chip never ends in an ellipsis mid-word; only a single word
+ * too long for the chip is cut.
+ */
+export function chipTitle(title: string, maxWidth: number, style: TextStyle, small?: TextStyle): string {
+  return chipTitleSized(title, maxWidth, style, small).text;
+}
+
+/** chipTitle, and whether it had to use the smaller style. */
+export function chipTitleSized(title: string, maxWidth: number, style: TextStyle, small?: TextStyle): { text: string; small: boolean } {
+  const clean = title.replace(/\s+/g, " ").trim();
+  if (!clean || maxWidth <= 0) return { text: "", small: false };
+  const words = shortTitle(clean).split(" ");
+  // the whole title, the short one, the verb and its head noun, all at the style first so plates side by side keep one size; then the smaller size
+  const tries = [clean, words.join(" ")];
+  if (words.length >= 3) tries.push(`${words[0]} ${words[words.length - 1]}`);
+  for (const t of tries) if (measure(t, style) <= maxWidth) return { text: t, small: false };
+  if (small) for (const t of tries) if (measure(t, small) <= maxWidth) return { text: t, small: true };
+  // the head noun, in sentence case: "Signal", "Validation"
+  const last = [words.slice(-2).join(" "), words[words.length - 1]!, words[0]!].map(sentence);
+  for (const t of last) if (measure(t, style) <= maxWidth) return { text: t, small: false };
+  return { text: fit(sentence(words[0]!), maxWidth, style), small: false };
+}
+
+function sentence(text: string): string {
+  return text ? text[0]!.toUpperCase() + text.slice(1) : text;
+}
+
+/** A meeting's title for a board: whole, else "Kind: short title", else the kind alone. */
+export function headingTitle(title: string, maxWidth: number, style: TextStyle): string {
+  const clean = title.replace(/\s+/g, " ").trim();
+  if (measure(clean, style) <= maxWidth) return clean;
+  const at = clean.indexOf(":");
+  if (at > 0) {
+    const head = clean.slice(0, at).trim();
+    const short = `${head}: ${shortTitle(clean.slice(at + 1))}`;
+    if (measure(short, style) <= maxWidth) return short;
+    if (measure(head, style) <= maxWidth) return head;
+  }
+  return chipTitle(clean, maxWidth, style);
+}

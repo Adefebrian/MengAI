@@ -93,7 +93,8 @@ describe("Office", () => {
     const html = renderToStaticMarkup(<Office {...props(3)} />);
     expect(html).toContain("Doing");
     expect(html).toContain("To do");
-    expect(html).toContain("Build the");
+    // a chip keeps the whole title when it fits, else its short title (the verb and its head noun)
+    expect(html).toMatch(/>Build (the )?form</);
     expect(html).toContain("0 of 2");
     expect(html).toMatch(/class="cat of-token" data-coat="[a-z]+"/);
     // a small board names itself and the latest move
@@ -200,12 +201,56 @@ describe("Office", () => {
     expect(mounted.host.querySelector('.of-desk[data-agent="c3"]')).toBeNull();
   });
 
-  test("windows show the local hour, the rack shows the tests", () => {
+  test("windows show the clock, the rack shows the tests", () => {
     const html = renderToStaticMarkup(<Office {...props(4)} />);
-    expect(html).toMatch(/class="of-window" data-day="(dawn|day|dusk|night)"/);
+    expect(html).toMatch(/class="of-window" data-day="(day|dusk|night)"/);
     mounted = mount(<Office {...props(4)} agents={[agent(0), agent(1, { activity: "run" }), agent(2), agent(3)]} />);
     expect(mounted.host.querySelector("[data-rack]")?.getAttribute("data-rack")).toBe("testing");
     expect(mounted.host.textContent).toContain("Tests running");
+  });
+
+  test("the story clock sets the sky: a day with the sun until 18:00, dusk, night only late", async () => {
+    for (const [hour, day] of [[10, "day"], [18.5, "dusk"], [21, "night"]] as const) {
+      mounted = mount(<Office {...props(4)} hour={hour} />);
+      await wait(10);
+      expect(mounted.host.querySelector(".of-window")?.getAttribute("data-day")).toBe(day);
+      if (day === "day") expect(mounted.host.querySelector(".of-window .of-sun")).not.toBeNull();
+      if (day === "night") expect(mounted.host.querySelector(".of-window .of-moon")).not.toBeNull();
+      mounted.unmount();
+      mounted = null;
+    }
+  });
+
+  test("every monitor with work on it shows its screen; the paw stays for a resting cat", () => {
+    const agents = [
+      agent(0, { activity: "think", status: "thinking" }),
+      agent(1, { activity: "handoff" }),
+      agent(2, { activity: "wait", status: "waiting" }),
+      agent(3, { activity: "ask", status: "waiting" }),
+      agent(4, { activity: "rest", status: "idle", taskTitle: null, file: null }),
+    ];
+    const html = renderToStaticMarkup(<Office {...props(5)} agents={agents} />);
+    const modeOf = (id: string) => html.split(`class="of-desk" data-agent="${id}"`)[1]?.match(/class="of-monitor" data-mode="([a-z]+)"/)?.[1];
+    // the lead's plan board, the engineer's editor, the reviewer's diff, QA's test run with ticks, the resting cat's paw
+    expect(["c0", "c1", "c2", "c3", "c4"].map(modeOf)).toEqual(["board", "code", "review", "run", "idle"]);
+    expect(html).toContain("of-diff-add");
+    expect(html).toContain("of-run-check");
+  });
+
+  test("the fund's second screen shows a sparkline or an order ticket between calls", () => {
+    const agents = [agent(0, { activity: "think" }), agent(1, { activity: "handoff" }), agent(2, { activity: "wait", status: "waiting" }), agent(3, { activity: "ask", status: "waiting" })];
+    const html = renderToStaticMarkup(<Office {...props(4)} agents={agents} theme="fund" />);
+    const modes = [...html.matchAll(/class="of-monitor" data-mode="([a-z]+)"/g)].map((m) => m[1]);
+    expect(modes.filter((m) => m === "idle")).toEqual([]);
+    expect(modes).toContain("spark");
+    expect(modes).toContain("ticket");
+  });
+
+  test("every floor cat stands on a flat contact ellipse, in a depth slot", () => {
+    const html = renderToStaticMarkup(<Office {...props(3)} />);
+    expect(html.match(/class="of-contact"/g)?.length).toBe(3);
+    expect(html.match(/class="of-slot" data-slot=""/g)?.length).toBe(3);
+    expect(html).toMatch(/<clipPath id="[^"]+-depth-0"/);
   });
 
   test("two scenes on one page never share a clip path id", () => {

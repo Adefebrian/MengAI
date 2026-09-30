@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell, Masthead, Page, Section, SectionHead } from "@mengai/ui";
 import { AGENT_STATUSES, MOODS, ROLE_LABEL, STATUS_LABEL, activityForStatus, type AgentStatus, type Mood } from "@mengai/shared";
-import { Cat, CatCard, type CatSize } from "../src/index";
+import { Cat, CatCard, lookFor, type CatSize } from "../src/index";
 import { CatFigure } from "../src/cat";
 import { CREW, SCENARIOS, STEPS, TICK_MS, catLabel, frame, statusFor, type Scenario } from "./timeline";
 import { OfficePreview } from "./office";
@@ -55,7 +55,7 @@ function Crew() {
       <SectionHead
         id="crew-title"
         title="The crew at work"
-        lead="Oyen plans and hands the settings task to Belang, Belang builds and tests it for Cemong to review, and the rest play their own roles. Pick a cat to select it."
+        lead="Oyen plans and hands the settings task to Belang, Belang builds and tests it for Tempe to review, and the rest play their own roles. Pick a cat to select it."
         action={
           <button type="button" className="btn btn-secondary" aria-pressed={!playing} onClick={() => setPlaying((p) => !p)}>
             {playing ? "Pause the timeline" : "Play the timeline"}
@@ -159,7 +159,8 @@ function Row({ cat, name, note }: { cat: ReactNode; name: string; note: string }
 }
 
 function MoodsAndStatuses() {
-  const gray = CREW[2]!;
+  // Cemong is the tuxedo engineer everywhere (the shared roster)
+  const cemong = lookFor("Cemong");
   return (
     <Section id="moods" tone="base" labelledBy="moods-title" composition="custom" variant="rows">
       <SectionHead id="moods-title" title="Mood and status" lead="Mood changes the face and the tempo, never the pose. Status adds its own layer on top." />
@@ -172,7 +173,7 @@ function MoodsAndStatuses() {
                 key={mood}
                 name={mood[0]!.toUpperCase() + mood.slice(1)}
                 note={MOOD_NOTE[mood]}
-                cat={<Cat look={{ coat: gray.coat, seed: gray.seed }} role="engineer" status="working" activity="code" mood={mood} label={`Cemong, Engineer, ${mood}`} size={64} />}
+                cat={<Cat look={cemong} role="engineer" status="working" activity="code" mood={mood} label={`Cemong, Engineer, ${mood}`} size={64} />}
               />
             ))}
           </ul>

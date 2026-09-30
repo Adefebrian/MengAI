@@ -28,13 +28,8 @@ export function Floors({ plan, day }: { plan: OfficePlan; day: Daypart }) {
   return (
     <g className="of-floors">
       <rect className="of-floor" x={open.x} y={open.y} width={open.w} height={open.h} />
+      {/* the corridor is the walk lane between the rooms and the desks (JEV ui.region_gate corridor 0.74): a floor tone, no runner */}
       {plan.corridor ? <rect className="of-corridor" x={plan.corridor.x} y={plan.corridor.y} width={plan.corridor.w} height={plan.corridor.h} /> : null}
-      {plan.corridor && plan.corridor.w > 300 ? (
-        <g>
-          <rect className="of-runner" x={plan.corridor.x + 24} y={plan.corridor.y + 12} width={plan.corridor.w - 48} height={plan.corridor.h - 20} rx={8} />
-          <rect className="of-rug-line" x={plan.corridor.x + 30} y={plan.corridor.y + 18} width={plan.corridor.w - 60} height={plan.corridor.h - 32} rx={5} />
-        </g>
-      ) : null}
       {plan.rooms.map((r, i) => (
         <rect key={i} className={`of-room-floor of-room-floor-${r.kind}`} x={r.rect.x} y={r.floorTop} width={r.rect.w} height={r.rect.y + r.rect.h - r.floorTop} />
       ))}
@@ -110,7 +105,7 @@ export function BackWalls({ plan, day, doorOpen, hour }: { plan: OfficePlan; day
   );
 }
 
-/** A window: the sky for the local hour in a flat tone, the sun, the moon or a few clouds, a sill. */
+/** A window: the sky for the story clock in one of three flat fills (day with the sun, dusk, night with the moon), a sill. */
 export function Window({ r, day, seed }: { r: Rect; day: Daypart; seed: number }) {
   const inner = { x: r.x + 4, y: r.y + 4, w: r.w - 8, h: r.h - 8 };
   const clip = `${useSceneUid()}-win-${Math.round(r.x)}-${Math.round(r.y)}`;
@@ -125,14 +120,6 @@ export function Window({ r, day, seed }: { r: Rect; day: Daypart; seed: number }
             <ellipse className="of-cloud" cx={inner.x + inner.w * 0.3} cy={inner.y + inner.h * 0.5} rx={inner.w * 0.14} ry={4} />
             <ellipse className="of-cloud" cx={inner.x + inner.w * 0.38} cy={inner.y + inner.h * 0.43} rx={inner.w * 0.09} ry={4.5} />
           </g>
-        </>
-      );
-      break;
-    case "dawn":
-      sky = (
-        <>
-          <circle className="of-sun of-sun-low" cx={inner.x + inner.w * 0.25} cy={inner.y + inner.h * 0.92} r={sun * 1.3} />
-          <rect className="of-sky-band" x={inner.x} y={inner.y + inner.h * 0.62} width={inner.w} height={inner.h * 0.38} />
         </>
       );
       break;

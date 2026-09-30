@@ -6,12 +6,12 @@
 // each scene keeps its own beat queue and reports each beat done, like the
 // web store. Composed from the JAL Core kit and AppShell.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppShell, Masthead, Page, Section, SectionHead } from "@mengai/ui";
+import { AppShell, Page, Section, SectionHead } from "@mengai/ui";
 import { ACTIVITY_LABEL, ROLE_LABEL } from "@mengai/shared";
 import type { OfficeAgent, OfficeBeat, OfficeMeeting } from "../src/office-contract";
 import { OfficeScene } from "../src/office/office";
 import type { Director } from "../src/office/director";
-import { CREW_SIZES, LOOP_S, agentsAt, eventsBetween, meetingFrom, planAt, type CrewSize, type StoryEvent, type Theme } from "./office-story";
+import { CREW_SIZES, LOOP_S, agentsAt, eventsBetween, hourAt, meetingFrom, planAt, type CrewSize, type StoryEvent, type Theme } from "./office-story";
 
 const TICK_MS = 250;
 
@@ -109,6 +109,8 @@ function StoryOffice(props: {
   plan: ReturnType<typeof planAt>;
   variant: "full" | "hero";
   theme: Theme;
+  /** the story clock, 0 to 24 */
+  hour: number;
   still?: boolean;
   selectable?: boolean;
 }) {
@@ -140,6 +142,7 @@ function StoryOffice(props: {
       plan={props.plan}
       variant={props.variant}
       theme={props.theme}
+      hour={props.hour}
       still={props.still}
       selectedId={props.selectable ? selected : undefined}
       onSelect={props.selectable ? setSelected : undefined}
@@ -170,7 +173,7 @@ function Capture({ only, size, theme, at }: { only: "full" | "hero" | "still"; s
   const plan = useStablePlan(useMemo(() => planAt(story.t, theme), [story.t, theme]));
   return (
     <main className={`pv-capture${only === "hero" ? " pv-hero" : ""}`}>
-      <StoryOffice key={story.loop} fired={story.fired} agents={agents} meetings={story.meetings} plan={plan} variant={only === "hero" ? "hero" : "full"} theme={theme} still={only === "still"} selectable={only === "full"} />
+      <StoryOffice key={story.loop} fired={story.fired} agents={agents} meetings={story.meetings} plan={plan} variant={only === "hero" ? "hero" : "full"} theme={theme} hour={hourAt(story.t)} still={only === "still"} selectable={only === "full"} />
     </main>
   );
 }
@@ -199,32 +202,26 @@ function OfficeDay({ theme, setTheme, initialSize }: { theme: Theme; setTheme: (
   return (
     <Page rhythm="default" motion="none">
       <AppShell title="MengAI office" destinations={destinations} current="office" archetype={{ bar: "bar", labels: "all" }}>
-        <Masthead
-          id="top"
-          variant="left"
-          title="A cat company at work."
-          lead="Every agent is a cat with its own desk. They work at their monitors, walk work over to each other, meet at the table, ask Oyen, the CEO cat, when they need a yes, and walk in and out of the door when they join or leave."
-        />
+        {/* the floor leads the page: its heading, the story controls, the company toolbar, then the scene in the first viewport */}
         <Section id="office" tone="base" labelledBy="office-title" composition="custom" variant="office-live">
-          <SectionHead
-            id="office-title"
-            title="One company day, on a loop"
-            lead={
-              theme === "fund"
-                ? "Oyen hands out the backtest, Tompel gets a higher limit, Cemong finds a lookahead bias, Belo joins the desk, the risk committee meets, Moci walks out, the fix passes, the target rings the bell, then everyone closes the book."
-                : "Oyen hands out the form, Tompel gets a yes, Cemong sends the form back, Belo is hired, the crew meets, Moci walks out, the fix passes and goes on the board, Gembul naps, then everyone wraps up."
-            }
-            action={
-              <div className="pv-office-controls">
-                <button type="button" className="btn btn-secondary" aria-pressed={!playing} onClick={() => setPlaying((p) => !p)}>
-                  {playing ? "Pause the story" : "Play the story"}
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={story.restart}>
-                  Restart
-                </button>
-              </div>
-            }
-          />
+          <div className="kit-head pv-office-head" data-layout="split">
+            <h1 id="office-title" className="kit-heading">
+              A cat company at work
+            </h1>
+            <p className="kit-lead">
+              {theme === "fund"
+                ? "One trading day on a loop. Oyen hands out the backtest, Tempe finds a lookahead bias, Belo joins the desk, the risk committee meets, Moci walks out, the fix passes and the target rings the bell."
+                : "One company day on a loop. Oyen hands out the form, Tompel gets a yes, Tempe sends the form back, Belo is hired, the crew meets, Moci walks out, the fix passes and goes on the board."}
+            </p>
+            <div className="kit-head-action pv-office-controls">
+              <button type="button" className="btn btn-secondary" aria-pressed={!playing} onClick={() => setPlaying((p) => !p)}>
+                {playing ? "Pause the story" : "Play the story"}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={story.restart}>
+                Restart
+              </button>
+            </div>
+          </div>
           <div className="pv-office-bar kit-full">
             <div className="pv-sizes-toggle" role="group" aria-label="Company">
               {THEMES.map((th) => (
@@ -245,20 +242,20 @@ function OfficeDay({ theme, setTheme, initialSize }: { theme: Theme; setTheme: (
             </p>
           </div>
           <div className="kit-full pv-office">
-            <StoryOffice key={`full-${size}-${story.loop}`} fired={story.fired} agents={stable} meetings={story.meetings} plan={stablePlan} variant="full" theme={theme} selectable />
+            <StoryOffice key={`full-${size}-${story.loop}`} fired={story.fired} agents={stable} meetings={story.meetings} plan={stablePlan} variant="full" theme={theme} hour={hourAt(story.t)} selectable />
           </div>
         </Section>
         <Section id="hero" tone="layer" labelledBy="hero-title" composition="custom" variant="office-hero">
           <SectionHead id="hero-title" title="The landing hero" lead="The same day in the compact scene the landing shows beside its headline." />
           <figure className="kit-full pv-hero pv-figure">
-            <StoryOffice key={`hero-${story.loop}`} fired={story.fired} agents={heroStable} meetings={story.meetings} plan={stablePlan} variant="hero" theme={theme} />
+            <StoryOffice key={`hero-${story.loop}`} fired={story.fired} agents={heroStable} meetings={story.meetings} plan={stablePlan} variant="hero" theme={theme} hour={hourAt(story.t)} />
             <figcaption className="kit-meta">A sample crew on a scripted loop. The hero has no meeting room or pantry: the crew huddles at the plan board.</figcaption>
           </figure>
         </Section>
         <Section id="still" tone="base" labelledBy="still-title" composition="custom" variant="office-still">
           <SectionHead id="still-title" title="Still, for reduced motion" lead="Every cat keeps the still pose of its activity, moves are instant, and each beat is written out under the scene." />
           <div className="kit-full pv-office">
-            <StoryOffice key={`still-${story.loop}`} fired={story.fired} agents={heroStable} meetings={story.meetings} plan={stablePlan} variant="full" theme={theme} still />
+            <StoryOffice key={`still-${story.loop}`} fired={story.fired} agents={heroStable} meetings={story.meetings} plan={stablePlan} variant="full" theme={theme} hour={hourAt(story.t)} still />
           </div>
         </Section>
       </AppShell>

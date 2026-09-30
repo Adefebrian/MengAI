@@ -1,9 +1,12 @@
 // The floor plan: every piece inside the slab, no two desks on one spot,
 // and every walk between any two places stays on the lanes, clear of every
 // desk, table, counter, shelf and easel, at every width and crew size.
+// Visitors dock beside a desk's monitor and never stand over a name plate,
+// a cat that stands up keeps its head clear of its plate, the furniture
+// rows give the depth bands, and the narrow floor gets its camera window.
 import { describe, expect, test } from "bun:test";
 import { AGENT_ROLES } from "@mengai/shared";
-import { allDesks, planOffice, route, type OfficePlan, type OfficeTheme, type OfficeVariant, type PlanAgent, type Pt, type Rect, type Spot } from "./geometry";
+import { CAMERA_RATIO, allDesks, bandOf, planOffice, route, type OfficePlan, type OfficeTheme, type OfficeVariant, type PlanAgent, type Pt, type Rect, type Spot } from "./geometry";
 
 function crew(n: number): PlanAgent[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -208,4 +211,112 @@ describe("route", () => {
       }
     }
   }
+});
+
+/** A cat sitting with its back to us at a spot (the visitor pose): its drawn box. */
+function backCat(p: Pt, plan: OfficePlan): Rect {
+  const bu = 0.56 * plan.m.walker;
+  return { x: p.x - 40 * bu, y: p.y - 92 * bu, w: 80 * bu, h: 92 * bu };
+}
+
+/** A standing walker at a spot, side view: its drawn box. */
+function standing(p: Pt, plan: OfficePlan): Rect {
+  const wu = 0.6 * plan.m.walker;
+  return { x: p.x - 42 * wu, y: p.y - 84 * wu, w: 92 * wu, h: 84 * wu };
+}
+
+describe("docks and plates", () => {
+  for (const variant of ["full", "hero"] as OfficeVariant[]) {
+    for (const width of [288, 343, 382, 560, 736, 1024, 1248]) {
+      for (const n of [4, 8, 12]) {
+        test(`${variant} ${width}px, ${n} cats: visitors dock beside a monitor, never over a name plate in front of it`, () => {
+          const plan = planOffice(crew(n), width, variant);
+          const desks = allDesks(plan);
+          for (const d of desks) {
+            for (const v of d.visits) {
+              const box = backCat(v.p, plan);
+              expect(v.lean === "left" || v.lean === "right").toBe(true);
+              for (const other of desks) {
+                // a desk whose front edge is behind the cat's feet is drawn under the cat: its plate must stay clear
+                if (other.rect.y + other.rect.h > v.p.y) continue;
+                expect({ desk: d.agentId, over: other.agentId, hit: overlaps(box, other.card) }).toEqual({ desk: d.agentId, over: other.agentId, hit: false });
+              }
+            }
+          }
+        });
+
+        test(`${variant} ${width}px, ${n} cats: a cat that stands up keeps its head clear of its own plate`, () => {
+          const plan = planOffice(crew(n), width, variant);
+          for (const d of allDesks(plan)) {
+            const box = standing(d.home.p, plan);
+            const clearBelow = box.y >= d.card.y + d.card.h - 1;
+            const clearBeside = box.x >= d.card.x + d.card.w - 2 || box.x + box.w <= d.card.x + 2;
+            expect({ desk: d.agentId, clear: clearBelow || clearBeside }).toEqual({ desk: d.agentId, clear: true });
+          }
+        });
+      }
+    }
+  }
+
+  test("two desks that share a spine share its docks", () => {
+    const plan = planOffice(crew(8), 343, "full");
+    const [a, b] = plan.desks;
+    expect(a!.rect.y).toBe(b!.rect.y);
+    expect(a!.visits.map((v) => v.key)).toEqual(b!.visits.map((v) => v.key));
+    // beside the first column's desk on its right, beside the second column's monitor on its left
+    expect(a!.visits[0]!.lean).toBe("left");
+    expect(b!.visits[0]!.lean).toBe("right");
+    expect(a!.visits[0]!.p.x).toBeGreaterThan(a!.rect.x + a!.rect.w);
+    expect(b!.visits[0]!.p.x).toBeLessThan(b!.monitor.x);
+  });
+
+  test("the CEO's visitors dock left of the lead's desk, by its monitor", () => {
+    const plan = planOffice(crew(8), 1248, "full");
+    const lead = plan.ceo.desk!;
+    for (const v of plan.ceo.visitors) {
+      expect(v.p.x).toBeLessThan(lead.rect.x);
+      expect(v.lean).toBe("right");
+    }
+  });
+});
+
+describe("depth and camera", () => {
+  test("the furniture rows are the occluders, back to front, each block inside the floor", () => {
+    for (const width of [343, 768, 1248]) {
+      const plan = planOffice(crew(8), width, "full");
+      expect(plan.occluders.length).toBeGreaterThan(2);
+      for (let i = 1; i < plan.occluders.length; i++) expect(plan.occluders[i]!.front).toBeGreaterThan(plan.occluders[i - 1]!.front);
+      for (const o of plan.occluders) for (const r of o.rects) expect(inside(r, plan)).toBe(true);
+      // every desk's front edge is a row
+      for (const d of allDesks(plan)) expect(plan.occluders.some((o) => Math.abs(o.front - (d.rect.y + d.rect.h)) < 1)).toBe(true);
+    }
+  });
+
+  test("a cat docked beside a desk is behind its row, a cat on the aisle is in front of it", () => {
+    const plan = planOffice(crew(8), 1248, "full");
+    const d = plan.desks[0]!;
+    const front = d.rect.y + d.rect.h;
+    const row = plan.occluders.findIndex((o) => Math.abs(o.front - front) < 1);
+    expect(bandOf(plan, d.visits[0]!.p.y)).toBe(row);
+    expect(bandOf(plan, d.home.p.y)).toBe(row + 1);
+  });
+
+  test("below 640px the full floor is seen through a camera window about three widths tall", () => {
+    const narrow = planOffice(crew(8), 343, "full");
+    expect(narrow.camera).not.toBeNull();
+    expect(narrow.camera!.h).toBe(Math.round(343 * CAMERA_RATIO));
+    expect(narrow.camera!.h).toBeLessThan(narrow.height);
+    expect(planOffice(crew(8), 768, "full").camera).toBeNull();
+    expect(planOffice(crew(8), 343, "hero").camera).toBeNull();
+    // a tiny crew that fits the window shows the whole floor
+    expect(planOffice(crew(1), 343, "full").camera === null || planOffice(crew(1), 343, "full").camera!.h < planOffice(crew(1), 343, "full").height).toBe(true);
+  });
+
+  test("the corridor is a halved walk lane, no taller than a lane pair", () => {
+    const plan = planOffice(crew(8), 1248, "full");
+    expect(plan.corridor!.h).toBeLessThanOrEqual(40);
+    const lane = plan.lanes[0]!;
+    expect(lane.yR).toBeGreaterThan(plan.corridor!.y);
+    expect(lane.yL).toBeLessThanOrEqual(plan.corridor!.y + plan.corridor!.h);
+  });
 });

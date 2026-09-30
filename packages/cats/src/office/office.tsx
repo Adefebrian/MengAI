@@ -28,6 +28,12 @@
 //   motion.choreography: hire, depart, nap, trader, bell stagger_sequence
 //   ui.component_recipe: core.transition_slide whiteboard (0.96),
 //     core.css_marquee ticker (0.93), core.transition_glide talk (0.76)
+//   wave b (critic fixes, jev-1.13.0): ui.region_gate corridor kept as a
+//     halved walk lane (0.74, relevance 2.43), narrow camera over a merged
+//     row (0.99), ambient idle life built (0.73, relevance 2.13);
+//     motion.intensity camera tier 1 (1.28), ambient tier 1 (1.13),
+//     meeting tier 2 (1.76); motion.choreography meeting stagger_sequence
+//     (0.99)
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
 import { ROLE_LABEL } from "@mengai/shared";
 import type { OfficeAgent, OfficeProps } from "../office-contract";
@@ -173,7 +179,9 @@ function DeskView({ desk, agent, plan, director, live, loop, offscreen }: DeskVi
   const leaving = useLeaving(atDesk, live);
   const bubble = useBubble(agent.statusText);
   const fund = plan.theme === "fund";
-  const mode = screenFor(agent.activity, agent.role);
+  // the paw stays only for a resting cat or an empty seat: a cat with work keeps its role's screen between tool calls
+  const hasWork = Boolean(agent.taskTitle || agent.file) && agent.status !== "stopped";
+  const mode = screenFor(agent.activity, agent.role, hasWork);
   const working = agent.status === "working" || agent.status === "thinking";
   const clip = sceneClip(useSceneUid(), agent.id);
   const label = baseName(agent.file) ?? screenLabel(mode);
@@ -196,11 +204,13 @@ function DeskView({ desk, agent, plan, director, live, loop, offscreen }: DeskVi
         <g>
           <rect className="of-stand" x={m.x + m.w / 2 - 3} y={m.y + m.h * 0.5} width={6} height={m.h * 0.5 + 9} />
           <rect className="of-stand-base" x={m.x + m.w / 2 - 15} y={m.y + m.h + 7} width={30} height={4} rx={2} />
-          <Monitor r={{ x: m.x, y: m.y, w: half, h: m.h }} mode={atDesk ? "chart" : "idle"} label={SYMBOLS[seed % SYMBOLS.length]!} animate={animate || (live && loop && atDesk)} dim={dim} clip={`${clip}-m1`} seed={seed} stand={false} />
-          <Monitor r={{ x: m.x + half + 4, y: m.y, w: half, h: m.h }} mode={atDesk ? fundScreenFor(agent.activity) : "idle"} label={label} animate={animate} dim={dim} clip={`${clip}-m2`} seed={seed + 7} note={!packed} stand={false} />
+          {/* the market screen never sleeps; the work screen stays on (dimmed, still) while the trader steps away */}
+          <Monitor r={{ x: m.x, y: m.y, w: half, h: m.h }} mode={packed ? "idle" : "chart"} label={SYMBOLS[seed % SYMBOLS.length]!} animate={animate || (live && loop && atDesk)} dim={dim} clip={`${clip}-m1`} seed={seed} stand={false} />
+          <Monitor r={{ x: m.x + half + 4, y: m.y, w: half, h: m.h }} mode={atDesk || (hasWork && !packed) ? fundScreenFor(agent.activity, agent.role, hasWork) : "idle"} label={label} animate={animate} dim={dim} clip={`${clip}-m2`} seed={seed + 7} note={!packed} stand={false} />
         </g>
       ) : (
-        <Monitor r={m} mode={atDesk ? mode : "idle"} label={label} animate={animate && mode !== "idle"} dim={dim} clip={`${clip}-m`} seed={seed} note={!packed} />
+        // a cat that steps away leaves its work on screen (dimmed, still); the paw is for a resting cat or a packed desk
+        <Monitor r={m} mode={atDesk || (hasWork && !packed) ? mode : "idle"} label={label} animate={animate && mode !== "idle"} dim={dim} clip={`${clip}-m`} seed={seed} note={!packed} />
       )}
       {(atDesk || leaving) && !lying ? (
         <g key={atDesk ? view.moves : "leaving"} className={atDesk ? "of-sit-in" : "of-sit-out"}>
@@ -235,7 +245,99 @@ function DeskView({ desk, agent, plan, director, live, loop, offscreen }: DeskVi
 function FloorActorView({ agent, director, live, plan, offscreen }: { agent: OfficeAgent; director: Director; live: boolean; plan: OfficePlan; offscreen: RefObject<boolean> }) {
   const view = useActorView(director, agent.id);
   const register = useMemo(() => (el: SVGGElement | null) => director.register(agent.id, el), [director, agent.id]);
-  return <FloorActor agent={agent} view={view} live={live} scale={plan.m.walker} floorCat={plan.m.floorCat} register={register} offscreen={offscreen} />;
+  // the depth slot: the director orders the slots by the cats' feet and sets each one's depth clip
+  return (
+    <g className="of-slot" data-slot="">
+      <FloorActor agent={agent} view={view} live={live} scale={plan.m.walker} floorCat={plan.m.floorCat} register={register} offscreen={offscreen} />
+    </g>
+  );
+}
+
+/**
+ * The depth clips: band b (a cat in front of the first b furniture rows)
+ * cuts the blocks of every row further forward out of the cat, so a cat
+ * whose feet are above a desk's front edge goes behind the desk.
+ */
+function DepthClips({ plan, uid }: { plan: OfficePlan; uid: string }) {
+  const o = plan.occluders;
+  const outer = `M-400 -400 H${plan.width + 400} V${plan.height + 400} H-400 Z`;
+  return (
+    <defs>
+      {o.map((_, b) => {
+        const holes = o
+          .slice(b)
+          .flatMap((row) => row.rects)
+          .map((r) => `M${r.x} ${r.y} h${r.w} v${r.h} h${-r.w} Z`)
+          .join(" ");
+        return (
+          <clipPath key={b} id={`${uid}-depth-${b}`} clipPathUnits="userSpaceOnUse">
+            <path d={`${outer} ${holes}`} clipRule="evenodd" />
+          </clipPath>
+        );
+      })}
+    </defs>
+  );
+}
+
+/** How long the narrow camera holds a room before it moves again, and before it rests back on the plan board. */
+export const CAMERA_HOLD_MS = 2400;
+export const CAMERA_REST_MS = 4000;
+/** The camera's pan, matching office.css (--dur-600). */
+export const CAMERA_PAN_MS = 600;
+
+/**
+ * The narrow floor's camera: the window's top edge in world pixels. It rests
+ * on the CEO office and the plan board (the signature), moves to the room
+ * where the current beat plays when that room is outside the middle of the
+ * window, holds a room a little before it moves again, and rests back on
+ * the board a while after the story goes quiet. JEV motion.intensity
+ * camera tier 1: one short eased translate per move, none under reduced
+ * motion (the move is instant).
+ */
+function useCamera(director: Director, plan: OfficePlan): { y: number; moving: boolean } {
+  const cam = plan.camera;
+  const focus = useKey(director, "camera", () => director.cameraFocus());
+  const [state, setState] = useState<{ y: number; moving: boolean }>({ y: 0, moving: false });
+  const lastMove = useRef(0);
+  const current = useRef(0);
+  useEffect(() => {
+    if (!cam) {
+      current.current = 0;
+      setState({ y: 0, moving: false });
+      return;
+    }
+    const h = cam.h;
+    const maxY = Math.max(0, plan.height - h);
+    const y0 = Math.min(current.current, maxY);
+    let target = y0;
+    if (focus === null) target = 0;
+    else if (focus < y0 + h * 0.15 || focus > y0 + h * 0.85) {
+      target = Math.max(0, Math.min(maxY, Math.round(focus - h * 0.45)));
+      // close to the top: the resting frame shows it with the plan board
+      if (target < h * 0.2 && focus < h * 0.8) target = 0;
+    }
+    if (Math.abs(target - y0) < 1) {
+      if (y0 !== current.current) {
+        current.current = y0;
+        setState({ y: y0, moving: false });
+      }
+      return;
+    }
+    const since = Date.now() - lastMove.current;
+    const wait = focus === null ? CAMERA_REST_MS : Math.max(0, CAMERA_HOLD_MS - since);
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const timer = setTimeout(() => {
+      lastMove.current = Date.now();
+      current.current = target;
+      setState({ y: target, moving: true });
+      settle = setTimeout(() => setState((s) => ({ ...s, moving: false })), director.isLive() ? CAMERA_PAN_MS + 80 : 0);
+    }, director.isLive() ? wait : 0);
+    return () => {
+      clearTimeout(timer);
+      if (settle) clearTimeout(settle);
+    };
+  }, [focus, cam, plan.height, director]);
+  return cam ? state : { y: 0, moving: false };
 }
 
 /** Three z's rising over a sleeping cat. */
@@ -328,12 +430,8 @@ function Talk({ at }: { at: { x: number; y: number } | null }) {
 function MeetingView({ plan, director, agents, meetings, live, offscreen, freeTitle }: { plan: OfficePlan; director: Director; agents: Map<string, OfficeAgent>; meetings: OfficeProps["meetings"]; live: boolean; offscreen: RefObject<boolean>; freeTitle: string }) {
   const view = useKey(director, "meeting", () => director.meetingView());
   const room = plan.meeting;
-  if (!room) {
-    // the hero huddles in front of the board: only the talk mark is drawn here
-    const p = view.speaker ? director.position(view.speaker) : null;
-    const bu = 0.56 * plan.m.walker;
-    return <Talk at={p ? { x: p.x + 14 * plan.m.walker, y: p.y - 96 * bu - 2 } : null} />;
-  }
+  // the hero huddles in front of the board, whose agenda carries the meeting: no talk mark there, it would sit over the lead's plate
+  if (!room) return null;
   const source = meetings.find((m) => m.id === view.id) ?? null;
   const occupied = new Map<number, string>();
   for (const id of view.seated) {
@@ -356,7 +454,6 @@ function MeetingView({ plan, director, agents, meetings, live, offscreen, freeTi
   }
   return (
     <g className="of-meeting" data-running={view.running ? "" : undefined}>
-      {room.stands.length ? <StandRug room={room} walker={plan.m.walker} /> : null}
       <AgendaBoard r={room.agenda} meeting={source} running={view.running} title={view.title} agenda={view.agenda} notes={view.notes} discussed={view.discussed} freeTitle={freeTitle} />
       {farSeats.map(({ s }, k) => (
         <Chair key={k} r={{ x: s.p.x - chairW / 2, y: room.table.y - size * 0.46, w: chairW, h: size * 0.46 }} />
@@ -381,22 +478,6 @@ function MeetingView({ plan, director, agents, meetings, live, offscreen, freeTi
   );
 }
 
-/** The standing room behind the stools for a big crew: a rug, so the floor there reads as a place. */
-function StandRug({ room, walker }: { room: NonNullable<OfficePlan["meeting"]>; walker: number }) {
-  const xs = room.stands.map((s) => s.p.x);
-  const ys = room.stands.map((s) => s.p.y);
-  const x0 = Math.min(...xs) - 26 * walker;
-  const x1 = Math.max(...xs) + 26 * walker;
-  const y0 = Math.min(...ys) - 22 * walker;
-  const y1 = Math.max(...ys) + 8;
-  return (
-    <g>
-      <rect className="of-rug" x={x0} y={y0} width={x1 - x0} height={y1 - y0} rx={10} />
-      <rect className="of-rug-line" x={x0 + 5} y={y0 + 5} width={x1 - x0 - 10} height={y1 - y0 - 10} rx={7} />
-    </g>
-  );
-}
-
 function CeoBoard({ plan, director, cards, meetings, owners }: { plan: OfficePlan; director: Director; cards: NonNullable<OfficeProps["plan"]>; meetings: OfficeProps["meetings"]; owners: Owners }) {
   const flash = useKey(director, "board", () => director.boardFlash());
   const meeting = useKey(director, "meeting", () => director.meetingView());
@@ -412,8 +493,8 @@ function CeoBoard({ plan, director, cards, meetings, owners }: { plan: OfficePla
 function Walls({ plan, director }: { plan: OfficePlan; director: Director }) {
   const day = useKey(director, "day", () => director.daypart());
   const open = useKey(director, "door", () => director.doorOpen());
-  // the day key re-renders the wall clock with the windows
-  return <BackWalls key={day} plan={plan} day={day} doorOpen={open} hour={director.hourNow()} />;
+  const hour = useKey(director, "clock", () => Math.floor(director.hourNow()));
+  return <BackWalls plan={plan} day={day} doorOpen={open} hour={hour} />;
 }
 
 function FloorsView({ plan, director }: { plan: OfficePlan; director: Director }) {
@@ -474,13 +555,23 @@ function deskLabel(agent: OfficeAgent): string {
   return parts.join(", ");
 }
 
-export function Office(props: OfficeProps) {
+/**
+ * What the scene takes beyond the frozen contract: the story clock. A page
+ * that plays a scripted day passes its hour (0 to 24), so the windows show a
+ * flat day sky with the sun until 18:00, dusk, then night only in overtime;
+ * without it the windows follow the local hour.
+ */
+export interface OfficeClock {
+  hour?: number | null;
+}
+
+export function Office(props: OfficeProps & OfficeClock) {
   return <OfficeScene {...props} />;
 }
 
 /** The Office with one internal hook: the preview story reaches the director through onDirector. */
-export function OfficeScene(props: OfficeProps & { onDirector?: (director: Director) => void }) {
-  const { agents, meetings, beats, onBeatDone, plan: cards = [], selectedId, onSelect, variant = "full", theme = "studio", still = false, label, onDirector } = props;
+export function OfficeScene(props: OfficeProps & OfficeClock & { onDirector?: (director: Director) => void }) {
+  const { agents, meetings, beats, onBeatDone, plan: cards = [], selectedId, onSelect, variant = "full", theme = "studio", still = false, label, onDirector, hour = null } = props;
   const reduced = useReducedMotion();
   const live = !still && !reduced;
   const host = useRef<HTMLDivElement | null>(null);
@@ -502,6 +593,7 @@ export function OfficeScene(props: OfficeProps & { onDirector?: (director: Direc
   const shown = useMemo(() => (plan.hidden.length ? seating.present.filter((a) => !plan.hidden.includes(a.id)) : seating.present), [seating.present, plan]);
   const [director] = useState(() => new Director());
   director.onBeatDone = onBeatDone;
+  director.clipBase = uid;
   director.onGone = (id) => setTrack((t) => dropLeaver(t, id));
   const byId = useMemo(() => new Map(shown.map((a) => [a.id, a])), [shown]);
   const owners = useMemo<Owners>(() => new Map(seating.present.map((a) => [a.id, { coat: coatOf(a.look.coat, a.look.seed) }])), [seating.present]);
@@ -519,6 +611,7 @@ export function OfficeScene(props: OfficeProps & { onDirector?: (director: Direc
   const arriving = useMemo(() => seating.arriving.filter((id) => byId.has(id)), [seating.arriving, byId]);
   useEffect(() => director.setScene(shown, plan, { arriving, leaving }), [director, shown, plan, arriving, leaving]);
   useEffect(() => director.setMeetings(meetings), [director, meetings]);
+  useEffect(() => director.setHour(hour), [director, hour]);
   useEffect(() => director.setBeats(beats), [director, beats]);
 
   // off screen or in a hidden tab: the clock, the walks and every CSS loop hold still
@@ -556,12 +649,18 @@ export function OfficeScene(props: OfficeProps & { onDirector?: (director: Direc
   const desks = allDesks(plan);
   const pct = (v: number, of: number) => `${(v / of) * 100}%`;
   const freeTitle = theme === "fund" ? "Risk committee" : "Meeting room";
+  // the narrow floor is seen through the camera window: the world moves, the stage keeps its box
+  const camera = useCamera(director, plan);
+  const viewH = plan.camera ? plan.camera.h : plan.height;
+  const inView = (y: number, h: number) => y >= camera.y - 0.5 && y + h <= camera.y + viewH + 0.5;
 
   return (
-    <div className="office" ref={host} data-variant={variant} data-theme-office={theme} data-motion={live ? "live" : "still"}>
-      <div className="office-stage" style={{ aspectRatio: `${plan.width} / ${plan.height}` }} role="group" aria-label={label}>
+    <div className="office" ref={host} data-variant={variant} data-theme-office={theme} data-motion={live ? "live" : "still"} data-camera={plan.camera ? "" : undefined}>
+      <div className="office-stage" style={{ aspectRatio: `${plan.width} / ${viewH}` }} role="group" aria-label={label}>
         <SceneUid.Provider value={uid}>
-        <svg className="office-art" viewBox={`0 0 ${plan.width} ${plan.height}`} aria-hidden="true" focusable="false">
+        <svg className="office-art" viewBox={`0 0 ${plan.width} ${viewH}`} aria-hidden="true" focusable="false">
+          <g className="of-camera" style={plan.camera ? ({ transform: `translateY(${-camera.y}px)` } as CSSProperties) : undefined}>
+          <DepthClips plan={plan} uid={uid} />
           <FloorsView plan={plan} director={director} />
           <Walls plan={plan} director={director} />
           <CeoBoard plan={plan} director={director} cards={cards} meetings={meetings} owners={owners} />
@@ -585,15 +684,17 @@ export function OfficeScene(props: OfficeProps & { onDirector?: (director: Direc
               <FloorActorView key={a.id} agent={a} director={director} live={live} plan={plan} offscreen={offscreen} />
             ))}
           </g>
+          </g>
         </svg>
         </SceneUid.Provider>
-        <div className="office-hits">
+        <div className="office-hits" data-moving={camera.moving ? "" : undefined}>
           <LiveNote director={director} />
           {onSelect
             ? desks.map((d) => {
                 const a = byId.get(d.agentId);
-                if (!a) return null;
                 const r = d.rect;
+                // through the camera, only the desks inside the window are buttons, so nothing sits outside the stage
+                if (!a || !inView(r.y, r.h)) return null;
                 return (
                   <button
                     key={d.agentId}
@@ -602,7 +703,7 @@ export function OfficeScene(props: OfficeProps & { onDirector?: (director: Direc
                     data-selected={selectedId === d.agentId ? "" : undefined}
                     aria-pressed={selectedId === undefined ? undefined : selectedId === d.agentId}
                     aria-label={deskLabel(a)}
-                    style={{ left: pct(r.x, plan.width), top: pct(r.y, plan.height), width: pct(r.w, plan.width), height: pct(r.h, plan.height) }}
+                    style={{ left: pct(r.x, plan.width), top: pct(r.y - camera.y, viewH), width: pct(r.w, plan.width), height: pct(r.h, viewH) }}
                     onClick={() => onSelect(d.agentId)}
                   />
                 );

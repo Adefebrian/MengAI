@@ -38,7 +38,6 @@
   /* windows and the door */
   --of-frame: #cfc9bf;
   --of-sky-day: #dcebf3;
-  --of-sky-dawn: #f3e5d5;
   --of-sky-dusk: #efdac8;
   --of-sky-band: #e9c7a8;
   --of-sky-night: #3c4856;
@@ -83,6 +82,9 @@
   --of-mini: #e7e7e4;
   --of-bull: #3f8f5a;
   --of-bear: #c2553f;
+  --of-diff-add: #e4f1e7;
+  --of-contact: color-mix(in oklab, var(--color-ink) 9%, transparent);
+  --of-diff-del: #f7e4e0;
 
   /* small things */
   --of-paper: var(--color-surface);
@@ -251,9 +253,6 @@
   stroke: var(--of-carpet-line);
   stroke-width: 1;
 }
-.of-runner {
-  fill: var(--of-zone);
-}
 .of-carpet {
   fill: var(--of-carpet);
 }
@@ -268,7 +267,6 @@
 .of-light-day {
   fill: var(--of-light-day);
 }
-.of-light-dawn,
 .of-light-dusk {
   fill: var(--of-light-warm);
 }
@@ -297,9 +295,6 @@
 .of-sky,
 .of-sky-day {
   fill: var(--of-sky-day);
-}
-.of-sky-dawn {
-  fill: var(--of-sky-dawn);
 }
 .of-sky-dusk {
   fill: var(--of-sky-dusk);
@@ -656,6 +651,30 @@
 }
 .of-highlight {
   fill: var(--of-highlight);
+}
+/* the review screen: a diff with removed lines in red and added lines in green */
+.of-diff-add {
+  fill: var(--of-diff-add);
+}
+.of-diff-del {
+  fill: var(--of-diff-del);
+}
+.of-diff-mark {
+  fill: none;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.of-diff-mark-add {
+  stroke: var(--of-bull);
+}
+.of-diff-mark-del {
+  stroke: var(--of-bear);
+}
+.of-highlight-line {
+  fill: var(--of-code-a);
+}
+.of-spark {
+  stroke: var(--of-bull);
 }
 .of-scanbar {
   fill: var(--of-scan);
@@ -1070,6 +1089,21 @@
 .of-flip {
   transform-origin: 60px 45px;
 }
+/* the contact ellipse: one tonal step darker than whatever floor is under it, flat */
+.of-contact {
+  fill: var(--of-contact);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.of-actor:is([data-face="up"], [data-face="down"]) .of-contact[data-pose="walk"] {
+  transform: scaleX(0.62);
+}
+.of-back-lean {
+  transform-origin: 50px 50px;
+}
+.of-actor[data-lean="left"] .of-back-lean {
+  transform: scaleX(-1);
+}
 .of-actor[data-face="left"] .of-flip {
   transform: scaleX(-1);
 }
@@ -1196,6 +1230,13 @@
 }
 .office[data-motion="live"] .of-actor[data-pose="exit"] .of-hop {
   animation: of-exit var(--dur-600) var(--ease-standard) both;
+}
+/* the narrow floor's camera: one short eased pan to the room where the beat plays (JEV motion.intensity camera tier 1) */
+.office[data-motion="live"] .of-camera {
+  transition: transform var(--dur-600) var(--ease-standard);
+}
+.office-hits[data-moving] .office-hit {
+  opacity: 0;
 }
 .office[data-motion="live"] .of-flip {
   transition: transform var(--dur-150) var(--ease-standard);

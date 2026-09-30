@@ -1,50 +1,37 @@
 // The /office preview's scripted story: a pure function of the time into
 // the loop, so every run of the page plays the same company day, in two
 // companies. Studio: Oyen (the CEO cat) hands the settings form to Belang,
-// Tompel asks Oyen for a dev dependency and gets a yes, Cemong sends the
+// Tompel asks Oyen for a dev dependency and gets a yes, Tempe sends the
 // form back, Belo is hired and walks in with a box, Cimol takes a coffee,
 // the crew holds a sync, Moci's contract ends and he walks out with his
-// box, Cemong passes the fix, Belang pins it to the board, Gembul hands
+// box, Tempe passes the fix, Belang pins it to the board, Gembul hands
 // over the empty state art and naps, Garong asks about a leaked test key
 // and hears "the owner decides", everyone meets for the wrap-up, then the
 // crew celebrates. Fund: the same day on a trading floor, with a backtest,
 // a risk committee, an execution and the bell. Sample content only.
-import type { Activity, AgentRole, AgentStatus, Coat, MeetingKind, Mood } from "@mengai/shared";
+import type { Activity, AgentStatus, MeetingKind, Mood } from "@mengai/shared";
 import type { OfficeAgent, OfficeBeat, OfficeMeeting, OfficeProps } from "../src/office-contract";
+import { rosterCrew, type RosterCat } from "../src/roster";
 
 export const LOOP_S = 118;
 export type Theme = "studio" | "fund";
 
-interface Member {
-  id: string;
-  name: string;
-  role: AgentRole;
-  coat: Coat;
-  seed: number;
-}
+type Member = RosterCat;
 
-/** The crew in desk order; Oyen is the CEO cat. */
-export const OFFICE_CREW: Member[] = [
-  { id: "oyen", name: "Oyen", role: "lead", coat: "ginger", seed: 1187 },
-  { id: "belang", name: "Belang", role: "engineer", coat: "calico", seed: 2291 },
-  { id: "cemong", name: "Cemong", role: "reviewer", coat: "siamese", seed: 5519 },
-  { id: "tompel", name: "Tompel", role: "qa", coat: "cream", seed: 3373 },
-  { id: "gembul", name: "Gembul", role: "designer", coat: "tabby", seed: 4447 },
-  { id: "cimol", name: "Cimol", role: "researcher", coat: "tuxedo", seed: 6607 },
-  { id: "garong", name: "Garong", role: "security", coat: "gray", seed: 7703 },
-  { id: "moci", name: "Moci", role: "operator", coat: "black", seed: 8849 },
-  { id: "kumis", name: "Kumis", role: "engineer", coat: "tuxedo", seed: 9161 },
-  { id: "unyil", name: "Unyil", role: "qa", coat: "gray", seed: 1033 },
-  { id: "ciko", name: "Ciko", role: "designer", coat: "black", seed: 2477 },
-  { id: "mpus", name: "Mpus", role: "researcher", coat: "tabby", seed: 3719 },
-];
+/** The crew in desk order, read from the shared roster so every scene gives a cat the same coat; Oyen is the CEO cat. */
+export const OFFICE_CREW: Member[] = rosterCrew(["Oyen", "Belang", "Tempe", "Tompel", "Gembul", "Cimol", "Garong", "Moci", "Cemong", "Unyil", "Ciko", "Mpus"]);
 
 /** The hire who walks in with a box partway through the day. */
-export const HIRE: Member = { id: "belo", name: "Belo", role: "engineer", coat: "cream", seed: 5023 };
+export const HIRE: Member = rosterCrew(["Belo"])[0]!;
 export const HIRE_AT = 26;
 /** Moci's contract ends: he packs a box and walks out. */
 export const LEAVER = "moci";
 export const LEAVE_AT = 47;
+
+/** The story clock: the loop is one working day, 09:00 to 19:00, so the windows show day until 18:00 and dusk at the close. */
+export function hourAt(t: number): number {
+  return 9 + (Math.max(0, Math.min(LOOP_S, t)) / LOOP_S) * 10;
+}
 
 export const CREW_SIZES = [4, 8, 12] as const;
 export type CrewSize = (typeof CREW_SIZES)[number];
@@ -107,7 +94,7 @@ const STUDIO: Day = {
       [71, "working", "code", "Wiring the empty state", ART, "empty-state.tsx"],
       [103, "done", "celebrate", "Shipped it", ART, "empty-state.tsx", "proud"],
     ],
-    cemong: [
+    tempe: [
       [0, "idle", "rest", null, null, null],
       [13, "working", "review", "Reading the settings diff", "Review the settings form", "settings.tsx"],
       [26, "working", "read", "Writing review notes", "Review the settings form", "review.md"],
@@ -148,7 +135,8 @@ const STUDIO: Day = {
       [103, "done", "celebrate", null, null, null],
     ],
     moci: [
-      [0, "working", "automate", "Rotating the staging certs", "Staging certs", "certs.md"],
+      [0, "idle", "rest", "Coffee before the rotation", null, null],
+      [12, "working", "automate", "Rotating the staging certs", "Staging certs", "certs.md"],
       [30, "idle", "rest", "Handing over the runbook", null, null],
       [42, "done", "rest", "Contract done, packing up", null, null, "proud"],
     ],
@@ -160,7 +148,7 @@ const STUDIO: Day = {
       [92, "idle", "rest", "All green", null, null, "proud"],
       [103, "done", "celebrate", null, null, null, "proud"],
     ],
-    kumis: [
+    cemong: [
       [0, "working", "code", "Editing the release script", "Release script", "scripts/release.ts", "focused"],
       [40, "working", "automate", "Running the release runbook", "Prepare the release", "release.md"],
       [80, "idle", "rest", "Release is staged", null, null],
@@ -184,10 +172,22 @@ const STUDIO: Day = {
     ],
   },
   events: [
+    {
+      t: 0,
+      key: "m1s",
+      meetingStart: {
+        id: "standup",
+        kind: "sync",
+        title: "Standup: the settings page",
+        agentIds: ["tempe", "gembul", "garong"],
+        agenda: ["What each of us ships today", "Who reviews the form", "Blockers"],
+      },
+    },
+    { t: 12.5, key: "m1e", meetingEnd: { id: "standup", notes: ["Belang builds the form", "Tempe reviews it", "Garong audits the dependencies"] } },
     { t: 0.3, key: "h1", beat: { kind: "handoff", fromId: "oyen", toId: "belang", taskTitle: FORM } },
     { t: 4, key: "a1", beat: { kind: "ask", fromId: "tompel", toId: "oyen", question: "Can I add a dev dependency?" } },
     { t: 12, key: "d1", beat: { kind: "decided", byId: "oyen", toId: "tompel", approved: true, answer: "Yes, as a dev dependency" } },
-    { t: 16, key: "r1", beat: { kind: "review", reviewerId: "cemong", ownerId: "belang", passed: false, taskTitle: FORM } },
+    { t: 16, key: "r1", beat: { kind: "review", reviewerId: "tempe", ownerId: "belang", passed: false, taskTitle: FORM } },
     { t: 19, key: "c1", coffee: "cimol" },
     {
       t: 32,
@@ -196,12 +196,12 @@ const STUDIO: Day = {
         id: "sync",
         kind: "sync",
         title: "Why the review failed",
-        agentIds: ["oyen", "belang", "cemong", "tompel", "kumis"],
+        agentIds: ["oyen", "belang", "tempe", "tompel", "cemong"],
         agenda: ["What the review found", "The fix and who owns it", "When to review again"],
       },
     },
-    { t: 52, key: "m2e", meetingEnd: { id: "sync", notes: ["Belang adds the missing test", "Cemong reviews again today", "Belo pairs on the API"] } },
-    { t: 57, key: "r2", beat: { kind: "review", reviewerId: "cemong", ownerId: "belang", passed: true, taskTitle: FORM } },
+    { t: 52, key: "m2e", meetingEnd: { id: "sync", notes: ["Belang adds the missing test", "Tempe reviews again today", "Belo pairs on the API"] } },
+    { t: 57, key: "r2", beat: { kind: "review", reviewerId: "tempe", ownerId: "belang", passed: true, taskTitle: FORM } },
     { t: 64, key: "v1", beat: { kind: "deliver", fromId: "belang", taskTitle: FORM } },
     { t: 69, key: "h2", beat: { kind: "handoff", fromId: "gembul", toId: "belang", taskTitle: ART } },
     { t: 75, key: "n1", nap: "gembul" },
@@ -228,7 +228,7 @@ const STUDIO: Day = {
     { id: "c3", title: ART, ownerId: "gembul", steps: [[0, "doing"], [70, "review"], [90, "done"]] },
     { id: "c4", title: "Research form patterns", ownerId: "cimol", steps: [[0, "doing"], [78, "done"]] },
     { id: "c5", title: "Audit dependencies", ownerId: "garong", steps: [[0, "doing"], [94, "done"]] },
-    { id: "c6", title: "Review the settings form", ownerId: "cemong", steps: [[0, "todo"], [13, "doing"], [62, "done"]] },
+    { id: "c6", title: "Review the settings form", ownerId: "tempe", steps: [[0, "todo"], [13, "doing"], [62, "done"]] },
     { id: "c7", title: "Settings API", ownerId: "belo", steps: [[0, "todo"], [34, "doing"], [92, "review"], [98, "done"]] },
   ],
 };
@@ -266,7 +266,7 @@ const FUND: Day = {
       [71, "working", "code", "Wiring the hedge", HEDGE, "hedge.py"],
       [103, "done", "celebrate", "Signal is live", HEDGE, "hedge.py", "proud"],
     ],
-    cemong: [
+    tempe: [
       [0, "idle", "rest", null, null, null],
       [13, "working", "review", "Reading the backtest", "Review the signal", "backtest.py"],
       [26, "working", "read", "Found a lookahead bias", "Review the signal", "review.md"],
@@ -305,7 +305,8 @@ const FUND: Day = {
       [103, "done", "celebrate", null, null, null],
     ],
     moci: [
-      [0, "working", "automate", "Working the open", "Morning orders", "orders.csv"],
+      [0, "idle", "rest", "Coffee before the open", null, null],
+      [12, "working", "automate", "Working the open", "Morning orders", "orders.csv"],
       [30, "idle", "rest", "Handing over the order book", null, null],
       [42, "done", "rest", "Contract done, packing up", null, null, "proud"],
     ],
@@ -317,7 +318,7 @@ const FUND: Day = {
       [92, "idle", "rest", "All filled", null, null, "proud"],
       [103, "done", "celebrate", null, null, null, "proud"],
     ],
-    kumis: [
+    cemong: [
       [0, "working", "code", "Editing the pricer", "Options pricer", "pricer.py", "focused"],
       [40, "working", "run", "Pricing the book", "Options pricer", "pricer.py"],
       [80, "idle", "rest", "Book is priced", null, null],
@@ -341,10 +342,22 @@ const FUND: Day = {
     ],
   },
   events: [
+    {
+      t: 0,
+      key: "m1s",
+      meetingStart: {
+        id: "morning",
+        kind: "sync",
+        title: "Morning meeting: today's book",
+        agentIds: ["tempe", "gembul", "garong"],
+        agenda: ["Overnight moves", "Today's targets", "Risk limits"],
+      },
+    },
+    { t: 12.5, key: "m1e", meetingEnd: { id: "morning", notes: ["Belang backtests the signal", "Tempe reviews it", "Garong watches the limits"] } },
     { t: 0.3, key: "h1", beat: { kind: "handoff", fromId: "oyen", toId: "belang", taskTitle: SIGNAL } },
     { t: 4, key: "a1", beat: { kind: "ask", fromId: "tompel", toId: "oyen", question: "Can I raise the position limit?" } },
     { t: 12, key: "d1", beat: { kind: "decided", byId: "oyen", toId: "tompel", approved: true, answer: "Yes, by ten percent" } },
-    { t: 16, key: "r1", beat: { kind: "review", reviewerId: "cemong", ownerId: "belang", passed: false, taskTitle: SIGNAL } },
+    { t: 16, key: "r1", beat: { kind: "review", reviewerId: "tempe", ownerId: "belang", passed: false, taskTitle: SIGNAL } },
     { t: 19, key: "c1", coffee: "cimol" },
     {
       t: 32,
@@ -353,12 +366,12 @@ const FUND: Day = {
         id: "risk",
         kind: "review",
         title: "Risk committee: the new signal",
-        agentIds: ["oyen", "belang", "cemong", "tompel", "garong"],
+        agentIds: ["oyen", "belang", "tempe", "tompel", "garong"],
         agenda: ["The lookahead bias", "Position limits", "When it goes live"],
       },
     },
     { t: 52, key: "m2e", meetingEnd: { id: "risk", notes: ["Belang fixes the lookahead", "Limits stay at ten percent", "Live after a clean backtest"] } },
-    { t: 57, key: "r2", beat: { kind: "review", reviewerId: "cemong", ownerId: "belang", passed: true, taskTitle: SIGNAL } },
+    { t: 57, key: "r2", beat: { kind: "review", reviewerId: "tempe", ownerId: "belang", passed: true, taskTitle: SIGNAL } },
     { t: 64, key: "v1", beat: { kind: "deliver", fromId: "belang", taskTitle: SIGNAL } },
     { t: 69, key: "h2", beat: { kind: "handoff", fromId: "gembul", toId: "belang", taskTitle: "Risk dashboard" } },
     { t: 75, key: "n1", nap: "gembul" },

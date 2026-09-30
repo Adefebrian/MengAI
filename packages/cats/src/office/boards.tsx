@@ -7,7 +7,7 @@ import type { CSSProperties } from "react";
 import type { OfficeMeeting, OfficeProps } from "../office-contract";
 import type { Rect } from "./geometry";
 import { Glyph, MICRO } from "./art";
-import { fit, measure, type TextStyle } from "./text";
+import { chipTitle, fit, headingTitle, measure, type TextStyle } from "./text";
 
 type PlanCard = NonNullable<OfficeProps["plan"]>[number];
 
@@ -55,6 +55,11 @@ export function Whiteboard({ r, cards, flash, owners, title = "Plan" }: { r: Rec
   const colY = titled ? headY : headY + 17;
   const notesTop = colY + (titled ? 7 : 6);
   const captionY = r.y + r.h - pad + 1;
+  const countsFit = COLUMNS.every((col) => {
+    const n = cards.filter((c) => c.status === col.key).length;
+    const text = titled && col.key === "done" ? `${n} of ${cards.length}` : String(n);
+    return measure(col.word, MICRO_MED) + measure(text, MICRO) + 6 <= colW;
+  });
   const noteH = titled ? 17 : 11;
   const noteGap = 3;
   const noteW = titled ? colW : 13;
@@ -93,16 +98,22 @@ export function Whiteboard({ r, cards, flash, owners, title = "Plan" }: { r: Rec
         const x = r.x + pad + ci * (colW + gap);
         const count = cards.filter((c) => c.status === col.key).length;
         const countText = titled && col.key === "done" ? `${count} of ${cards.length}` : String(count);
-        const head = fit(col.word, colW - measure(countText, MICRO) - 8, MICRO_MED);
+        // a column head is never cut: on a board too narrow for a head and its count, the counts give way (the header names the progress),
+        // and a head may run into the gap before the next column, at the regular weight when the medium one is too wide
+        const room = countsFit ? colW : colW + gap - 3;
+        const headStyle = measure(col.word, MICRO_MED) <= room ? MICRO_MED : MICRO;
+        const head = countsFit ? col.word : fit(col.word, room, headStyle);
         return (
           <g key={col.key}>
             {ci > 0 ? <rect className="of-board-rule" x={x - gap / 2 - 0.5} y={colY - 10} width={1} height={floor - colY + 10} /> : null}
-            <text className="of-t of-t-n2 of-muted of-medium" x={x} y={colY}>
+            <text className={`of-t of-t-n2 of-muted${headStyle === MICRO_MED ? " of-medium" : ""}`} x={x} y={colY}>
               {head}
             </text>
-            <text className="of-t of-t-n2 of-subtle of-num" x={x + colW} y={colY} textAnchor="end">
-              {countText}
-            </text>
+            {countsFit ? (
+              <text className="of-t of-t-n2 of-subtle of-num" x={x + colW} y={colY} textAnchor="end">
+                {countText}
+              </text>
+            ) : null}
           </g>
         );
       })}
@@ -118,8 +129,8 @@ export function Whiteboard({ r, cards, flash, owners, title = "Plan" }: { r: Rec
               {titled ? (
                 <>
                   <Token x={4} y={3.5} coat={coat} />
-                  <text className="of-t of-t-n2 of-ink" x={20} y={12.5}>
-                    {fit(c.title, noteW - 24, MICRO)}
+                  <text className="of-t of-t-n2 of-ink" x={18} y={12.5}>
+                    {chipTitle(c.title, noteW - 21, MICRO)}
                   </text>
                 </>
               ) : (
@@ -159,7 +170,7 @@ export function AgendaBoard({ r, meeting, running, title, agenda, notes, discuss
   const status = running ? "In session" : meeting ? "Notes" : "Free";
   const statusW = measure(status, MICRO) + 12;
   const stacked = r.w < 230;
-  const heading = fit(running || meeting ? title : freeTitle, r.w - pad * 2 - (stacked ? 0 : statusW + 8), titleStyle);
+  const heading = headingTitle(running || meeting ? title : freeTitle, r.w - pad * 2 - (stacked ? 0 : statusW + 8), titleStyle);
   const headY = r.y + pad + 11;
   const first = headY + (stacked ? 32 : 18);
   const pitch = 15;
