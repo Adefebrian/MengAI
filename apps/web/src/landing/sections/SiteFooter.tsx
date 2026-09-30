@@ -3,13 +3,15 @@
 // kit.footer.inline (0.85), on the page's center axis since round C
 // (kit.footer.inline_centered 0.97, under the centered close; the layout
 // lives in landing.css). The logo and the wordmark, one line of product
-// links, and the legal line: open source, the credit, the license. The two
+// links, and the legal line: the credit, then the terms (source available
+// under the PolyForm Noncommercial License 1.0.0, free for personal and
+// noncommercial use, commercial use by written permission). The two
 // actions live in the close right above it, so the footer does not repeat
 // them (round C: six links, one line from 640, three centered rows of two
 // on a phone, never a lone link on its own line).
 import { Footer, type FooterLink } from "@mengai/ui";
 import { Brand } from "../brand";
-import { AUTHOR_URL, LICENSE_URL, REPO_URL } from "../links";
+import { AUTHOR_URL, LICENSE_NAME, LICENSE_URL, PERMISSION_EMAIL, PERMISSION_MAILTO, REPO_URL } from "../links";
 
 export const FOOTER_LINKS: FooterLink[] = [
   { label: "The company", href: "#company" },
@@ -28,7 +30,20 @@ export function SiteFooter() {
       links={FOOTER_LINKS}
       legal={
         <>
-          Open source under <a href={LICENSE_URL}>Apache-2.0</a>. Built by <a href={AUTHOR_URL}>Adefebrian</a>.
+          <span className="lp-legal-line">
+            Built by <a href={AUTHOR_URL}>Adefebrian</a>. Source available under the{" "}
+            <a href={LICENSE_URL} className="lp-nowrap">
+              {LICENSE_NAME}
+            </a>
+            , free for personal and noncommercial use.
+          </span>{" "}
+          <span className="lp-legal-line">
+            Commercial use needs written permission:{" "}
+            <a href={PERMISSION_MAILTO} className="lp-nowrap">
+              {PERMISSION_EMAIL}
+            </a>
+            .
+          </span>
         </>
       }
     />

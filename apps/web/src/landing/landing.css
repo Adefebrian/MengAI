@@ -1671,6 +1671,13 @@
   max-inline-size: 100%;
 }
 
+/* The legal line: the credit and the license on one line, the commercial
+   terms on the next, each balanced so no centered line ends on one word. */
+.lp .kit-footer[data-variant="inline"] .lp-legal-line {
+  display: block;
+  text-wrap: balance;
+}
+
 /* On a phone the six links sit in three centered rows of two, so no link
    is left alone on a line; from 640 they share one centered line. */
 .lp .kit-footer[data-variant="inline"] .kit-footer-links {

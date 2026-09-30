@@ -6,7 +6,7 @@
 // head stays beside the rows as they scroll by (landing.css), and the lead
 // ends on the one next step for a question that is not here.
 import { FAQ, type FAQItem } from "@mengai/ui";
-import { ISSUES_URL } from "../links";
+import { ISSUES_URL, LICENSE_NAME, LICENSE_URL, PERMISSION_EMAIL, PERMISSION_MAILTO } from "../links";
 
 export const QUESTIONS: FAQItem[] = [
   {
@@ -42,8 +42,14 @@ export const QUESTIONS: FAQItem[] = [
     a: "No. There are no accounts. The app in your browser talks straight to MengAI on your own machine, so keys, projects and runs never touch this website.",
   },
   {
-    q: "Is it really open source?",
-    a: "Yes, under Apache-2.0. It runs on your own machine: read every line, and teach the cats new tricks.",
+    q: "Is it free, and can I read the code?",
+    a: (
+      <>
+        Yes, for personal and noncommercial use. MengAI is source available under the <a href={LICENSE_URL}>{LICENSE_NAME}</a>: read every line, and
+        teach the cats new tricks at home. Putting the crew to work for a business needs written permission first, from{" "}
+        <a href={PERMISSION_MAILTO}>{PERMISSION_EMAIL}</a>.
+      </>
+    ),
   },
 ];
 

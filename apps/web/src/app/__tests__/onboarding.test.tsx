@@ -65,6 +65,8 @@ describe("engine gate", () => {
     expect(text).toContain("This page connects by itself");
     expect(text).toContain("bun run dev");
     expect(text).toContain("every 2 seconds");
+    expect(text).toContain("Free for personal and noncommercial use, a beta for now.");
+    expect(text).not.toMatch(/open.?source|apache/i);
     const download = [...el.querySelectorAll("a")].find((a) => a.textContent?.includes("Download for Mac"));
     expect(download?.getAttribute("href")).toBe("https://github.com/Adefebrian/MengAI/releases/tag/v0.1.0-beta");
     expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes("Check again"))).toBe(true);

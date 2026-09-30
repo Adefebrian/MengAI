@@ -45,6 +45,23 @@ describe("web server", () => {
     expect(body).toContain("<title>MengAI");
   });
 
+  test("serves the site root files: robots.txt, llms.txt and the TDM reservation", async () => {
+    const robots = await fetch(`http://localhost:${server.port}/robots.txt`);
+    expect(robots.status).toBe(200);
+    expect(robots.headers.get("content-type")).toStartWith("text/plain");
+    expect(await robots.text()).toContain("User-agent: GPTBot\nDisallow: /");
+
+    const llms = await fetch(`http://localhost:${server.port}/llms.txt`);
+    expect(llms.status).toBe(200);
+    expect(llms.headers.get("content-type")).toStartWith("text/plain");
+    expect(await llms.text()).toBe(await Bun.file(new URL("../../../llms.txt", import.meta.url)).text());
+
+    const tdm = await fetch(`http://localhost:${server.port}/.well-known/tdmrep.json`);
+    expect(tdm.status).toBe(200);
+    expect(tdm.headers.get("content-type")).toStartWith("application/json");
+    expect(await tdm.json()).toEqual([{ location: "/", "tdm-reservation": 1, "tdm-policy": "https://github.com/Adefebrian/MengAI/blob/main/BRAND.md" }]);
+  });
+
   test("falls back to index.html for an unknown deep link, not a 404", async () => {
     const res = await fetch(`http://localhost:${server.port}/some/unknown/deep-link`);
     expect(res.status).toBe(200);

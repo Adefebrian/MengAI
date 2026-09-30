@@ -149,7 +149,7 @@ export function RuntimeOfflineScreen({ where, refused, onRetry, still }: { where
           <Steps
             title="Wake the crew in three steps"
             steps={[
-              { title: "Download MengAI for Mac", text: "Free and open source, a beta for now. Drag it into Applications." },
+              { title: "Download MengAI for Mac", text: "Free for personal and noncommercial use, a beta for now. Drag it into Applications." },
               { title: "Open it", text: "Oyen curls up in your menu bar and the crew wakes on this Mac, on your own resources." },
               { title: "This page connects by itself", text: "No code to copy and nothing to sign in to. Keep this tab open and the crew comes to the window." },
             ]}

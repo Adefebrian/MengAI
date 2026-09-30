@@ -1,4 +1,5 @@
-// About (/app/about): who built MengAI, under which license, what runs,
+// About (/app/about): who built MengAI, under which license (source
+// available, PolyForm Noncommercial 1.0.0, commercial use by permission), what runs,
 // and how this browser reaches it. Head plain (the card runner-up would box
 // the page title, which the law refuses, so the next lawful option), facts
 // as a divided section, this browser in plain spacing (JEV ui.region_gate
@@ -8,13 +9,11 @@
 import { Cat } from "@mengai/cats";
 import { leadCatName } from "@mengai/shared";
 import { KeyValue } from "@mengai/ui/src/product";
+import { REPO_URL } from "../../api/runtime";
+import { AUTHOR, AUTHOR_SITE, AUTHOR_URL, LICENSE_NAME, LICENSE_URL, PERMISSION_EMAIL, PERMISSION_MAILTO } from "../../credit";
 import { useApp } from "../context";
 import { useResource } from "../hooks";
 import { Page, Region } from "../ui";
-
-const REPO = "https://github.com/Adefebrian/MengAI";
-const AUTHOR = "https://github.com/Adefebrian";
-const LICENSE = `${REPO}/blob/main/LICENSE`;
 
 export function AboutScreen() {
   const { api, catsStill, settings, runtime, demo } = useApp();
@@ -28,7 +27,10 @@ export function AboutScreen() {
         </span>
         <div className="app-head-text">
           <h1 className="app-title">About MengAI</h1>
-          <p className="app-lead">An autonomous agent company where every agent is a cat. Built by Adefebrian, open source under the Apache License 2.0.</p>
+          <p className="app-lead">
+            An autonomous agent company where every agent is a cat. Built by Adefebrian, source available under the {LICENSE_NAME}, free for personal and
+            noncommercial use.
+          </p>
         </div>
       </header>
       <Region container="divided" title="This copy" meta="What is running on this machine.">
@@ -38,9 +40,38 @@ export function AboutScreen() {
             { label: "Version", value: health.data?.version ?? "Checking", mono: true },
             { label: "Runs on", value: demo ? runtime.label : <span className="num">{runtime.label}</span> },
             { label: "Keeps your data", value: "On this machine only. The website stores nothing." },
-            { label: "Built by", value: <a href={AUTHOR} rel="noreferrer" target="_blank">Adefebrian</a> },
-            { label: "License", value: <a href={LICENSE} rel="noreferrer" target="_blank">Apache License 2.0</a> },
-            { label: "Source", value: <a href={REPO} rel="noreferrer" target="_blank" className="num">github.com/Adefebrian/MengAI</a> },
+            {
+              label: "Built by",
+              value: (
+                <a href={AUTHOR_URL} rel="noreferrer" target="_blank">
+                  {AUTHOR} ({AUTHOR_SITE})
+                </a>
+              ),
+            },
+            {
+              label: "License",
+              value: (
+                <a href={LICENSE_URL} rel="noreferrer" target="_blank">
+                  {LICENSE_NAME}
+                </a>
+              ),
+            },
+            {
+              label: "Use",
+              value: (
+                <>
+                  Free for personal and noncommercial use. Commercial use needs written permission: <a href={PERMISSION_MAILTO}>{PERMISSION_EMAIL}</a>
+                </>
+              ),
+            },
+            {
+              label: "Source",
+              value: (
+                <a href={REPO_URL} rel="noreferrer" target="_blank" className="num">
+                  github.com/Adefebrian/MengAI
+                </a>
+              ),
+            },
             { label: "Models", value: "Your own keys, any provider, any model." },
           ]}
         />

@@ -10,11 +10,12 @@
 // relevance 2.08), close_actions kept (0.79, relevance 2.94). Carried from
 // round 2: motion.intensity 1.82, tier 2; motion.choreography
 // stagger_sequence (0.84): the text, then the actions rise in order. The
-// credit and the license live in the footer under it.
+// lead names the license; the credit and the full terms (commercial use by
+// written permission) live in the footer under it.
 import { useId } from "react";
 import { Section, staggerStyle } from "@mengai/ui";
 import { DownloadIcon } from "../icons";
-import { DOWNLOAD_URL, WEB_APP_URL } from "../links";
+import { DOWNLOAD_URL, LICENSE_NAME, WEB_APP_URL } from "../links";
 
 export const CLOSE_TITLE = "Open the office. The crew is ready.";
 
@@ -28,7 +29,7 @@ export function CloseSection() {
             {CLOSE_TITLE}
           </h2>
           <p className="kit-lead">
-            MengAI is open source under <span className="lp-nowrap">Apache-2.0</span> and runs on your own machine. Get the Mac app, open it, and this
+            MengAI is source available under the {LICENSE_NAME}, free for personal and noncommercial use, and runs on your own machine. Get the Mac app, open it, and this
             website is only the window: it keeps no account, no key and no data. Every cat runs on the models you pick, on your own key.
           </p>
         </div>

@@ -4,10 +4,12 @@
 // (card) sits beside the library (divided section, JEV
 // kit.media-frame.grid): every asset in a MediaFrame of one shape, the real
 // file or an honest placeholder that names the subject and its state. The
-// file loads straight from the engine on this Mac (api.resolve), no token.
+// file loads straight from the engine on this Mac (api.resolve), no token,
+// in CORS mode (EngineMedia sets crossOrigin="anonymous"), so the website,
+// another origin, can show it while the engine keeps its CORP same-origin.
 import type { AssetDTO, AssetKind } from "@mengai/shared";
 import { MediaFrame } from "@mengai/ui";
-import { EmptyState, ProductIcon, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
+import { EmptyState, EngineMedia, ProductIcon, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
 import { useState, type FormEvent } from "react";
 import { useApp } from "../context";
 import { fmtAgo, fmtUsd } from "../format";
@@ -29,9 +31,9 @@ function AssetTile({ a, now, onDelete }: { a: AssetDTO; now: number; onDelete: (
   return (
     <li className="asset-tile">
       {src && a.kind === "image" ? (
-        <MediaFrame kind="image" ratio="4/3" src={src} alt={a.prompt} width={a.width ?? 1024} height={a.height ?? 1024} />
+        <EngineMedia kind="image" ratio="4/3" src={src} alt={a.prompt} width={a.width ?? 1024} height={a.height ?? 1024} />
       ) : src && a.kind === "video" ? (
-        <MediaFrame kind="video" ratio="4/3" src={src} alt={a.prompt} />
+        <EngineMedia kind="video" ratio="4/3" src={src} alt={a.prompt} />
       ) : (
         <MediaFrame kind="placeholder" ratio="4/3" alt={a.status === "failed" ? `Not made: ${a.prompt}` : a.status === "done" ? `${a.kind === "image" ? "Image" : "Clip"}: ${a.prompt}` : `Being made: ${a.prompt}`} />
       )}

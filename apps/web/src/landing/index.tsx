@@ -16,7 +16,8 @@
 //   faq.split            questions, answered plainly
 //   custom.close         the close, centered (round C, the owner's call; no
 //                        kit CTABand variant centers), with the crew strip
-//   footer.inline        logo, product links, open source, credit, license,
+//   footer.inline        logo, product links, the credit and the license
+//                        (source available, free for noncommercial use),
 //                        on the page's center axis under the close
 //
 // Motion (motion/): the hero is tier 3 (JEV motion.intensity 2.85), the

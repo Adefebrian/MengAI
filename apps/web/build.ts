@@ -11,7 +11,8 @@
 // templates/monorepo/src/index.tsx, which does not exist, and Bun.build
 // fails with FileNotFound. See apps/web/server.ts for the same fix applied
 // to hono/bun's serveStatic.
-import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, readdir, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 const here = import.meta.dir;
@@ -76,9 +77,23 @@ async function runBuild() {
   await Bun.write(join(outdir, "index.html"), await Bun.file(join(here, "src/index.html")).text());
   await copyFonts();
   await copyBrand();
+  await copySiteFiles();
   await writeDemoSite();
 
   console.log("web build ok");
+}
+
+// The files a site keeps at its root (public/): robots.txt, which turns
+// AI training crawlers away while search and AI search retrieval still
+// find MengAI, and /.well-known/tdmrep.json, which reserves text and data
+// mining rights. llms.txt is the repo root's own file (the source of truth);
+// public/llms.txt is its copy for builds that only see apps/web (the
+// server image), and site.test.ts keeps the two identical. The website
+// server and the engine both serve dist/, so both answer these at the root.
+async function copySiteFiles() {
+  await cp(join(here, "public"), outdir, { recursive: true });
+  const rootLlms = join(here, "..", "..", "llms.txt");
+  if (existsSync(rootLlms)) await copyFile(rootLlms, join(outdir, "llms.txt"));
 }
 
 // The MengAI paw logo (packages/ui/src/brand): favicon, touch icon, header mark.

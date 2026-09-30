@@ -25,6 +25,8 @@ export type { DataTableColumn, DataTableProps } from "./DataTable";
 export { StackedBar } from "./StackedBar";
 export type { StackedBarProps, StackedSegment } from "./StackedBar";
 export { CodeView } from "./CodeView";
+export { EngineMedia, ENGINE_CROSS_ORIGIN } from "./EngineMedia";
+export type { EngineMediaProps } from "./EngineMedia";
 export type { CodeViewProps } from "./CodeView";
 export { ProductIcon, Glyph, GLYPH_NAMES } from "./icons";
 export type { GlyphName, ProductIconProps } from "./icons";

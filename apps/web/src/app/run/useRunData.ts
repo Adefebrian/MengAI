@@ -36,6 +36,21 @@ export interface RunData {
   patchTask: (taskId: string, status: "queued" | "cancelled") => Promise<void>;
 }
 
+/**
+ * The owner's answer to a cat's ask, as the note the engine hands to the
+ * waiting cat. Only the routes the engine serves are used.
+ */
+export function askAnswer(a: ApprovalDTO, decision: "approve" | "deny", scope: "once" | "session"): { text: string; agentId?: string } {
+  const what = a.title.trim().replace(/[.\s]+$/, "");
+  const text =
+    decision === "deny"
+      ? `No, do not do this: ${what}.`
+      : scope === "session"
+        ? `Yes, go ahead: ${what}. You may do this again for the rest of this run without asking.`
+        : `Yes, go ahead this once: ${what}.`;
+  return a.agentId ? { text, agentId: a.agentId } : { text };
+}
+
 function withRun(state: RunState, run: Partial<RunDTO>): RunState {
   return state.run ? { ...state, run: { ...state.run, ...run } } : state;
 }
@@ -237,10 +252,12 @@ export function useRunData(runId: string): RunData {
 
   const decide = useCallback(
     async (a: ApprovalDTO, decision: "approve" | "deny", scope: "once" | "session") => {
-      // the sample run answers in the page; a real ask goes to the engine
-      const next = isDemo
-        ? { status: decision === "approve" ? ("approved" as const) : ("denied" as const), scope, decidedAt: Date.now() }
-        : await api.call("POST /api/automation/approvals/:id", { params: { id: a.id }, body: { decision, scope } });
+      // The sample run answers in the page. A real ask is answered the way
+      // the engine takes every answer from the owner: a note to the asking
+      // cat on the run (POST /api/runs/:id/message resolves the cat that is
+      // waiting on you), so the page never calls a route the engine lacks.
+      if (!isDemo) await api.call("POST /api/runs/:id/message", { params: { id: runId }, body: askAnswer(a, decision, scope) });
+      const next = { status: decision === "approve" ? ("approved" as const) : ("denied" as const), scope, decidedAt: Date.now() };
       const s = store.getState();
       const approvals = { ...s.approvals, [a.id]: { ...(s.approvals[a.id] ?? a), status: next.status, scope: next.scope, decidedAt: next.decidedAt } };
       if (isDemo) {
@@ -255,7 +272,7 @@ export function useRunData(runId: string): RunData {
       }
       store.setState({ ...s, approvals });
     },
-    [api, isDemo, store],
+    [api, isDemo, runId, store],
   );
 
   const message = useCallback(

@@ -281,7 +281,22 @@ describe("landing", () => {
     const labels = Array.from(footer.querySelectorAll(".kit-footer-links a")).map((a) => a.textContent);
     expect(labels).toEqual(FOOTER_LINKS.map((l) => l.label));
     expect(labels.length).toBe(6);
-    expect(footer.querySelector(".kit-footer-legal")?.textContent).toContain("Apache-2.0");
+    const legal = footer.querySelector(".kit-footer-legal")!;
+    expect(legal.textContent).toContain("Built by Adefebrian.");
+    expect(legal.textContent).toContain("Source available under the PolyForm Noncommercial License 1.0.0, free for personal and noncommercial");
+    expect(legal.textContent).toContain("Commercial use needs written permission: adefebrianpro@gmail.com.");
+    const hrefs = Array.from(legal.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(["https://adefebrian.com", "https://github.com/Adefebrian/MengAI/blob/main/LICENSE", "mailto:adefebrianpro@gmail.com"]);
+  });
+
+  test("the page calls MengAI source available in the close, the FAQ and the footer, with none of the old license words", () => {
+    const text = host.textContent ?? "";
+    expect(text).not.toMatch(/open.?source|apache/i);
+    expect(host.querySelector("#get .kit-lead")?.textContent).toContain("source available under the PolyForm Noncommercial License 1.0.0, free for personal and noncommercial use");
+    const faq = host.querySelector("#faq")!;
+    expect(faq.textContent).toContain("Is it free, and can I read the code?");
+    expect(faq.textContent).toContain("source available under the PolyForm Noncommercial License 1.0.0");
+    expect(faq.querySelector('a[href="mailto:adefebrianpro@gmail.com"]')).not.toBeNull();
   });
 
   test("the minutes seat eight cats, each named, from the shared roster", () => {
