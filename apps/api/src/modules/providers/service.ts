@@ -448,11 +448,14 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
         `No chat model is configured for the ${effective} tier. Add any provider with a model, or map a model to a tier, in Providers.`,
       );
     },
-    /** true only when resolve({ tier: "balanced" }) would succeed and its key is still in the vault */
+    /**
+     * true when resolve({ tier: "balanced" }) would pick a provider. Answered from the
+     * database only: health runs on every page load, and reading the keychain there
+     * can wait on a macOS permission prompt. A key that went missing from the vault
+     * surfaces as a clear error on the call that needs it.
+     */
     async configured(): Promise<boolean> {
-      const hit = pickChat("balanced", await loadRouting(), await repo.list());
-      if (!hit) return false;
-      return !hit.row.keyRef || (await ctx.vault.has(hit.row.keyRef));
+      return pickChat("balanced", await loadRouting(), await repo.list()) !== null;
     },
   };
 
@@ -479,12 +482,18 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
   const judgeFor = (target: () => Promise<{ baseUrl: string; apiKey: string } | null>): Judge =>
     createJevJudge({ target, mode, lookup: deps.lookup, fetch: deps.fetch });
 
-  const judge: Judge = judgeFor(async () => {
+  const jevJudge: Judge = judgeFor(async () => {
     const row = (await repo.list()).find((r) => r.protocol === "jev" && r.keyRef !== null);
     if (!row) return null;
     const apiKey = await keyFor(row);
     return apiKey ? { baseUrl: row.baseUrl, apiKey } : null;
   });
+  // configured() is asked by health on every page load: answer it from the database,
+  // never the keychain (a macOS prompt there would hold every page)
+  const judge: Judge = {
+    ...jevJudge,
+    configured: async () => (await repo.list()).some((r) => r.protocol === "jev" && r.keyRef !== null),
+  };
 
   /** The model the crew would use from this row (a tier mapped to it, else its first chat model, else the first listed) and that tier's effort. */
   async function crewModel(row: ProviderRow, listed: ProviderModel[]): Promise<{ model: string; reasoning?: ReasoningEffort } | null> {
