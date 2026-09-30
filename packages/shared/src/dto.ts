@@ -236,10 +236,23 @@ export interface ProviderDTO {
   updatedAt: number;
 }
 
+/**
+ * How hard a model thinks before it answers, per tier. "default" leaves it to
+ * the model (and the engine self-heals vendor refusals, keeping reasoning on
+ * where it can); "none" turns reasoning off; low, medium and high set it.
+ * OpenAI and compatible vendors get reasoning_effort (reasoning.effort on the
+ * Responses API), Anthropic gets a thinking budget, and a model without a
+ * reasoning setting ignores it.
+ */
+export const REASONING_EFFORTS = ["default", "none", "low", "medium", "high"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 export interface TierMapping {
   tier: Tier;
   providerId: string | null;
   model: string | null;
+  /** missing means "default" */
+  reasoning?: ReasoningEffort;
 }
 
 export interface ModelRouting {
