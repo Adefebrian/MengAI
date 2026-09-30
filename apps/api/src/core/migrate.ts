@@ -21,6 +21,14 @@ import sqlite0002 from "../../../../migrations/sqlite/0002_brain.sql" with { typ
 import postgres0003 from "../../../../migrations/postgres/0003_capabilities.sql" with { type: "text" };
 // @ts-ignore Bun text import: there are no type declarations for .sql files
 import sqlite0003 from "../../../../migrations/sqlite/0003_capabilities.sql" with { type: "text" };
+// @ts-ignore Bun text import: there are no type declarations for .sql files
+import postgres0004 from "../../../../migrations/postgres/0004_paired_origins.sql" with { type: "text" };
+// @ts-ignore Bun text import: there are no type declarations for .sql files
+import sqlite0004 from "../../../../migrations/sqlite/0004_paired_origins.sql" with { type: "text" };
+// @ts-ignore Bun text import: there are no type declarations for .sql files
+import postgres0005 from "../../../../migrations/postgres/0005_trading_venues.sql" with { type: "text" };
+// @ts-ignore Bun text import: there are no type declarations for .sql files
+import sqlite0005 from "../../../../migrations/sqlite/0005_trading_venues.sql" with { type: "text" };
 
 /** Repo migrations folder (dev and server image); inside a compiled binary this path does not exist. */
 export const MIGRATIONS_ROOT = new URL("../../../../migrations/", import.meta.url).pathname;
@@ -36,11 +44,15 @@ export const EMBEDDED_MIGRATIONS: Readonly<Record<Dialect, readonly Migration[]>
     { version: "0001_init.sql", sql: sqlite0001 as string },
     { version: "0002_brain.sql", sql: sqlite0002 as string },
     { version: "0003_capabilities.sql", sql: sqlite0003 as string },
+    { version: "0004_paired_origins.sql", sql: sqlite0004 as string },
+    { version: "0005_trading_venues.sql", sql: sqlite0005 as string },
   ],
   postgres: [
     { version: "0001_init.sql", sql: postgres0001 as string },
     { version: "0002_brain.sql", sql: postgres0002 as string },
     { version: "0003_capabilities.sql", sql: postgres0003 as string },
+    { version: "0004_paired_origins.sql", sql: postgres0004 as string },
+    { version: "0005_trading_venues.sql", sql: postgres0005 as string },
   ],
 };
 

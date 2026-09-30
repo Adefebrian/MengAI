@@ -7,6 +7,9 @@
 // Local computer control is not part of this build: automation is null
 // everywhere and health reports it unavailable.
 //
+// Local-first bridge: websites paired with this runtime (auth module) feed
+// the CORS allowlist and the Origin check through auth.origins.
+//
 // Capabilities: connectors (MCP servers and HTTP APIs) feed the tools bridge
 // and the trading venue; trading (paper broker, live gate) feeds the tools
 // bridge; companies (studio, fund templates) feed the runs engine. The kill
@@ -292,7 +295,16 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
     const all: MountedModule[] = [events, settings, auth, usage, providers, jev, workspace, projects, context, memory, assets, security, connectors, trading, companies, tools, runs, evals, health];
     // providers owns two top-level segments and mounts at "" (under /api): mount it after the named segments
     const mounted = [...all.filter((m) => m.routes && m !== providers), providers];
-    const app = createApp({ config, modules: mounted, killswitch, auth: auth.sessionAuth, kv, logger, trustProxy: boot.trustProxy });
+    const app = createApp({
+      config,
+      modules: mounted,
+      killswitch,
+      auth: auth.sessionAuth,
+      origins: auth.origins,
+      kv,
+      logger,
+      trustProxy: boot.trustProxy,
+    });
 
     let closing: Promise<void> | null = null;
     const close = () =>
@@ -325,6 +337,8 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
         logger.log("warn", "connector secret warm-up failed", { error: errText(err) });
       }
       await runs.ready;
+      // paired websites (local-first bridge) must be known before the first CORS answer
+      await auth.service.warm();
 
       if (config.mode === "server" && !boot.setupCode) {
         const sessionInfo = await auth.service.sessionInfo(null);

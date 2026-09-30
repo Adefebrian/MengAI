@@ -1,5 +1,6 @@
-// users and sessions tables (this module only). Session tokens are stored as
-// sha256 hex, never in the clear.
+// users, sessions and paired_origins tables (this module only). Session
+// tokens are stored as sha256 hex, never in the clear. A paired (bearer)
+// session carries the website origin it is bound to; cookie sessions have none.
 import { num } from "../../lib/sql";
 import type { Db } from "../../core/ports/db";
 
@@ -16,6 +17,13 @@ export interface SessionRow {
   email: string | null;
   expiresAt: number;
   lastSeenAt: number;
+  origin: string | null;
+}
+
+export interface PairedOriginRow {
+  origin: string;
+  createdAt: number;
+  lastPairedAt: number;
 }
 
 export function createAuthRepo(db: Db) {
@@ -33,18 +41,20 @@ export function createAuthRepo(db: Db) {
     async insertUser(u: UserRow): Promise<void> {
       await db.query`insert into users (id, email, pass_hash, created_at) values (${u.id}, ${u.email}, ${u.passHash}, ${u.createdAt})`;
     },
-    async insertSession(s: { id: string; userId: string; tokenHash: string; createdAt: number; expiresAt: number }): Promise<void> {
+    async insertSession(s: { id: string; userId: string; tokenHash: string; createdAt: number; expiresAt: number; origin?: string | null }): Promise<void> {
       await db.query`
-        insert into sessions (id, user_id, token_hash, created_at, expires_at, last_seen_at)
-        values (${s.id}, ${s.userId}, ${s.tokenHash}, ${s.createdAt}, ${s.expiresAt}, ${s.createdAt})`;
+        insert into sessions (id, user_id, token_hash, created_at, expires_at, last_seen_at, origin)
+        values (${s.id}, ${s.userId}, ${s.tokenHash}, ${s.createdAt}, ${s.expiresAt}, ${s.createdAt}, ${s.origin ?? null})`;
     },
     async findSession(tokenHash: string): Promise<SessionRow | null> {
-      const rows = await db.query<{ id: string; user_id: string; email: string | null; expires_at: unknown; last_seen_at: unknown }>`
-        select s.id, s.user_id, u.email, s.expires_at, s.last_seen_at
+      const rows = await db.query<{ id: string; user_id: string; email: string | null; expires_at: unknown; last_seen_at: unknown; origin: string | null }>`
+        select s.id, s.user_id, u.email, s.expires_at, s.last_seen_at, s.origin
         from sessions s left join users u on u.id = s.user_id
         where s.token_hash = ${tokenHash}`;
       const r = rows[0];
-      return r ? { id: r.id, userId: r.user_id, email: r.email ?? null, expiresAt: num(r.expires_at), lastSeenAt: num(r.last_seen_at) } : null;
+      return r
+        ? { id: r.id, userId: r.user_id, email: r.email ?? null, expiresAt: num(r.expires_at), lastSeenAt: num(r.last_seen_at), origin: r.origin ?? null }
+        : null;
     },
     async touchSession(id: string, now: number, expiresAt: number): Promise<void> {
       await db.query`update sessions set last_seen_at = ${now}, expires_at = ${expiresAt} where id = ${id}`;
@@ -57,6 +67,25 @@ export function createAuthRepo(db: Db) {
     },
     async deleteExpired(now: number): Promise<void> {
       await db.query`delete from sessions where expires_at <= ${now}`;
+    },
+    async deleteSessionsByOrigin(origin: string): Promise<void> {
+      await db.query`delete from sessions where origin = ${origin}`;
+    },
+
+    async listOrigins(): Promise<PairedOriginRow[]> {
+      const rows = await db.query<{ origin: string; created_at: unknown; last_paired_at: unknown }>`
+        select origin, created_at, last_paired_at from paired_origins order by created_at, origin`;
+      return rows.map((r) => ({ origin: r.origin, createdAt: num(r.created_at), lastPairedAt: num(r.last_paired_at) }));
+    },
+    async upsertOrigin(origin: string, now: number): Promise<void> {
+      await db.query`
+        insert into paired_origins (origin, created_at, last_paired_at) values (${origin}, ${now}, ${now})
+        on conflict (origin) do update set last_paired_at = excluded.last_paired_at`;
+    },
+    /** true when the origin was paired */
+    async deleteOrigin(origin: string): Promise<boolean> {
+      const rows = await db.query<{ origin: string }>`delete from paired_origins where origin = ${origin} returning origin`;
+      return rows.length > 0;
     },
   };
 }

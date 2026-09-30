@@ -5,7 +5,8 @@ import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLo
 import { jsonErrorHandler } from "../../core/app";
 import { createFsBlobStore } from "../../core/adapters/blob-fs";
 import type { AppConfig, ModuleContext } from "../../core/module";
-import { controlTokenMatches, createAuthModule, OWNER_ID, SESSION_TTL_MS } from "./index";
+import { controlTokenMatches, createAuthModule, MAX_PAIRED_ORIGINS, OWNER_ID, PAIR_TOKEN_TTL_MS, SESSION_TTL_MS } from "./index";
+import { MAX_PENDING_PAIR_TOKENS } from "./service";
 
 const SETUP_CODE = "correct-horse-battery-staple";
 
@@ -201,6 +202,51 @@ describe("auth: local mode", () => {
     const { app, db } = await setup("local");
     expect((await post(app, "/auth/setup", { email: "me@example.com", password: "a-long-password-1", setupCode: SETUP_CODE })).status).toBe(404);
     expect((await post(app, "/auth/login", { email: "me@example.com", password: "a-long-password-1" })).status).toBe(404);
+    await db.close();
+  });
+
+  test("pairing tokens expire after an hour, the pending set is capped, sessions carry the origin", async () => {
+    const { mod, clock, db } = await setup("local");
+    const svc = mod.service;
+    const host = "127.0.0.1:4190";
+    const site = "https://mengai.example";
+    expect(MAX_PAIRED_ORIGINS).toBe(10);
+
+    const stale = svc.issuePairToken();
+    clock.advance(PAIR_TOKEN_TTL_MS);
+    await expect(svc.pair({ token: stale, origin: site, host }, "ip-1")).rejects.toMatchObject({ status: 401, code: "invalid_pair_token" });
+
+    const oldest = svc.issuePairToken();
+    const rest = Array.from({ length: MAX_PENDING_PAIR_TOKENS }, () => svc.issuePairToken());
+    await expect(svc.pair({ token: oldest, origin: site, host }, "ip-2")).rejects.toMatchObject({ status: 401 });
+    const ok = await svc.pair({ token: rest.at(-1)!, origin: site, host }, "ip-3");
+    expect(ok).toMatchObject({ origin: site, registered: true });
+    expect(ok.session.principal.origin).toBe(site);
+    expect(svc.isPairedOrigin(site)).toBe(true);
+    expect((await svc.resolve(ok.session.token))?.principal.origin).toBe(site);
+
+    // the runtime's own origin is never stored
+    const self = await svc.pair({ token: rest[0]!, origin: `http://${host}`, host }, "ip-4");
+    expect(self.registered).toBe(false);
+    expect(svc.isPairedOrigin(`http://${host}`)).toBe(false);
+    expect((await svc.listOrigins()).map((o) => o.origin)).toEqual([site]);
+
+    // 10 per minute per ip
+    for (let i = 0; i < 10; i++) await expect(svc.pair({ token: "bad", origin: site, host }, "ip-5")).rejects.toMatchObject({ status: 401 });
+    await expect(svc.pair({ token: rest[1]!, origin: site, host }, "ip-5")).rejects.toMatchObject({ status: 429 });
+
+    // removal revokes the bound session
+    expect(await svc.removeOrigin(site)).toBe(true);
+    expect(await svc.resolve(ok.session.token)).toBeNull();
+    expect(svc.isPairedOrigin(site)).toBe(false);
+    await db.close();
+  });
+
+  test("pairing does not exist in server mode", async () => {
+    const { mod, db } = await setup("server");
+    expect(() => mod.service.issuePairToken()).toThrow(/local mode/);
+    await expect(mod.service.pair({ token: "A".repeat(43), origin: "https://mengai.example", host: "h" }, "ip")).rejects.toMatchObject({ status: 404 });
+    expect(mod.origins.has("https://mengai.example")).toBe(false);
     await db.close();
   });
 

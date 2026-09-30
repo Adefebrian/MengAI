@@ -99,6 +99,15 @@ export const envSchema = z
     /** 32 random bytes, base64. Wraps every per-secret data key of the envelope vault. */
     VAULT_KEK: optionalString,
     ALLOWED_ORIGINS: z.preprocess(blankToUndefined, z.string().optional()),
+    /**
+     * public website that serves the MengAI UI (exact origin, for example
+     * https://mengai.example). The local runtime prints and hands out
+     * <site>/app#pair=<one-time token> so that site can pair with it.
+     */
+    MENGAI_SITE_URL: z.preprocess(
+      (v) => (typeof v === "string" ? (v.trim() === "" ? undefined : v.trim().replace(/\/+$/, "")) : v),
+      z.string().refine(isExactOrigin, "MENGAI_SITE_URL must be an exact origin (scheme://host[:port], no path, no wildcard)").optional(),
+    ),
     /** one-time code required to create the owner account on first run (server mode) */
     SETUP_CODE: z.preprocess(blankToUndefined, z.string().trim().min(12, "SETUP_CODE must be at least 12 characters").max(256).optional()),
     LOG_LEVEL: z.preprocess(blankToUndefined, z.enum(LOG_LEVELS).default("info")),

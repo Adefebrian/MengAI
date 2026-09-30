@@ -4,6 +4,8 @@
 //   token marker, Origin + CSRF check, session guard, JSON error handler,
 //   then every module at /api/<mountPath>, GET /api/session,
 //   POST /api/killswitch, an /api 404, and the SPA with index.html fallback.
+// Websites paired with a local runtime reach it cross-origin through the
+// OriginRegistry (CORS and the Origin check) and a bearer session token.
 // Modules never see adapters: they get ports through ModuleContext.
 import { stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
@@ -14,7 +16,7 @@ import { z, ZodError } from "zod";
 import { errorBody, HttpError } from "../lib/http";
 import { redact } from "../lib/redact";
 import { createMemoryKv } from "./adapters/kv-memory";
-import { controlTokenMarker, sessionGuard, KILLSWITCH_PATH, type SessionAuth } from "./auth";
+import { controlTokenMarker, sessionGuard, KILLSWITCH_PATH, type OriginRegistry, type SessionAuth } from "./auth";
 import {
   bodyCap,
   corsAllowlist,
@@ -37,6 +39,8 @@ export interface CreateAppOptions {
   modules: MountedModule[];
   killswitch: KillSwitch;
   auth: SessionAuth;
+  /** websites paired through POST /api/auth/pair (CORS without credentials); none by default */
+  origins?: OriginRegistry | null;
   /** rate limit store; defaults to a private in-memory kv */
   kv?: Kv;
   logger?: Logger;
@@ -60,12 +64,13 @@ export function createApp(opts: CreateAppOptions): Hono {
   app.use("*", requestContext({ trustProxy: opts.trustProxy ?? 0 }));
   app.use("*", accessLog(logger));
   app.use("*", securityHeaders(config.mode));
-  app.use("*", corsAllowlist(config.allowedOrigins));
+  const origins = opts.origins ?? null;
+  app.use("*", corsAllowlist(config.allowedOrigins, origins));
   app.use("*", bodyCap());
   app.use("*", rateLimit({ kv, logger, ...opts.limits }));
   app.use("*", hostAllowlist(config));
   app.use("*", controlTokenMarker(config.controlToken));
-  app.use("*", csrfGuard(config));
+  app.use("*", csrfGuard(config, origins));
   app.use("*", sessionGuard(auth));
 
   app.onError(jsonErrorHandler(logger));

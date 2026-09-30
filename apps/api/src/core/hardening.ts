@@ -3,6 +3,13 @@
 //   body cap -> kv rate limit (fails open) -> Host allowlist (local mode) ->
 //   Origin + CSRF header check on mutating requests.
 //
+// Local-first bridge: the public website serves only the UI; the browser
+// talks straight to the runtime on 127.0.0.1. Websites paired through
+// POST /api/auth/pair (see modules/auth) join the origin allowlist through the
+// OriginRegistry port. They get CORS without credentials (bearer tokens, no
+// cookies) and the Private Network Access preflight answer. Static
+// ALLOWED_ORIGINS keep credentials for existing server-mode cookie clients.
+//
 // Rate limit decisions (jal-security-hardening):
 //   - keyed on the matched route pattern + client ip, never the raw path, so
 //     query strings or path params cannot mint fresh buckets
@@ -11,6 +18,7 @@
 //   - FAILS OPEN: if the kv errors (Redis down) the request passes and a warning
 //     is logged. Stated choice: availability of a single-owner app beats
 //     throttling during a cache outage. Login keeps its own 5/min kv limit.
+import { isExactOrigin } from "@mengai/config";
 import { CSRF_HEADER, type Mode } from "@mengai/shared";
 import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -18,6 +26,7 @@ import { cors } from "hono/cors";
 import { matchedRoutes } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { errorBody, HttpError } from "../lib/http";
+import type { OriginRegistry } from "./auth";
 import type { AppConfig } from "./module";
 import type { Kv } from "./ports/kv";
 import type { Logger } from "./ports/logger";
@@ -71,8 +80,17 @@ export function requestContext(opts: { trustProxy: number }): MiddlewareHandler 
 }
 
 // ------------------------------------------------------------- secure headers
+/** Answers a no-cors probe from any site ("something runs here"); the body stays unreadable without CORS. */
+export const HEALTH_PATH = "/api/health";
+
+/**
+ * hono secure headers. Cross-Origin-Resource-Policy is same-origin
+ * everywhere except GET /api/health, which is cross-origin so a website that
+ * is not paired yet can tell "runtime running" from "nothing here" with an
+ * opaque request. CORS reads are not affected by CORP.
+ */
 export function securityHeaders(mode: Mode): MiddlewareHandler {
-  return secureHeaders({
+  const inner = secureHeaders({
     contentSecurityPolicy: {
       defaultSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "blob:"],
@@ -94,20 +112,64 @@ export function securityHeaders(mode: Mode): MiddlewareHandler {
     crossOriginOpenerPolicy: "same-origin",
     permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
   });
+  return async (c, next) => {
+    await inner(c, next);
+    if (c.req.path === HEALTH_PATH && (c.req.method === "GET" || c.req.method === "HEAD")) {
+      c.res.headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+    }
+  };
 }
 
 // ----------------------------------------------------------------------- CORS
-/** Exact-match allowlist with credentials. Unknown origins get no CORS headers. */
-export function corsAllowlist(allowedOrigins: string[]): MiddlewareHandler {
-  const allow = new Set(allowedOrigins);
-  return cors({
-    origin: (origin) => (origin && allow.has(origin) ? origin : null),
-    credentials: true,
+/** The one route any exact web origin may call before it is paired (the pairing token is the proof). */
+export const PAIR_PATH = "/api/auth/pair";
+export const PNA_REQUEST_HEADER = "access-control-request-private-network";
+export const PNA_ALLOW_HEADER = "Access-Control-Allow-Private-Network";
+
+/** scheme://host[:port] over http or https, nothing else ("null", file:, paths and wildcards are refused). */
+export function isWebOrigin(origin: string | null | undefined): origin is string {
+  return typeof origin === "string" && origin.length <= 255 && isExactOrigin(origin);
+}
+
+/** The Origin names the host this request was sent to. */
+export function isSameHostOrigin(origin: string, host: string): boolean {
+  try {
+    const u = new URL(origin);
+    return (u.protocol === "http:" || u.protocol === "https:") && u.host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Exact-match allowlist. Static ALLOWED_ORIGINS get credentials (server-mode
+ * cookie clients); paired websites, the same origin and, on POST
+ * /api/auth/pair only, any exact web origin get CORS without credentials.
+ * Allowed preflights that ask for Private Network Access get
+ * Access-Control-Allow-Private-Network: true. Unknown origins get no CORS
+ * headers at all.
+ */
+export function corsAllowlist(allowedOrigins: string[], paired: OriginRegistry | null = null): MiddlewareHandler {
+  const fixed = new Set(allowedOrigins);
+  const base = {
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allowHeaders: ["content-type", CSRF_HEADER, "last-event-id"],
+    allowHeaders: ["content-type", CSRF_HEADER, "last-event-id", "authorization"],
     exposeHeaders: ["x-request-id", "retry-after"],
     maxAge: 600,
-  });
+  };
+  const bearerAllowed = (origin: string, c: Context) =>
+    Boolean(origin) &&
+    ((paired?.has(origin) ?? false) || isSameHostOrigin(origin, requestHost(c)) || (c.req.path === PAIR_PATH && isWebOrigin(origin)));
+  const withCredentials = cors({ ...base, credentials: true, origin: (origin) => (fixed.has(origin) ? origin : null) });
+  const bearerOnly = cors({ ...base, origin: (origin, c) => (bearerAllowed(origin, c) ? origin : null) });
+  return async (c, next) => {
+    const origin = c.req.header("origin") ?? "";
+    const isFixed = origin !== "" && fixed.has(origin);
+    if (c.req.method === "OPTIONS" && c.req.header(PNA_REQUEST_HEADER) === "true" && (isFixed || bearerAllowed(origin, c))) {
+      c.res.headers.set(PNA_ALLOW_HEADER, "true");
+    }
+    return (isFixed ? withCredentials : bearerOnly)(c, next);
+  };
 }
 
 // ------------------------------------------------------------------- body cap
@@ -221,29 +283,28 @@ export function hostAllowlist(config: AppConfig): MiddlewareHandler {
 // ------------------------------------------------------------ origin and csrf
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-export function originAllowed(origin: string, host: string, allowedOrigins: string[]): boolean {
+export function originAllowed(origin: string, host: string, allowedOrigins: string[], paired: OriginRegistry | null = null): boolean {
   if (allowedOrigins.includes(origin)) return true;
-  try {
-    const u = new URL(origin);
-    return (u.protocol === "http:" || u.protocol === "https:") && u.host.toLowerCase() === host;
-  } catch {
-    return false;
-  }
+  if (paired?.has(origin)) return true;
+  return isSameHostOrigin(origin, host);
 }
 
 /**
- * Every mutating request needs an allowed Origin (same host or in the
- * allowlist) and the x-mengai-csrf header. A cross-site page cannot set that
- * header without a CORS preflight, which the allowlist refuses. Requests that
- * carry a valid desktop control token (kill switch) are not browser requests
- * and skip this check.
+ * Every mutating request needs an allowed Origin (same host, the allowlist
+ * or a paired website) and the x-mengai-csrf header. A cross-site page cannot
+ * set that header without a CORS preflight, which the allowlist refuses.
+ * POST /api/auth/pair takes any exact web origin: the one-time token is the
+ * proof, and the auth module registers that origin. Requests that carry a
+ * valid desktop control token (kill switch) are not browser requests and
+ * skip this check.
  */
-export function csrfGuard(config: AppConfig): MiddlewareHandler {
+export function csrfGuard(config: AppConfig, paired: OriginRegistry | null = null): MiddlewareHandler {
   return async (c, next) => {
     if (SAFE_METHODS.has(c.req.method)) return next();
     if (c.get("control")) return next();
     const origin = c.req.header("origin");
-    if (!origin || !originAllowed(origin, requestHost(c), config.allowedOrigins)) {
+    const pairing = c.req.method === "POST" && c.req.path === PAIR_PATH && isWebOrigin(origin);
+    if (!origin || !(pairing || originAllowed(origin, requestHost(c), config.allowedOrigins, paired))) {
       return c.json(errorBody("bad_origin", "Cross-origin request refused"), 403);
     }
     if (!c.req.header(CSRF_HEADER)) {

@@ -32,6 +32,8 @@ export interface BootConfig {
   handsBin: string | null;
   trustProxy: number;
   migrationsDir: string | null;
+  /** public website that serves the UI (exact origin); the local runtime builds its pair URL on it */
+  siteUrl: string | null;
 }
 
 export const APP_VERSION: string = pkg.version;
@@ -98,7 +100,18 @@ export function buildConfig(env: Env, opts: { home?: string; version?: string } 
     handsBin: mode === "local" ? (env.MENGAI_HANDS_BIN ?? null) : null,
     trustProxy: mode === "local" ? 0 : env.TRUST_PROXY,
     migrationsDir: env.MENGAI_MIGRATIONS_DIR ? resolve(env.MENGAI_MIGRATIONS_DIR) : null,
+    siteUrl: env.MENGAI_SITE_URL ?? null,
   };
+}
+
+/**
+ * Where a browser pairs with this runtime: <site>/app#pair=<token>&runtime=<local url>
+ * on the public website when MENGAI_SITE_URL is set, else on the local URL itself.
+ * The token rides in the fragment, so it never reaches any server log.
+ */
+export function pairUrl(opts: { siteUrl: string | null; localUrl: string; token: string }): string {
+  const base = (opts.siteUrl ?? opts.localUrl).replace(/\/+$/, "");
+  return `${base}/app#pair=${opts.token}&runtime=${encodeURIComponent(opts.localUrl)}`;
 }
 
 /** Host header values the local API accepts (DNS rebinding defense). */

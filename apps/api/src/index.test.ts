@@ -1,5 +1,7 @@
-// Platform tests: config, hardening, auth flows through the full app, SSE
-// through the app, kill switch, and the kv / vault / blob / logger adapters.
+// Platform tests: config, hardening, auth flows through the full app, the
+// local-first bridge (pairing, bearer sessions, paired-origin CORS, Private
+// Network Access), SSE through the app, kill switch, and the kv / vault /
+// blob / logger adapters.
 // Deterministic and offline: in-memory SQLite, fake ports, app.fetch().
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
@@ -16,9 +18,10 @@ import { createEnvelopeVault } from "./core/adapters/vault-envelope";
 import { createApp } from "./core/app";
 import type { SessionAuth } from "./core/auth";
 import { bootstrap, type Platform } from "./core/bootstrap";
-import { buildConfig, defaultLocalDataDir, type BootConfig } from "./core/config";
+import { buildConfig, defaultLocalDataDir, pairUrl, type BootConfig } from "./core/config";
 import { createKillSwitch } from "./core/killswitch";
 import type { AppConfig, MountedModule } from "./core/module";
+import type { Db } from "./core/ports/db";
 import { readyLine, startLocal } from "./local";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "./testing";
 
@@ -157,6 +160,19 @@ describe("config", () => {
     expect(pinned.app.dataDir).toBe("/tmp/m");
     expect(pinned.app.webDir).toBe("/tmp/w");
     expect(() => parseEnv({ MENGAI_MODE: "local", HOST: "0.0.0.0" })).toThrow(/loopback/);
+  });
+
+  test("MENGAI_SITE_URL is an exact origin and shapes the pairing link", () => {
+    expect(buildConfig(parseEnv({ MENGAI_MODE: "local" })).siteUrl).toBeNull();
+    expect(buildConfig(parseEnv({ MENGAI_MODE: "local", MENGAI_SITE_URL: " https://mengai.example/ " })).siteUrl).toBe("https://mengai.example");
+    for (const bad of ["https://mengai.example/app", "*", "https://*.example", "ftp://mengai.example", "mengai.example"]) {
+      expect(() => parseEnv({ MENGAI_MODE: "local", MENGAI_SITE_URL: bad })).toThrow(/MENGAI_SITE_URL must be an exact origin/);
+    }
+    const token = "t".repeat(43);
+    expect(pairUrl({ siteUrl: "https://mengai.example", localUrl: "http://127.0.0.1:4190", token })).toBe(
+      `https://mengai.example/app#pair=${token}&runtime=http%3A%2F%2F127.0.0.1%3A4190`,
+    );
+    expect(pairUrl({ siteUrl: null, localUrl: "http://127.0.0.1:4190", token })).toBe(`http://127.0.0.1:4190/app#pair=${token}&runtime=http%3A%2F%2F127.0.0.1%3A4190`);
   });
 });
 
@@ -413,9 +429,23 @@ describe("local mode", () => {
       expect(handle.port).toBeGreaterThan(0);
       expect(handle.boot.app.allowedHosts).toEqual([`127.0.0.1:${handle.port}`, `localhost:${handle.port}`]);
       const line = readyLine(handle);
-      expect(Object.keys(JSON.parse(line))).toEqual(["event", "port", "launchToken", "controlToken"]);
-      expect(JSON.parse(line)).toEqual({ event: "ready", port: handle.port, launchToken: handle.launchToken, controlToken: handle.controlToken });
+      expect(Object.keys(JSON.parse(line))).toEqual(["event", "port", "launchToken", "controlToken", "pairUrl"]);
+      expect(JSON.parse(line)).toEqual({ event: "ready", port: handle.port, launchToken: handle.launchToken, controlToken: handle.controlToken, pairUrl: handle.pairUrl });
       expect(line.includes("\n")).toBe(false);
+      // no MENGAI_SITE_URL: the pairing link points at the runtime itself
+      const local = `http://127.0.0.1:${handle.port}`;
+      expect(handle.pairUrl).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${handle.port}/app#pair=[A-Za-z0-9_-]{43}&runtime=${encodeURIComponent(local).replace(/\./g, "\\.")}$`));
+      const pairToken = new URLSearchParams(handle.pairUrl.split("#")[1]).get("pair")!;
+      const paired = await call(handle.platform.app, `${local}/api/auth/pair`, {
+        method: "POST",
+        headers: { origin: local, [CSRF_HEADER]: "1", "content-type": "application/json" },
+        body: JSON.stringify({ token: pairToken }),
+      });
+      expect(paired.status).toBe(200);
+      expect(((await paired.json()) as { origin: string }).origin).toBe(local);
+      // the runtime's own origin needs no CORS entry, so it takes no slot
+      expect(await handle.platform.modules.auth.service.listOrigins()).toEqual([]);
+      expect(handle.newPairUrl()).not.toBe(handle.pairUrl);
       const res = await call(handle.platform.app, `http://127.0.0.1:${handle.port}/api/auth/launch`, {
         method: "POST",
         headers: { origin: `http://127.0.0.1:${handle.port}`, [CSRF_HEADER]: "1", "content-type": "application/json" },
@@ -426,6 +456,245 @@ describe("local mode", () => {
     } finally {
       await handle.stop();
     }
+  });
+});
+
+// ------------------------------------------------------ local-first bridge
+describe("local-first bridge", () => {
+  const SITE = "https://mengai.example";
+  const HOST = "127.0.0.1:4321";
+  const BASE = `http://${HOST}`;
+  const errCode = async (res: Response) => ((await res.json()) as { error: { code: string } }).error.code;
+
+  async function bridge(db?: Db) {
+    const dataDir = await tempDir();
+    const boot = buildConfig(parseEnv({ MENGAI_MODE: "local", MENGAI_DATA_DIR: dataDir, MENGAI_SITE_URL: SITE }));
+    boot.app.allowedHosts.push(HOST, "localhost:4321");
+    const platform = await bootstrap({ boot, logger: silentLogger, overrides: { db: db ?? (await createTestDb()), vault: memoryVault() } });
+    return { platform, app: platform.app, auth: platform.modules.auth.service };
+  }
+
+  const pair = (app: Hono, token: string, origin: string | null = SITE, csrf = true) =>
+    req(app, `${BASE}/api/auth/pair`, { body: { token }, origin, csrf });
+
+  async function pairedToken(app: Hono, token: string, origin = SITE): Promise<string> {
+    const res = await pair(app, token, origin);
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { sessionToken: string }).sessionToken;
+  }
+
+  const preflight = (app: Hono, path: string, origin: string, pna = true) =>
+    call(app, `${BASE}${path}`, {
+      method: "OPTIONS",
+      headers: {
+        origin,
+        "access-control-request-method": "PATCH",
+        "access-control-request-headers": "authorization,content-type,x-mengai-csrf",
+        ...(pna ? { "access-control-request-private-network": "true" } : {}),
+      },
+    });
+
+  test("pairing: a one-time token from the site gives a bearer session, single use, origin stored", async () => {
+    const { platform, app, auth } = await bridge();
+    const token = auth.issuePairToken();
+    const res = await pair(app, token);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe(SITE);
+    expect(res.headers.get("access-control-allow-credentials")).toBeNull();
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.getSetCookie()).toEqual([]);
+    const body = (await res.json()) as { sessionToken: string; origin: string };
+    expect(Object.keys(body).sort()).toEqual(["origin", "sessionToken"]);
+    expect(body.origin).toBe(SITE);
+    expect(body.sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+    const reuse = await pair(app, token);
+    expect(reuse.status).toBe(401);
+    expect(await errCode(reuse)).toBe("invalid_pair_token");
+    // launch and pairing tokens are separate
+    expect((await pair(app, auth.issueLaunchToken())).status).toBe(401);
+    expect((await req(app, `${BASE}/api/auth/launch`, { body: { token: auth.issuePairToken() } })).status).toBe(401);
+    // an exact web Origin and the csrf header are required, and a refusal does not spend the token
+    const fresh = auth.issuePairToken();
+    expect((await pair(app, fresh, null)).status).toBe(403);
+    expect((await pair(app, fresh, "null")).status).toBe(403);
+    expect((await pair(app, fresh, "https://mengai.example/app")).status).toBe(403);
+    expect(await errCode(await pair(app, fresh, SITE, false))).toBe("csrf_required");
+    expect((await pair(app, fresh, "https://second.example")).status).toBe(200);
+    expect((await req(app, `${BASE}/api/auth/pair`, { body: { token: "x", extra: 1 }, origin: SITE })).status).toBe(422);
+
+    const rows = await platform.ctx.db.query<{ origin: string }>`select origin from paired_origins order by origin`;
+    expect(rows.map((r) => r.origin)).toEqual(["https://mengai.example", "https://second.example"]);
+    const stored = await platform.ctx.db.query<{ token_hash: string; origin: string | null }>`select token_hash, origin from sessions where origin is not null`;
+    expect(stored).toHaveLength(2);
+    expect(stored.some((r) => r.token_hash === body.sessionToken)).toBe(false);
+    await platform.close();
+
+    // server mode has no pairing
+    const server = await serverPlatform();
+    expect((await req(server.platform.app, "/api/auth/pair", { body: { token: "A".repeat(43) } })).status).toBe(404);
+    expect(() => server.platform.modules.auth.service.issuePairToken()).toThrow(/local mode/);
+    await server.platform.close();
+  });
+
+  test("a foreign site is refused until it pairs, then CORS and the Origin check accept it without credentials, across restarts", async () => {
+    const db = await createTestDb();
+    const first = await bridge(db);
+    const app = first.app;
+    const cookie = sessionToken(await req(app, `${BASE}/api/auth/launch`, { body: { token: first.auth.issueLaunchToken() } }));
+
+    // before pairing: no CORS answer, mutations refused even with a valid session
+    const before = await preflight(app, "/api/settings", SITE);
+    expect(before.headers.get("access-control-allow-origin")).toBeNull();
+    expect((await req(app, `${BASE}/api/settings`, { cookie, headers: { origin: SITE } })).headers.get("access-control-allow-origin")).toBeNull();
+    const refused = await req(app, `${BASE}/api/settings`, { method: "PATCH", body: { motion: "off" }, cookie, origin: SITE });
+    expect(refused.status).toBe(403);
+    expect(await errCode(refused)).toBe("bad_origin");
+
+    const bearer = { authorization: `Bearer ${await pairedToken(app, first.auth.issuePairToken())}` };
+
+    // after pairing
+    const after = await preflight(app, "/api/settings", SITE);
+    expect(after.status).toBe(204);
+    expect(after.headers.get("access-control-allow-origin")).toBe(SITE);
+    expect(after.headers.get("access-control-allow-credentials")).toBeNull();
+    expect(after.headers.get("access-control-allow-headers")).toContain("authorization");
+    expect(after.headers.get("access-control-allow-headers")).toContain(CSRF_HEADER);
+    const read = await req(app, `${BASE}/api/settings`, { headers: { origin: SITE, ...bearer } });
+    expect(read.status).toBe(200);
+    expect(read.headers.get("access-control-allow-origin")).toBe(SITE);
+    expect(read.headers.get("access-control-allow-credentials")).toBeNull();
+    expect(read.headers.get("access-control-expose-headers")).toContain("retry-after");
+    const write = await req(app, `${BASE}/api/settings`, { method: "PATCH", body: { motion: "off" }, origin: SITE, headers: bearer });
+    expect(write.status).toBe(200);
+
+    // exact match only: a look-alike or another site stays out
+    for (const other of ["https://mengai.example.evil.example", "http://mengai.example", "https://other.example"]) {
+      expect((await preflight(app, "/api/settings", other)).headers.get("access-control-allow-origin")).toBeNull();
+      expect((await req(app, `${BASE}/api/settings`, { method: "PATCH", body: { motion: "off" }, origin: other, cookie })).status).toBe(403);
+    }
+    // DNS rebinding defense still holds for paired sites
+    expect((await req(app, "http://evil.example:4321/api/settings", { headers: { origin: SITE, ...bearer } })).status).toBe(403);
+    await first.platform.close();
+
+    // persisted: a restarted runtime on the same database still knows the site and its session
+    const second = await bridge(db);
+    expect((await preflight(second.app, "/api/settings", SITE)).headers.get("access-control-allow-origin")).toBe(SITE);
+    expect((await req(second.app, `${BASE}/api/settings`, { headers: { origin: SITE, ...bearer } })).status).toBe(200);
+    await second.platform.close();
+    await db.close();
+  });
+
+  test("at most 10 paired sites; removing one revokes its sessions and frees the slot", async () => {
+    const { platform, app, auth } = await bridge();
+    const tokens: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const r = await auth.pair({ token: auth.issuePairToken(), origin: `https://s${i}.example`, host: HOST }, `10.0.0.${i}`);
+      tokens.push(r.session.token);
+    }
+    // pairing a known site again takes no new slot
+    expect((await auth.pair({ token: auth.issuePairToken(), origin: "https://s3.example", host: HOST }, "10.0.1.1")).registered).toBe(true);
+    const pending = auth.issuePairToken();
+    const full = await pair(app, pending, "https://s10.example");
+    expect(full.status).toBe(409);
+    expect(await errCode(full)).toBe("origin_limit");
+
+    // listing and removing need a session
+    expect((await req(app, `${BASE}/api/auth/origins`)).status).toBe(401);
+    const s1 = { authorization: `Bearer ${tokens[1]}` };
+    const list = await req(app, `${BASE}/api/auth/origins`, { headers: { origin: "https://s1.example", ...s1 } });
+    expect(list.status).toBe(200);
+    const listed = ((await list.json()) as { origins: { origin: string; pairedAt: number; lastPairedAt: number }[] }).origins;
+    expect(listed).toHaveLength(10);
+    expect(listed[0]).toEqual({ origin: "https://s0.example", pairedAt: expect.any(Number), lastPairedAt: expect.any(Number) });
+
+    const remove = (origin: string) =>
+      req(app, `${BASE}/api/auth/origins?origin=${encodeURIComponent(origin)}`, { method: "DELETE", origin: "https://s1.example", headers: s1 });
+    expect((await remove("https://s0.example")).status).toBe(200);
+    expect((await remove("https://s0.example")).status).toBe(404);
+    expect((await req(app, `${BASE}/api/settings`, { headers: { authorization: `Bearer ${tokens[0]}` } })).status).toBe(401);
+    expect((await preflight(app, "/api/settings", "https://s0.example")).headers.get("access-control-allow-origin")).toBeNull();
+    expect((await req(app, `${BASE}/api/settings`, { headers: s1 })).status).toBe(200);
+
+    // the link refused while full was not spent
+    expect((await pair(app, pending, "https://s10.example")).status).toBe(200);
+    expect(await auth.listOrigins()).toHaveLength(10);
+    await platform.close();
+  });
+
+  test("bearer and cookie: a present Authorization header decides alone, paired tokens stay bound to their site", async () => {
+    const { platform, app, auth } = await bridge();
+    const cookie = sessionToken(await req(app, `${BASE}/api/auth/launch`, { body: { token: auth.issueLaunchToken() } }));
+    const paired = await pairedToken(app, auth.issuePairToken());
+    const bearer = `Bearer ${paired}`;
+    const settings = `${BASE}/api/settings`;
+
+    expect((await req(app, settings, { cookie })).status).toBe(200);
+    const viaBearer = await req(app, settings, { headers: { authorization: bearer, origin: SITE } });
+    expect(viaBearer.status).toBe(200);
+    expect(viaBearer.headers.getSetCookie()).toEqual([]);
+    const session = (await (await req(app, `${BASE}/api/session`, { headers: { authorization: bearer, origin: SITE } })).json()) as SessionDTO;
+    expect(session).toEqual({ authenticated: true, mode: "local", needsSetup: false });
+
+    // a bad or foreign-scheme header never falls back to the cookie
+    for (const authorization of ["Bearer nope", `Bearer ${"A".repeat(43)}`, "Basic dXNlcjpwdw==", "Bearer"]) {
+      expect((await req(app, settings, { cookie, headers: { authorization } })).status).toBe(401);
+    }
+    expect((await req(app, settings, { headers: { authorization: `bearer   ${paired}` } })).status).toBe(200);
+    // a desktop (cookie) session also works as a bearer; a paired token never rides in a cookie
+    expect((await req(app, settings, { headers: { authorization: `Bearer ${cookie}` } })).status).toBe(200);
+    expect((await req(app, settings, { cookie: paired })).status).toBe(401);
+    // bound to its site: another Origin is refused, no Origin (a non-browser client) passes
+    expect((await req(app, settings, { headers: { authorization: bearer, origin: "https://other.example" } })).status).toBe(401);
+    expect((await req(app, settings, { headers: { authorization: bearer } })).status).toBe(200);
+
+    // the event stream takes the header (the web client reads SSE over fetch); never a query token
+    const sse = await call(app, `${BASE}/api/events?runId=r1`, { headers: { authorization: bearer, origin: SITE } });
+    expect(sse.status).toBe(200);
+    expect(sse.headers.get("access-control-allow-origin")).toBe(SITE);
+    await sse.body?.cancel();
+    expect((await req(app, `${BASE}/api/events?runId=r1&access_token=${paired}`)).status).toBe(401);
+
+    // bearer logout revokes that session only and sets no cookie
+    const out = await req(app, `${BASE}/api/auth/logout`, { method: "POST", origin: SITE, headers: { authorization: bearer } });
+    expect(out.status).toBe(200);
+    expect(out.headers.getSetCookie()).toEqual([]);
+    expect((await req(app, settings, { headers: { authorization: bearer } })).status).toBe(401);
+    expect((await req(app, settings, { cookie })).status).toBe(200);
+    await platform.close();
+  });
+
+  test("Private Network Access preflight: answered for the pair route and paired sites only", async () => {
+    const { platform, app, auth } = await bridge();
+    const pnaHeader = "access-control-allow-private-network";
+
+    const pairPre = await preflight(app, "/api/auth/pair", SITE);
+    expect(pairPre.status).toBe(204);
+    expect(pairPre.headers.get(pnaHeader)).toBe("true");
+    expect(pairPre.headers.get("access-control-allow-origin")).toBe(SITE);
+    expect(pairPre.headers.get("access-control-allow-credentials")).toBeNull();
+    expect(pairPre.headers.get("access-control-allow-methods")).toContain("POST");
+    // not for an opaque origin, nor for other routes before pairing
+    for (const [path, origin] of [["/api/auth/pair", "null"], ["/api/settings", SITE], ["/api/auth/launch", SITE]] as const) {
+      const res = await preflight(app, path, origin);
+      expect(res.headers.get(pnaHeader)).toBeNull();
+      expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    }
+
+    await pairedToken(app, auth.issuePairToken());
+    const after = await preflight(app, "/api/settings", SITE);
+    expect(after.headers.get(pnaHeader)).toBe("true");
+    expect(after.headers.get("access-control-allow-origin")).toBe(SITE);
+    // only when the browser asks for it
+    expect((await preflight(app, "/api/settings", SITE, false)).headers.get(pnaHeader)).toBeNull();
+
+    // health answers an opaque probe from any site (CORP cross-origin) but stays unreadable without pairing
+    const probe = await call(app, `${BASE}/api/health`, { headers: { origin: "https://stranger.example" } });
+    expect(probe.status).toBe(200);
+    expect(probe.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+    expect(probe.headers.get("access-control-allow-origin")).toBeNull();
+    expect((await req(app, `${BASE}/api/settings`)).headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    await platform.close();
   });
 });
 

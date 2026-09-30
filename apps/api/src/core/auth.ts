@@ -1,5 +1,6 @@
 // Session guard and control-token check used by core/app.ts. The auth module
-// implements SessionAuth (cookie -> principal, SessionDTO); this file only
+// implements SessionAuth (cookie or bearer token -> principal, SessionDTO)
+// and OriginRegistry (websites paired with this runtime); this file only
 // decides which requests need a session and how the desktop control token is
 // compared. Constant-time comparison hashes both sides first, so neither the
 // content nor the length of the expected token leaks through timing.
@@ -11,14 +12,27 @@ export interface SessionPrincipal {
   sessionId: string;
   userId: string;
   email: string | null;
+  /** how this request carried the session token; cookie when omitted */
+  via?: "cookie" | "bearer";
+  /** paired sessions: the website origin the session is bound to */
+  origin?: string | null;
 }
 
 /** Implemented by modules/auth (createAuthModule().sessionAuth). */
 export interface SessionAuth {
-  /** reads and validates the session cookie (sliding expiry); null when anonymous */
+  /** reads and validates the bearer token or session cookie (sliding expiry); null when anonymous */
   authenticate(c: Context): Promise<SessionPrincipal | null>;
   /** GET /api/session payload for this request */
   session(c: Context): Promise<SessionDTO>;
+}
+
+/**
+ * Websites paired with this runtime (modules/auth, persisted, exact origins).
+ * Checked synchronously on every request by the CORS allowlist and the
+ * Origin check, so the implementation answers from memory.
+ */
+export interface OriginRegistry {
+  has(origin: string): boolean;
 }
 
 // Request-scoped values set by core/app.ts middleware, typed for every Context.
@@ -62,9 +76,13 @@ export function controlTokenMarker(controlToken: string | null): MiddlewareHandl
   };
 }
 
+/** Session-only routes that live under the otherwise public /api/auth prefix. */
+export const PAIRED_ORIGINS_PATH = "/api/auth/origins";
+
 /** Paths reachable without a session. */
 export function isPublicApiPath(method: string, path: string): boolean {
   if (path === "/api/health") return true;
+  if (path === PAIRED_ORIGINS_PATH || path.startsWith(`${PAIRED_ORIGINS_PATH}/`)) return false;
   if (path === "/api/auth" || path.startsWith("/api/auth/")) return true;
   if (method === "GET" && path === "/api/session") return true;
   return false;
