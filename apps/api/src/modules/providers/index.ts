@@ -5,8 +5,8 @@
 // returns one Hono app with mountPath "" (core/app.ts mounts it at /api).
 //
 // Key warm-up: the factory starts service.warm() so stored keys reach the
-// redactor early, and core/container.ts must `await module.service.warm()`
-// (idempotent) before the server listens, so no log line precedes it.
+// redactor early; core/container.ts runs it again in the background (never
+// awaited: a keychain prompt must not hold the engine start).
 import type { MountedModule, ModuleContext } from "../../core/module";
 import { redact } from "../../lib/redact";
 import { providersApi } from "./routes";

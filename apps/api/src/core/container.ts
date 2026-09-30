@@ -362,17 +362,12 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       })());
 
     try {
-      // stored keys reach the redactor before the server listens (providers index.ts contract)
-      try {
-        await providers.service.warm();
-      } catch (err) {
-        logger.log("warn", "provider key warm-up failed", { error: errText(err) });
-      }
-      try {
-        await connectors.service.warm();
-      } catch (err) {
-        logger.log("warn", "connector secret warm-up failed", { error: errText(err) });
-      }
+      // Key warm-up runs in the background. Reading the keychain can wait on a
+      // macOS permission prompt (every new build has a new signature), and the
+      // engine must still listen so the window shows. A key a call needs is read,
+      // and registered with the redactor, when that call runs.
+      void providers.service.warm().catch((err) => logger.log("warn", "provider key warm-up failed", { error: errText(err) }));
+      void connectors.service.warm().catch((err) => logger.log("warn", "connector secret warm-up failed", { error: errText(err) }));
       await runs.ready;
 
       if (config.mode === "server" && !boot.setupCode) {
