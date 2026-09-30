@@ -24,6 +24,7 @@ import type {
   MemoryService,
   ProjectsService,
   SettingsService,
+  ToolContext,
   ToolsService,
   UsageService,
   WorkspaceService,
@@ -61,6 +62,32 @@ export interface RunsDeps {
   judge?: Judge;
   /** company templates (the companies module); without it every run is a studio run */
   companies?: CompanyCatalog;
+  /** written crew skills (the crew-skills module); without it no prompt carries any */
+  crewSkills?: CrewSkillsView;
+}
+
+/** One crew skill reference as the mind view lists it. */
+export interface CrewSkillRefView {
+  id: string;
+  name: string;
+  source: "builtin" | "owner";
+  tokens: number;
+}
+
+/**
+ * The crew-skills module's service, structurally: the skills one step's
+ * prompt carries for a cat (its archetype, the run's company kind, the run
+ * goal, a dynamic role's charter), in their fixed order, capped, with the
+ * ones the cap trimmed. The tag keys the charter layer's cache version.
+ */
+export interface CrewSkillsView {
+  forPrompt(input: { role: AgentRole; kind: CompanyKind | null; goal?: string | null; charter?: string | null }): Promise<{
+    tag: string;
+    layers: Array<{ id: string; version: number; name: string; text: string }>;
+    read: CrewSkillRefView[];
+    skipped: CrewSkillRefView[];
+    tokens: number;
+  }>;
 }
 
 /** One company template as the engine reads it (the companies module's CompanyTemplate, structurally). */
@@ -103,6 +130,11 @@ export interface CapabilityTools {
   connectSimulator?(sim: object): Promise<unknown>;
   /** registry tools the platform turns off (shell_run without a crew sandbox); a dynamic role never lists them */
   platformOff?(): ReadonlySet<string>;
+  /**
+   * Before a reviewer's pass: ui_check on the UI files this run changed (a
+   * logged tool call). null when the role has no ui_check or no UI file changed.
+   */
+  reviewCheck?(tc: ToolContext & ToolExtras): Promise<{ ok: boolean; output: string } | null>;
 }
 
 /** What the engine adds to every tool call (the tools module's CapabilityContext, structurally). */

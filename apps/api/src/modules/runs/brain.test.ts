@@ -8,7 +8,7 @@ import type { StrategyEvidenceDTO } from "@mengai/shared";
 import type { JevAnswer, Judge } from "../../core/ports";
 import type { StepRecord } from "../../core/services";
 import { fakeClock, memoryKv, silentLogger } from "../../testing";
-import { EvidenceLog, REFLEXION, STEPS, StepBudget, initialSteps, parseReflexion, precheck, reflexionPacket, shellStatus } from "./brain";
+import { EvidenceLog, REFLEXION, STEPS, StepBudget, initialSteps, parseReflexion, precheck, reflexionPacket, shellStatus, uiCheckStatus } from "./brain";
 import { UNVERIFIED, createBrainJudge, planAdopt, planHire, planLetGo, planRole, readChoice, type BrainDecisionRow } from "./judge";
 import { ORG, aRole, budgetLeftShare, canAffordHire, depthOf, hireReason, letGoReason } from "./org";
 import { baseRoleOf, closestRole, fallbackCharter, parseRoleReply, roleCharterText, roleSlug, roleTitle, toolSubset } from "./roles";
@@ -43,6 +43,22 @@ describe("loop engineering: evidence and the self-check", () => {
     ]);
     expect(shellStatus("timed out after 60s", false)).toEqual({ status: "timed out", exit: null });
     expect(shellStatus("killed by SIGKILL", false)).toEqual({ status: "killed by SIGKILL", exit: null });
+  });
+
+  test("ui_check counts as a check: findings are an open error until a clean scan after the change", () => {
+    const log = new EvidenceLog();
+    log.record(step([{ name: "fs_write", args: { path: "index.html" } }]));
+    log.record(step([{ name: "ui_check", output: "ui_check: 3 findings in 1 of 2 files (emoji 3)\nindex.html:4: [emoji] ...", ok: false }]));
+    const held = log.snapshot();
+    expect(held.checks).toEqual([{ command: "ui_check", status: "3 findings", exit: 1, ok: false, afterChange: true }]);
+    expect(held.openErrors).toEqual(["ui_check: 3 findings"]);
+    expect(precheck(held)).toEqual({ verdict: "revise", critique: "The last check failed: ui_check (3 findings). Fix the cause and run it again, or finish with blocked true and the reason." });
+    log.record(step([{ name: "fs_edit", args: { path: "index.html" } }]));
+    log.record(step([{ name: "ui_check", output: "ui_check: clean, 2 files checked" }]));
+    const clean = log.snapshot();
+    expect(clean.openErrors).toEqual([]);
+    expect(precheck(clean)).toEqual({ verdict: "pass", critique: "1 check passed after the last change." });
+    expect([uiCheckStatus("ui_check: 1 finding in 1 of 1 files (x 1)", false), uiCheckStatus("ui_check: no UI files to check", true), uiCheckStatus("error: bad", false)]).toEqual(["1 finding", "clean", "failed"]);
   });
 
   test("rule verdicts on conclusive evidence, the critic on everything else", () => {

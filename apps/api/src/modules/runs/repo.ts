@@ -147,6 +147,8 @@ export interface MindSnapshot {
   /** strategies rows injected into its charter layer */
   addendumIds: string[];
   lessons: Array<{ id: string; text: string; reason: string }>;
+  /** written crew skills its prompt carried, then the ones the cap trimmed (skipped, 0 tokens); absent in snapshots from before crew skills */
+  crewSkills?: Array<{ id: string; name: string; source: "builtin" | "owner"; tokens: number; skipped?: boolean }>;
 }
 
 export function handoffFromRow(r: Row): HandoffDTO {

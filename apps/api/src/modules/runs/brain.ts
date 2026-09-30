@@ -84,6 +84,15 @@ export function shellStatus(output: string, ok: boolean): { status: string; exit
   return { status: ok ? "exit 0" : "failed", exit: ok ? 0 : null };
 }
 
+const UI_CHECK = "ui_check";
+
+/** "ui_check: 3 findings in 2 of 5 files (...)" -> "3 findings"; a clean or empty scan -> "clean". */
+export function uiCheckStatus(output: string, ok: boolean): string {
+  const m = /^ui_check: (\d+ findings?)/.exec(output.trimStart());
+  if (m) return m[1]!;
+  return ok ? "clean" : "failed";
+}
+
 /** Evidence of one task, recorded as each step lands. */
 export class EvidenceLog {
   private readonly files: string[] = [];
@@ -118,6 +127,12 @@ export class EvidenceLog {
         const key = `shell:${command}`;
         if (r.ok) this.errors.delete(key);
         else this.errors.set(key, `${clip(command, 80)}: ${status}`);
+      } else if (call.name === UI_CHECK) {
+        // the design law scan is a check too (the only one where the platform has no shell)
+        const status = uiCheckStatus(r.output, r.ok);
+        this.checks.push({ command: UI_CHECK, status, exit: r.ok ? 0 : 1, ok: r.ok, at });
+        if (r.ok) this.errors.delete(UI_CHECK);
+        else this.errors.set(UI_CHECK, `${UI_CHECK}: ${status}`);
       }
     }
   }

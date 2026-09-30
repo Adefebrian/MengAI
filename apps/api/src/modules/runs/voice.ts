@@ -123,6 +123,8 @@ export function toolLine(tool: string, rawArgs: string, seed = 0): string {
       return "Checking under the rug for secrets";
     case "scan_config":
       return "Inspecting the config for loose threads";
+    case "ui_check":
+      return pick(["Eyeing every screen for anything out of place", "Checking the layout for crooked whiskers"], seed);
     case "create_tasks":
       return "Laying out the plan, one paw at a time";
     case "update_task":

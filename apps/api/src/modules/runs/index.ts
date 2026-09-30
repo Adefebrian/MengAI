@@ -7,7 +7,7 @@ import type { RunsDeps } from "./ports";
 import { createRunsRoutes } from "./routes";
 import { createRunsService, type RunsServiceImpl } from "./service";
 
-export type { RunsDeps, MemoryPromotion, CompanyPace, BrainMemory, BrainOptions, JudgeHint, StrategySubject, CompanyCatalog, CapabilityTools, ToolExtras } from "./ports";
+export type { RunsDeps, MemoryPromotion, CompanyPace, BrainMemory, BrainOptions, JudgeHint, StrategySubject, CompanyCatalog, CapabilityTools, ToolExtras, CrewSkillsView, CrewSkillRefView } from "./ports";
 export { BRAIN_DEFAULTS } from "./ports";
 export { ORG } from "./org";
 export { CEO_SYSTEM, packetQuestion } from "./company";

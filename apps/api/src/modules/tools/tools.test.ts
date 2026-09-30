@@ -35,6 +35,7 @@ import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLo
 import { createProjectsModule } from "../projects";
 import { createWorkspaceModule } from "../workspace";
 import { createToolsModule, type ToolsDeps, type ToolsServiceImpl } from "./index";
+import { UI_CHECK_ROLES } from "./service";
 import { CONTROL_TOOLS, READ_ONLY_TOOLS, TOOL_SPECS } from "./specs";
 import { validateArgs, type JsonSchema } from "./validate";
 import { assertPublicUrl, htmlToText, isPublicAddress } from "./web";
@@ -240,11 +241,13 @@ describe("registry", () => {
     }
   });
 
-  test("specsFor follows ROLE_TOOLS and omits what cannot run", async () => {
+  test("specsFor follows ROLE_TOOLS (plus ui_check for the UI roles, last) and omits what cannot run", async () => {
     const { tools } = await build();
     for (const role of AGENT_ROLES) {
       const names = tools.specsFor(role).map((s) => s.name);
-      for (const nm of names) expect(ROLE_TOOLS[role]).toContain(nm as never);
+      const registry = UI_CHECK_ROLES.has(role) ? names.slice(0, -1) : names;
+      for (const nm of registry) expect(ROLE_TOOLS[role]).toContain(nm as never);
+      expect(names.at(-1) === "ui_check").toBe(UI_CHECK_ROLES.has(role));
       expect(names).not.toContain("web_search");
       expect(names.some((nm) => ["screen_capture", "ui_tree", "pointer", "keyboard", "app_open", "browser_open"].includes(nm))).toBe(false);
       expect(tools.specsFor(role)).toBe(tools.specsFor(role));

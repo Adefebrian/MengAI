@@ -17,6 +17,10 @@
 // bridge; companies (studio, fund templates) feed the runs engine. The kill
 // switch also kills every MCP server process and cancels open orders.
 //
+// Crew skills (the built-in JAL-AIDev pack and the owner's own written
+// skills) feed the runs engine: every step's charter layer carries the ones
+// picked for the cat's role, company kind and goal.
+//
 // Platform features (lib/platform.ts) are computed once here, before any
 // module exists: macOS with a working sandbox runs everything; Windows and
 // Linux refuse crew shell commands, live trading, stdio MCP servers and dev
@@ -29,6 +33,7 @@ import { createAuthModule } from "../modules/auth";
 import { createCompaniesModule } from "../modules/companies";
 import { createConnectorsModule, type ConnectorsOptions } from "../modules/connectors";
 import { createContextModule } from "../modules/context";
+import { createCrewSkillsModule } from "../modules/crew-skills";
 import { createEvalsModule } from "../modules/evals";
 import { createEventsModule } from "../modules/events";
 import { createHealthModule, type HealthDeps } from "../modules/health";
@@ -105,6 +110,7 @@ export interface Container {
     preview: ReturnType<typeof createPreviewModule>;
     projects: ReturnType<typeof createProjectsModule>;
     context: ReturnType<typeof createContextModule>;
+    crewSkills: ReturnType<typeof createCrewSkillsModule>;
     memory: ReturnType<typeof createMemoryModule>;
     assets: ReturnType<typeof createAssetsModule>;
     security: ReturnType<typeof createSecurityModule>;
@@ -262,6 +268,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
     const preview = createPreviewModule(ctx, { killswitch }, { platform: os.platform, ...opts.preview, features: os.features });
     const projects = createProjectsModule(ctx, { workspace: workspace.service, preview: preview.service });
     const context = createContextModule(ctx);
+    const crewSkills = createCrewSkillsModule(ctx);
     const llm: LlmRouter = demoOpts
       ? createDemoRouter({ charter: (role) => context.service.charter(role), paceMs: demoOpts.paceMs, securityScan: true })
       : providers.service.llm;
@@ -310,6 +317,8 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       // the scripted demo crew answers its own brain decisions; real runs ask JEV
       judge: demoOpts ? undefined : providers.service.judge,
       companies: companies.service,
+      // the scripted demo crew plays fixed turns: its prompts carry no crew skills (real runs read them every step)
+      crewSkills: demoOpts ? undefined : crewSkills.service,
     });
     killswitch.register("runner", () => runner.killAll());
     const evals = createEvalsModule(ctx, { context: context.service, tools: tools.service });
@@ -321,7 +330,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
     });
 
     // every module, in creation order; closed in reverse
-    const all: MountedModule[] = [events, settings, auth, usage, providers, jev, workspace, preview, projects, context, memory, assets, security, connectors, trading, companies, tools, runs, evals, health];
+    const all: MountedModule[] = [events, settings, auth, usage, providers, jev, workspace, preview, projects, context, crewSkills, memory, assets, security, connectors, trading, companies, tools, runs, evals, health];
     // providers owns two top-level segments and mounts at "" (under /api): mount it after the named segments
     const mounted = [...all.filter((m) => m.routes && m !== providers), providers];
     const app = createApp({
@@ -380,7 +389,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       return {
         app,
         ctx,
-        modules: { events, settings, auth, usage, providers, jev, workspace, preview, projects, context, memory, assets, security, tools, connectors, trading, companies, runs, evals, health },
+        modules: { events, settings, auth, usage, providers, jev, workspace, preview, projects, context, crewSkills, memory, assets, security, tools, connectors, trading, companies, runs, evals, health },
         killswitch,
         runner,
         os,

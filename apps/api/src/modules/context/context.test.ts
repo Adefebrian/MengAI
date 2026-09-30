@@ -7,7 +7,19 @@ import type { BlobStore } from "../../core/ports/blob";
 import type { ToolSpec } from "../../core/ports/llm";
 import type { ContextInput, ContextService, StepRecord } from "../../core/services";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
-import { createContextModule, layerVersion, type BrainContextInput } from "./index";
+import {
+  CREW_SKILLS_HEADER,
+  CREW_SKILLS_MAX_TOKENS,
+  CREW_SKILL_MAX_CHARS,
+  createContextModule,
+  crewSkillText,
+  crewSkillTokens,
+  crewSkillsTag,
+  layerVersion,
+  usableCrewSkills,
+  type BrainContextInput,
+  type CrewSkillLayer,
+} from "./index";
 
 const memoryBlob: BlobStore = {
   async put(key, _data, _type) {
@@ -172,6 +184,53 @@ describe("context brain layers", () => {
     expect(out.request.system).not.toContain(secret);
     const added = out.request.system.slice(service.charter("engineer").length);
     expect(added.length).toBeLessThanOrEqual(120 * 4 + 80);
+  });
+});
+
+describe("context crew skills", () => {
+  const sha = (t: string) => new Bun.CryptoHasher("sha256").update(t).digest("hex");
+  const brain = (over: Partial<BrainContextInput>): BrainContextInput => ({ ...input(), ...over });
+  const law: CrewSkillLayer = { id: "builtin-design-law", version: 1, name: "Design law and tidiness", text: "- Nothing overlaps.\n- No gradients." };
+  const mine: CrewSkillLayer = { id: "o1", version: 3, name: "Brand voice", text: "- Warm and short." };
+
+  test("skills sit after the charter and before the strategy addenda, in the given order, and key the cache", async () => {
+    const { service } = await setup();
+    const plain = service.build(input());
+    const role = { scope: "role" as const, version: 2, text: "- Run the tests first." };
+    const out = service.build(brain({ crewSkills: [law, mine], addenda: [role] }));
+    const sys = out.request.system;
+    expect(sys.startsWith(`${service.charter("engineer")}\n\n${CREW_SKILLS_HEADER}\n\n## Design law and tidiness\n- Nothing overlaps.`)).toBe(true);
+    expect(sys.indexOf("## Brand voice")).toBeGreaterThan(sys.indexOf("## Design law"));
+    expect(sys.indexOf("Role strategy v2")).toBeGreaterThan(sys.indexOf("## Brand voice"));
+    const tag = crewSkillsTag([law, mine]);
+    expect(tag).toMatch(/^k[0-9a-f]{8}$/);
+    expect(out.request.cacheKey).toBe(sha(`engineer:run-1:c1.${tag}.r2`));
+    expect(layerVersion(null, [], [law, mine])).toBe(`c1.${tag}`);
+    // the prefix is byte-stable for the same skills; the messages never change
+    expect(service.build(brain({ crewSkills: [law, mine], addenda: [role] })).request.system).toBe(sys);
+    expect(JSON.stringify(out.request.messages)).toBe(JSON.stringify(plain.request.messages));
+    expect(out.xray.layers[0]!.tokens).toBeGreaterThan(plain.xray.layers[0]!.tokens);
+    // a new version or another order is another prefix
+    expect(crewSkillsTag([law, { ...mine, version: 4 }])).not.toBe(tag);
+    expect(crewSkillsTag([mine, law])).not.toBe(tag);
+    expect(service.build(brain({ crewSkills: [] })).request).toEqual(plain.request);
+  });
+
+  test("usable skills: text required, each id once, under the hard token ceiling; text cut to the contract", () => {
+    const big = (id: string): CrewSkillLayer => ({ id, version: 1, name: id, text: "x".repeat(CREW_SKILL_MAX_CHARS) });
+    const use = usableCrewSkills([law, { ...law, version: 2 }, { ...mine, text: "  " }, big("a"), big("b"), mine]);
+    expect(use.map((x) => x.id)).toEqual(["builtin-design-law", "a", "o1"]);
+    expect(use.reduce((n, x) => n + crewSkillTokens(x), 0)).toBeLessThanOrEqual(CREW_SKILLS_MAX_TOKENS);
+    expect(crewSkillText({ name: "A\nB", text: "y".repeat(CREW_SKILL_MAX_CHARS + 50) }).length).toBe("## A B\n".length + CREW_SKILL_MAX_CHARS);
+    expect(crewSkillsTag(null)).toBe("");
+  });
+
+  test("skills are redacted like every charter layer", async () => {
+    const { service } = await setup();
+    const secret = "sk-" + "b".repeat(40);
+    const out = service.build(brain({ crewSkills: [{ ...mine, text: `- Use key ${secret}` }] }));
+    expect(out.request.system).toContain("## Brand voice");
+    expect(out.request.system).not.toContain(secret);
   });
 });
 

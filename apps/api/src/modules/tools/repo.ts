@@ -29,6 +29,19 @@ export function createToolCallsRepo(db: Db) {
         insert into tool_calls (id, run_id, agent_id, task_id, tool, args, output, ok, duration_ms, created_at)
         values (${r.id}, ${r.runId}, ${r.agentId}, ${r.taskId}, ${r.tool}, ${r.args}, ${r.output}, ${b01(r.ok)}, ${r.durationMs}, ${r.createdAt})`;
     },
+    /** workspace paths this run wrote or edited successfully, newest first, each once */
+    async changedPaths(runId: string, limit = 500): Promise<string[]> {
+      const rows = await db.query<{ args: string }>`
+        select args from tool_calls
+        where run_id = ${runId} and (tool = 'fs_write' or tool = 'fs_edit') and ok = ${1}
+        order by created_at desc limit ${limit}`;
+      const out: string[] = [];
+      for (const r of rows) {
+        const path = json<Record<string, unknown>>(r.args, {}).path;
+        if (typeof path === "string" && path.trim() && !out.includes(path.trim())) out.push(path.trim());
+      }
+      return out;
+    },
     async get(runId: string, id: string): Promise<ToolCallDetail | null> {
       const rows = await db.query<RawRow>`
         select id, tool, args, output, ok, duration_ms, created_at from tool_calls

@@ -30,7 +30,7 @@ import type { RunsService } from "../../core/services";
 import { HttpError, conflict, notFound } from "../../lib/http";
 import { clip, redact } from "../../lib/redact";
 import { COMPANY, meetingsFromEvents } from "./company";
-import { RunEngine, TERMINAL_RUN, companyOf, type EngineHooks, type EngineInit, type OrgSettings } from "./engine";
+import { RunEngine, TERMINAL_RUN, companyOf, crewSkillRefs, type EngineHooks, type EngineInit, type OrgSettings } from "./engine";
 import { HEURISTIC, LIMITS, TITLES, bounded, estimatePlan, roundUsd } from "./policy";
 import { brainOf, type RunsDeps } from "./ports";
 import { createRunsRepo, emptyUsage } from "./repo";
@@ -395,7 +395,7 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
 
     async mind(runId: string, agentId: string): Promise<AgentMindDTO> {
       await ready;
-      await loadRun(runId);
+      const run = await loadRun(runId);
       const live = engines.get(runId);
       const agent = (live ? live.agentList() : await repo.listAgents(runId)).find((a) => a.id === agentId);
       if (!agent) throw notFound("agent");
@@ -431,11 +431,23 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
           log.log("warn", "mind skills read failed", { error: redact(errMsg(e)) });
         }
       }
+      // written crew skills: what its last step read (and what the cap trimmed); before its first step, what it will read
+      let crewSkills: AgentMindDTO["crewSkills"] = snap?.crewSkills ?? [];
+      let crewTag = "";
+      if (!snap?.crewSkills && deps.crewSkills) {
+        try {
+          const pick = await deps.crewSkills.forPrompt({ role: agent.role, kind: companyOf(run), goal: run.goal, charter: role?.charter ?? null });
+          crewSkills = crewSkillRefs(pick);
+          crewTag = pick.layers.length ? pick.tag : "";
+        } catch (e) {
+          log.log("warn", "mind crew skills read failed", { error: redact(errMsg(e)) });
+        }
+      }
       const charterText = role ? role.charter : deps.context.charter(agent.role);
       const redactStrategy = (x: StrategyVersionDTO): StrategyVersionDTO => ({ ...x, text: cleanText(x.text, 800), reason: cleanText(x.reason, 400) });
       const layerVersion =
         snap?.layerVersion ??
-        [role || addenda.length ? `c${role?.charterVersion ?? 1}` : "", ...addenda.map((x) => `${x.subject === "role" ? "r" : "a"}${x.version}`)].filter(Boolean).join(".");
+        [role || addenda.length || crewTag ? `c${role?.charterVersion ?? 1}` : "", crewTag, ...addenda.map((x) => `${x.subject === "role" ? "r" : "a"}${x.version}`)].filter(Boolean).join(".");
       return {
         runId,
         agentId,
@@ -448,6 +460,7 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
         addenda: addenda.map(redactStrategy),
         lessons: (snap?.lessons ?? []).map((l) => ({ id: l.id, text: cleanText(l.text, 400), reason: cleanText(l.reason, 240) })),
         skills,
+        crewSkills,
         decisions,
         history: history.map(redactStrategy),
         updatedAt: snap?.at ?? agent.updatedAt,

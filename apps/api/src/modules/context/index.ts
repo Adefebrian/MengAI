@@ -7,8 +7,22 @@ import type { ContextService } from "../../core/services";
 import { createContextService } from "./service";
 
 export type { BrainContextInput } from "./service";
-export type { CharterOverride, StrategyLayer } from "./charters";
-export { ROLE_CHARTER_MAX_CHARS, STRATEGY_MAX_TOKENS, charterLayer, layerVersion, roleCharter, usableAddenda } from "./charters";
+export type { CharterOverride, CrewSkillLayer, StrategyLayer } from "./charters";
+export {
+  CREW_SKILLS_HEADER,
+  CREW_SKILLS_MAX_TOKENS,
+  CREW_SKILL_MAX_CHARS,
+  ROLE_CHARTER_MAX_CHARS,
+  STRATEGY_MAX_TOKENS,
+  charterLayer,
+  crewSkillText,
+  crewSkillTokens,
+  crewSkillsTag,
+  layerVersion,
+  roleCharter,
+  usableAddenda,
+  usableCrewSkills,
+} from "./charters";
 
 export type ContextModuleDeps = Record<string, never>;
 

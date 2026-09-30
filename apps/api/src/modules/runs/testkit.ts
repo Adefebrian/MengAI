@@ -218,9 +218,15 @@ export function fakeContext(opts: { compactWhen?: (input: ContextInput) => boole
     charter: (role) => `charter for ${role}`,
     build(input) {
       builds.push(input);
-      const brain = input as ContextInput & { roleKey?: string; charter?: { title: string } | null; addenda?: Array<{ scope: string; version: number }> | null };
+      const brain = input as ContextInput & {
+        roleKey?: string;
+        charter?: { title: string } | null;
+        addenda?: Array<{ scope: string; version: number }> | null;
+        crewSkills?: Array<{ id: string; version: number }> | null;
+      };
       const extra = [
         brain.charter ? `\ntitle=${brain.charter.title}` : "",
+        ...(brain.crewSkills ?? []).map((k) => `\nskill=${k.id}:v${k.version}`),
         ...(brain.addenda ?? []).map((a) => `\nstrategy=${a.scope}:v${a.version}`),
       ].join("");
       return {
@@ -686,6 +692,8 @@ export interface HarnessOptions {
   companies?: RunsDeps["companies"];
   /** a tools service of its own (for example one with taskSpecs) instead of fakeTools */
   toolsService?: RunsDeps["tools"];
+  /** written crew skills (the crew-skills module's service); none by default */
+  crewSkills?: RunsDeps["crewSkills"];
 }
 
 export async function harness(opts: HarnessOptions) {
@@ -719,6 +727,7 @@ export async function harness(opts: HarnessOptions) {
     ...(opts.judge ? { judge: opts.judge } : {}),
     ...(opts.companies ? { companies: opts.companies } : {}),
     ...(opts.toolsService ? { tools: opts.toolsService } : {}),
+    ...(opts.crewSkills ? { crewSkills: opts.crewSkills } : {}),
   };
   const mod = createRunsModule(ctx, deps);
   await mod.ready;

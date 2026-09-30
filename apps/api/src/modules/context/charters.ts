@@ -5,6 +5,12 @@
 // byte-identical for every agent of a role and stays in the vendor prompt
 // cache. Each charter is 250 to 400 estimated tokens (chars / 4), checked by
 // context.test.ts. Replaces the legacy ~3,876 token static preamble.
+//
+// The charter layer may carry crew skills (written instructions the
+// crew-skills module picks for the role and company kind) right after the
+// role charter and before the strategy addenda: shared by every cat of the
+// role, fixed order, so the cached prefix holds until a skill version or the
+// enabled set changes (the tag in layerVersion keys the cache).
 import type { AgentRole } from "@mengai/shared";
 
 const RULES = `Working rules:
@@ -47,6 +53,7 @@ const ROLE_TEXT: Record<AgentRole, string> = {
 - Run the project's checks with shell_run (tests, typecheck, lint) and base the verdict on their real output.
 - Look for correctness bugs, missing error handling, security issues, broken conventions and missing tests, in that order.
 - Report each issue with the file, the line, why it matters and a concrete fix. Skip taste-only remarks.
+- For UI work, run ui_check first; every real finding is a required fix, never a pass.
 - Call submit_review with pass only when every acceptance criterion is met and the checks pass. Otherwise fail it with the list of required fixes.`,
 
   qa: `You are the QA cat on a MengAI crew. You prove the software works, or show exactly where it does not.
@@ -132,24 +139,98 @@ export function roleCharter(role: AgentRole, charter?: CharterOverride | null): 
   return `${cap(text, ROLE_CHARTER_MAX_CHARS)}\n\n${RULES}`;
 }
 
+// ------------------------------------------------------------ crew skills
+/** One crew skill in the charter layer. The crew-skills module picks them; this module renders them. */
+export interface CrewSkillLayer {
+  id: string;
+  version: number;
+  name: string;
+  /** the instruction text (markdown) */
+  text: string;
+}
+
+/** A crew skill's text is cut here (the contract's limit). */
+export const CREW_SKILL_MAX_CHARS = 6_000;
 /**
- * The charter layer: the role charter, then the role's strategy, then the
- * cat's own strategy. Every cat of a role key at the same role version gets
- * a byte-identical prefix up to its own addendum, so the prefix cache holds
- * per version (the cache key carries layerVersion()).
+ * Hard ceiling on the crew skills in one charter layer, fixed 4 chars per
+ * token. The crew-skills module applies the real cap first (built-ins by
+ * relevance, then the owner's newest); this is defense in depth.
  */
-export function charterLayer(role: AgentRole, charter: CharterOverride | null | undefined, addenda: readonly StrategyLayer[] | null | undefined): string {
+export const CREW_SKILLS_MAX_TOKENS = 2_400;
+export const CREW_SKILLS_HEADER = "Crew skills (apply them to this work; an explicit request from the owner wins over them):";
+
+const oneLine = (text: string, max: number) => cap(text.replace(/\s+/g, " ").trim(), max);
+
+/** How one skill renders inside the crew skills block. */
+export function crewSkillText(skill: Pick<CrewSkillLayer, "name" | "text">): string {
+  return `## ${oneLine(skill.name, 120)}\n${cap(skill.text.trim(), CREW_SKILL_MAX_CHARS)}`;
+}
+
+/** Estimated tokens one skill adds to a prompt (fixed ratio, the separator included). */
+export function crewSkillTokens(skill: Pick<CrewSkillLayer, "name" | "text">): number {
+  return Math.ceil((crewSkillText(skill).length + 2) / 4);
+}
+
+/** The skills that render: some text, each id once, in the given order, while they fit the ceiling. */
+export function usableCrewSkills(skills: readonly CrewSkillLayer[] | null | undefined): CrewSkillLayer[] {
+  const out: CrewSkillLayer[] = [];
+  const seen = new Set<string>();
+  let used = 0;
+  for (const s of skills ?? []) {
+    if (!s || !s.id || seen.has(s.id) || !s.text.trim() || !s.name.trim()) continue;
+    const cost = crewSkillTokens(s);
+    if (used + cost > CREW_SKILLS_MAX_TOKENS) continue;
+    seen.add(s.id);
+    used += cost;
+    out.push(s);
+  }
+  return out;
+}
+
+/** The cache tag of a crew skills set ("" when empty): k plus 8 hex of its ids and versions in order. */
+export function crewSkillsTag(skills: readonly CrewSkillLayer[] | null | undefined): string {
+  const use = usableCrewSkills(skills);
+  if (use.length === 0) return "";
+  const key = use.map((s) => `${s.id}@${s.version}`).join(",");
+  return `k${new Bun.CryptoHasher("sha256").update(key).digest("hex").slice(0, 8)}`;
+}
+
+function crewSkillsBlock(skills: readonly CrewSkillLayer[]): string {
+  return [CREW_SKILLS_HEADER, ...skills.map(crewSkillText)].join("\n\n");
+}
+
+/**
+ * The charter layer: the role charter, then the crew skills, then the
+ * role's strategy, then the cat's own strategy. Every cat of a role key at
+ * the same role version and skill set gets a byte-identical prefix up to
+ * its own addendum, so the prefix cache holds per version (the cache key
+ * carries layerVersion()).
+ */
+export function charterLayer(
+  role: AgentRole,
+  charter: CharterOverride | null | undefined,
+  addenda: readonly StrategyLayer[] | null | undefined,
+  skills?: readonly CrewSkillLayer[] | null,
+): string {
   const parts = [roleCharter(role, charter)];
+  const use = usableCrewSkills(skills);
+  if (use.length) parts.push(crewSkillsBlock(use));
   for (const a of usableAddenda(addenda)) parts.push(`${HEADER[a.scope](a.version)}\n${cap(a.text.trim(), STRATEGY_MAX_TOKENS * 4)}`);
   return parts.join("\n\n");
 }
 
-/** The version string of a charter layer ("" for a base charter with no addenda): c1.r2.a1 */
-export function layerVersion(charter: CharterOverride | null | undefined, addenda: readonly StrategyLayer[] | null | undefined): string {
+/** The version string of a charter layer ("" for a base charter with no skills and no addenda): c1.k1a2b3c4d.r2.a1 */
+export function layerVersion(
+  charter: CharterOverride | null | undefined,
+  addenda: readonly StrategyLayer[] | null | undefined,
+  skills?: readonly CrewSkillLayer[] | null,
+): string {
   const use = usableAddenda(addenda);
+  const tag = crewSkillsTag(skills);
   const dynamic = !!charter && charter.text.trim().length > 0;
-  if (!dynamic && use.length === 0) return "";
+  if (!dynamic && use.length === 0 && !tag) return "";
   const parts = [`c${dynamic ? Math.max(1, charter!.version) : 1}`];
+  if (tag) parts.push(tag);
   for (const a of use) parts.push(`${a.scope === "role" ? "r" : "a"}${a.version}`);
   return parts.join(".");
 }

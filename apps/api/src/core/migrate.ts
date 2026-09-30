@@ -28,6 +28,10 @@ import sqlite0003 from "../../../../migrations/sqlite/0003_capabilities.sql" wit
 import postgres0005 from "../../../../migrations/postgres/0005_trading_venues.sql" with { type: "text" };
 // @ts-ignore Bun text import: there are no type declarations for .sql files
 import sqlite0005 from "../../../../migrations/sqlite/0005_trading_venues.sql" with { type: "text" };
+// @ts-ignore Bun text import: there are no type declarations for .sql files
+import postgres0006 from "../../../../migrations/postgres/0006_crew_skills.sql" with { type: "text" };
+// @ts-ignore Bun text import: there are no type declarations for .sql files
+import sqlite0006 from "../../../../migrations/sqlite/0006_crew_skills.sql" with { type: "text" };
 
 /** Repo migrations folder (dev and server image); inside a compiled binary this path does not exist. */
 export const MIGRATIONS_ROOT = (() => {
@@ -52,12 +56,14 @@ export const EMBEDDED_MIGRATIONS: Readonly<Record<Dialect, readonly Migration[]>
     { version: "0002_brain.sql", sql: sqlite0002 as string },
     { version: "0003_capabilities.sql", sql: sqlite0003 as string },
     { version: "0005_trading_venues.sql", sql: sqlite0005 as string },
+    { version: "0006_crew_skills.sql", sql: sqlite0006 as string },
   ],
   postgres: [
     { version: "0001_init.sql", sql: postgres0001 as string },
     { version: "0002_brain.sql", sql: postgres0002 as string },
     { version: "0003_capabilities.sql", sql: postgres0003 as string },
     { version: "0005_trading_venues.sql", sql: postgres0005 as string },
+    { version: "0006_crew_skills.sql", sql: postgres0006 as string },
   ],
 };
 

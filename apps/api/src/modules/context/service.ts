@@ -3,7 +3,7 @@
 // Context builder: the token-efficiency core. Lays every agent prompt out
 // stable first so vendor prefix caches hit on almost every call:
 //
-//   system   charter (static per role, or a dynamic role's) + strategy addenda (role, then the cat's own) [cached prefix: cacheSystem]
+//   system   charter (static per role, or a dynamic role's) + crew skills + strategy addenda (role, then the cat's own) [cached prefix: cacheSystem]
 //   tools    only the role's tools
 //   user     brief (goal, project, workspace digest, run history) + memory (lessons)  [breakpoint]
 //   user     task packet (spec, acceptance, deps, handoff, notes)           [breakpoint]
@@ -21,7 +21,7 @@ import type { Clock } from "../../core/ports/clock";
 import type { ChatMessage, ToolCall, ToolSpec } from "../../core/ports/llm";
 import type { ContextBuild, ContextInput, ContextService, StepRecord } from "../../core/services";
 import { redact } from "../../lib/redact";
-import { charterFor, charterLayer, layerVersion, usableAddenda, type CharterOverride, type StrategyLayer } from "./charters";
+import { charterFor, charterLayer, layerVersion, usableAddenda, usableCrewSkills, type CharterOverride, type CrewSkillLayer, type StrategyLayer } from "./charters";
 import { createEstimator } from "./estimator";
 import {
   DEDUPE_MIN_CHARS,
@@ -71,11 +71,13 @@ export interface ContextServiceDeps {
  *   roleKey  the cache key role: a dynamic role key, else the base role
  *   charter  a dynamic role's charter in place of the static base charter
  *   addenda  strategy addenda appended to the charter layer (role, then the cat's own)
+ *   crewSkills  written crew skills for the role and company kind, after the charter
  */
 export interface BrainContextInput extends ContextInput {
   roleKey?: string | null;
   charter?: CharterOverride | null;
   addenda?: StrategyLayer[] | null;
+  crewSkills?: CrewSkillLayer[] | null;
 }
 
 function bullet(items: string[]): string {
@@ -203,8 +205,9 @@ export function createContextService(deps: ContextServiceDeps): ContextService {
     const model = input.model;
     const charter = input.charter && input.charter.text.trim() ? input.charter : null;
     const addenda = usableAddenda(input.addenda);
-    const version = layerVersion(charter, addenda);
-    const system = version ? redact(charterLayer(input.role, charter, addenda)) : charterFor(input.role);
+    const skills = usableCrewSkills(input.crewSkills);
+    const version = layerVersion(charter, addenda, skills);
+    const system = version ? redact(charterLayer(input.role, charter, addenda, skills)) : charterFor(input.role);
     const tools = input.tools;
     const messages: ChatMessage[] = [];
     const layer: Record<ContextLayer, number> = {

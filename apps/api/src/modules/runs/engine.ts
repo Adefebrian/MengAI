@@ -18,6 +18,18 @@
 // Tool calls carry the company, the cat's role key, its capability grants
 // and the approval path for sensitive connector tools (the CEO decides crew
 // requests, the owner the rest).
+//
+// Every step's charter layer also carries the written crew skills for the
+// cat (the built-in JAL-AIDev pack by relevance, then the owner's), read
+// per step so a switch or an edit reaches the next step; the set is fixed
+// for a role, company kind and goal, so the cached prefix holds.
+//
+// A reviewer's pass on UI work goes through ui_check first: when the
+// reviewer never ran it on the task, the engine asks the tools service to
+// run it on the UI files this run changed, and findings send the pass back
+// once with the list (a second pass after that is the reviewer's call; JEV
+// picked hold once over a hard block). A scan that cannot run holds the
+// pass until the reviewer runs ui_check itself.
 import {
   ACTIVITY_LABEL,
   ROLE_LABEL,
@@ -102,6 +114,7 @@ import {
   type StageTaskView,
   type StrategySubject,
   type ToolExtras,
+  type CrewSkillsView,
 } from "./ports";
 import { emptyUsage, progressOf, type MindSnapshot, type RunsRepo } from "./repo";
 import {
@@ -157,6 +170,8 @@ interface LiveTask {
   rounds: number;
   reviewNotes: string[][];
   reworked: boolean;
+  /** review tasks: ui_check ran on this task (by the reviewer or the pass gate) */
+  uiChecked?: boolean;
   failReason: string | null;
   waiters: Array<() => void>;
   ctl: AbortController | null;
@@ -219,6 +234,9 @@ export interface OrgSettings {
 }
 
 export const DEFAULT_ORG: OrgSettings = { ceoName: "Oyen", maxAgents: 0, maxDepth: 0 };
+
+/** The crew skills one step's prompt carries (the crew-skills module's pick). */
+type CrewSkillPick = Awaited<ReturnType<CrewSkillsView["forPrompt"]>>;
 
 /** The dynamic-role part of a context build, on top of ContextInput (the context module reads these fields). */
 interface BrainLayers {
@@ -327,8 +345,24 @@ function addUsage(into: UsageTotals, d: UsageTotals): void {
   into.calls += d.calls;
 }
 
+/** The design law scan the tools module offers designers, engineers, reviewers and QA. */
+export const UI_CHECK_TOOL = "ui_check";
+/** The held pass answer: the findings list, capped (the context module truncates tool output further). */
+const UI_GATE_CHARS = 4000;
+
+/** The cat's activity for a tool call: a design law scan is a review. */
+const toolActivity = (tool: string) => (tool === UI_CHECK_TOOL ? "review" : activityForTool(tool));
+
 /** The strategy addendum cap the JEV plan checks (context STRATEGY_MAX_TOKENS). */
 const REFLEXION_STRATEGY_CAP = 120;
+
+/** The mind view's crew skills: the ones read (with their tokens), then the ones the cap trimmed (skipped, 0 tokens). */
+export function crewSkillRefs(p: Pick<CrewSkillPick, "read" | "skipped">): NonNullable<MindSnapshot["crewSkills"]> {
+  return [
+    ...p.read.map((r) => ({ id: r.id, name: clip(redact(r.name), 80), source: r.source, tokens: r.tokens })),
+    ...p.skipped.map((r) => ({ id: r.id, name: clip(redact(r.name), 80), source: r.source, tokens: 0, skipped: true })),
+  ];
+}
 
 /** Why a lesson is in a cat's head: its scope and its track record. */
 function lessonReason(l: LessonDTO): string {
@@ -2112,13 +2146,18 @@ export class RunEngine {
       // step boundary: the UI always hears that this cat is thinking before the model call
       await this.setAgent(a, { status: "thinking", statusText: thinkingLine(role, t.dto.title, budget.used, lastFailed) }, true);
 
-      // the charter layer is read every step: an adopted strategy reaches the very next step
+      // the charter layer is read every step: an adopted strategy or a switched crew skill reaches the very next step
       const layers = this.layersFor(a);
+      const skills = await this.crewSkillsFor(a);
       // capability tools join per step: find_tools, the connector tools this task loaded, the company's grants
       const specs = await this.stepSpecs(a, t, baseSpecs);
       // the venue skills the crew learned join the memory layer every step: what one cat learns, every cat reads next step
       const venue = await this.venueLessons(a);
-      const input = { ...this.contextInput(a, t, specs, brief, venue.length ? [...venue, ...lessons] : lessons, steps, summary, resolved, textOnly > 0), ...layers };
+      const input = {
+        ...this.contextInput(a, t, specs, brief, venue.length ? [...venue, ...lessons] : lessons, steps, summary, resolved, textOnly > 0),
+        ...layers,
+        ...(skills?.layers.length ? { crewSkills: skills.layers } : {}),
+      };
       let build = this.deps.context.build(input);
       if (build.needsCompaction && steps.length > 1) {
         await this.setAgent(a, { statusText: VOICE.compacting });
@@ -2150,12 +2189,14 @@ export class RunEngine {
             continue;
           }
           if (next === "stop") throw signal.aborted ? signal.reason : new Halt("run_stopped");
+          // a model that cannot call tools gets the adapter's plain sentence, not a raw vendor error
+          if (e.code === "tools_unsupported") return { kind: "failed", reason: clip(e.message, 200) };
           return { kind: "failed", reason: `provider error (${e.kind}): ${clip(e.message, 200)}` };
         }
         throw e;
       }
       overflowRetried = false;
-      a.mind = this.mindOf(a, t, layers, lessons);
+      a.mind = this.mindOf(a, t, layers, lessons, skills);
       await this.saveXray(a, t, build, compactions, result.usage.cachedTokens);
       await this.setAgent(a, { steps: a.dto.steps + 1 });
       if (result.text.trim()) await this.emit("agent.say", { text: clip(result.text, LIMITS.sayChars), to: null }, a.dto.id, t.dto.id);
@@ -2267,13 +2308,19 @@ export class RunEngine {
     }
   }
 
-  /** The cat's tools: its archetype's, cut to the dynamic role's subset when it has one. */
+  /**
+   * The cat's tools: its archetype's, cut to the dynamic role's subset when
+   * it has one. Crew tools the tools module adds beyond the shared registry
+   * (ui_check) are never listed in a subset, so every specialist of the
+   * archetype keeps them.
+   */
   private specsFor(a: LiveAgent): ToolSpec[] {
     const all = this.deps.tools.specsFor(a.dto.role);
     const dyn = a.dto.roleId ? this.roles.get(a.dto.roleId) : undefined;
     if (!dyn || dyn.tools.length === 0) return all;
     const keep = new Set(dyn.tools);
-    const cut = all.filter((s) => keep.has(s.name));
+    const registry = new Set(archetypeTools(a.dto.role));
+    const cut = all.filter((s) => keep.has(s.name) || !registry.has(s.name));
     return cut.some((s) => s.name === "finish") ? cut : all;
   }
 
@@ -2342,13 +2389,29 @@ export class RunEngine {
     }
   }
 
+  /** The written crew skills this cat's prompt carries this step; null without the crew-skills module or when it fails. */
+  private async crewSkillsFor(a: LiveAgent): Promise<CrewSkillPick | null> {
+    const view = this.deps.crewSkills;
+    if (!view) return null;
+    const dyn = a.dto.roleId ? this.roles.get(a.dto.roleId) : undefined;
+    try {
+      return await view.forPrompt({ role: a.dto.role, kind: this.company, goal: this.run.goal, charter: dyn?.charter ?? null });
+    } catch (e) {
+      this.log.log("warn", "crew skills failed, the prompt goes without them", { error: redact(errMsg(e)) });
+      return null;
+    }
+  }
+
   /** What the latest prompt carried, for GET .../mind (persisted with the X-ray). */
-  private mindOf(a: LiveAgent, t: LiveTask, layers: BrainLayers, lessons: LessonDTO[]): MindSnapshot {
+  private mindOf(a: LiveAgent, t: LiveTask, layers: BrainLayers, lessons: LessonDTO[], skills: CrewSkillPick | null = null): MindSnapshot {
     const ids = [this.strategies.get(`role:${layers.roleKey}`), this.strategies.get(`agent:${a.dto.id}`)]
       .filter((x): x is StrategyVersionDTO => !!x && x.status === "active" && !!x.text)
       .map((x) => x.id);
+    const tag = skills?.layers.length ? skills.tag : "";
+    // the same order as the context module's layerVersion: charter, crew skills, role strategy, own strategy
     const version = [
-      layers.charter || layers.addenda.length ? `c${layers.charter?.version ?? 1}` : "",
+      layers.charter || layers.addenda.length || tag ? `c${layers.charter?.version ?? 1}` : "",
+      tag,
       ...layers.addenda.map((x) => `${x.scope === "role" ? "r" : "a"}${x.version}`),
     ]
       .filter(Boolean)
@@ -2360,6 +2423,7 @@ export class RunEngine {
       charterVersion: layers.charter?.version ?? 1,
       addendumIds: ids,
       lessons: lessons.slice(0, 5).map((l) => ({ id: l.id, text: clip(redact(l.text), 400), reason: lessonReason(l) })),
+      crewSkills: skills ? crewSkillRefs(skills) : [],
     };
   }
 
@@ -2878,7 +2942,7 @@ export class RunEngine {
           return { call: c, pre: null };
         });
         const live = plan.filter((p) => !p.pre).map((p) => p.call);
-        if (live.length) await this.setAgent(a, { status: "working", activity: activityForTool(live[0]!.name), statusText: batchLine(live, a.dto.steps) }, true);
+        if (live.length) await this.setAgent(a, { status: "working", activity: toolActivity(live[0]!.name), statusText: batchLine(live, a.dto.steps) }, true);
         const outs = await Promise.all(plan.map((p) => (p.pre ? Promise.resolve(p.pre) : this.runTool(a, t, p.call, signal, timer))));
         for (let k = 0; k < outs.length; k++) {
           const p = plan[k]!;
@@ -2907,7 +2971,7 @@ export class RunEngine {
 
   /** Step boundary during tools: the cat's activity and a friendly line for this call. */
   private async announce(a: LiveAgent, call: ToolCall): Promise<void> {
-    await this.setAgent(a, { status: "working", activity: activityForTool(call.name), statusText: toolLine(call.name, call.arguments, a.dto.steps) }, true);
+    await this.setAgent(a, { status: "working", activity: toolActivity(call.name), statusText: toolLine(call.name, call.arguments, a.dto.steps) }, true);
   }
 
   /**
@@ -2940,6 +3004,7 @@ export class RunEngine {
       res = { output: `Tool error: ${errMsg(e)}`, ok: false, durationMs: this.ctx.clock.now() - started };
     }
     if (signal.aborted) throw signal.reason;
+    if (call.name === UI_CHECK_TOOL) t.uiChecked = true;
     if (!res.callId) this.log.log("warn", "tools service returned no callId: the call is not inspectable", { tool: call.name });
     if (res.ok && !this.deps.tools.isReadOnly(call.name)) this.digestStale = true;
     return { callId: call.id, tool: call.name, output: this.deps.context.truncateOutput(redact(res.output ?? "")), ok: res.ok };
@@ -2948,7 +3013,7 @@ export class RunEngine {
   /** Control tools never reach the tools service: the engine logs and publishes them itself. */
   private async runControl(a: LiveAgent, t: LiveTask, call: ToolCall, signal: AbortSignal, timer: TaskTimer): Promise<{ result: StepResult; end?: Outcome }> {
     const callId = this.ctx.clock.id();
-    const activity = activityForTool(call.name);
+    const activity = toolActivity(call.name);
     await this.announce(a, call);
     await this.emit("tool.call", { callId, tool: call.name, activity, argsPreview: clip(call.arguments, LIMITS.previewChars) }, a.dto.id, t.dto.id);
     const started = this.ctx.clock.now();
@@ -3046,6 +3111,10 @@ export class RunEngine {
         if (t.kind !== "review") return fail("submit_review is only for review tasks. Call finish when your task is done.");
         const p = parseArgs("submit_review", submitReviewArgs, call.arguments);
         if (!p.ok) return fail(p.error);
+        if (p.value.verdict === "pass") {
+          const held = await this.uiGate(a, t, signal);
+          if (held) return fail(held);
+        }
         const notes = p.value.notes.map((n) => bounded(n, 600)).filter(Boolean).slice(0, 12);
         return { output: "Review submitted.", ok: true, end: { kind: "review", verdict: p.value.verdict ?? "fail", notes } };
       }
@@ -3064,6 +3133,45 @@ export class RunEngine {
       default:
         return fail(`The ${call.name} tool is not available in this run.`);
     }
+  }
+
+  /**
+   * The design law gate on a reviewer's pass: once per review task, when the
+   * reviewer never ran ui_check on it, the tools service runs ui_check on the
+   * UI files this run changed. Findings hold the pass (the reviewer fails the
+   * review with them, or passes again when each one is a false positive); a
+   * clean scan or no UI change lets it through. A scan that cannot run holds
+   * the pass until the reviewer runs ui_check itself (JEV failure_policy: hold).
+   */
+  private async uiGate(a: LiveAgent, t: LiveTask, signal: AbortSignal): Promise<string | null> {
+    const check = this.deps.tools.reviewCheck;
+    if (!check || t.uiChecked) return null;
+    t.uiChecked = true;
+    let r: { ok: boolean; output: string } | null;
+    try {
+      r = await check.call(this.deps.tools, {
+        runId: this.run.id,
+        agentId: a.dto.id,
+        taskId: t.dto.id,
+        projectId: this.project.id,
+        root: this.root,
+        role: a.dto.role,
+        signal,
+        company: this.company,
+        roleKey: this.keyOf(a.dto),
+        grants: this.grantsOf(a),
+      });
+    } catch (e) {
+      if (signal.aborted) throw signal.reason;
+      this.log.log("warn", "ui_check before the pass could not run, the pass waits for the reviewer's own ui_check", { error: redact(errMsg(e)) });
+      t.uiChecked = false;
+      return bounded(`Not passed yet: ui_check could not run before your pass (${clip(redact(errMsg(e)), 200)}). Run ui_check yourself on the changed UI files, then submit your verdict again.`, UI_GATE_CHARS);
+    }
+    if (!r || r.ok) return null;
+    return bounded(
+      `Not passed yet: this run changed UI files, so ui_check ran before your pass and found design law problems.\n${r.output}\nFail the review with these as notes, or call submit_review with pass again only if every finding is a false positive.`,
+      UI_GATE_CHARS,
+    );
   }
 
   /** The lead is the CEO: a crew question reaches the lead first; only the lead's own questions go straight to the owner. */

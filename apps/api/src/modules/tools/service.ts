@@ -12,12 +12,18 @@
 // lesson (once per tool and error shape), so every cat learns from it.
 // Where the platform has no crew sandbox (lib/platform.ts), shell_run is
 // dropped from every role and a call to it answers the "Coming soon" reason.
+// ui_check (ui-check.ts) is a crew tool of the tools module itself: a static
+// design law scan with no shell, so it works on every platform. Designers,
+// engineers, reviewers and QA get it after their registry tools, and the
+// engine asks reviewCheck() before it accepts a reviewer's pass on UI work.
 import {
   activityForTool,
   ROLE_TOOLS,
+  type Activity,
   TOOL_NAMES,
   type AgentRole,
   type AxNode,
+  type FileNodeDTO,
   type HandsMethod,
   type HandsParams,
   type HandsResults,
@@ -48,6 +54,7 @@ import { errorMeaning } from "../trading";
 import { runWithFileOrigin } from "../workspace";
 import { createToolCallsRepo } from "./repo";
 import { CONTROL_TOOLS, OPERATOR_TOOLS, READ_ONLY_TOOLS, TOOL_SPECS, UNAVAILABLE_TOOLS } from "./specs";
+import { formatUiReport, isUiFile, scanUi, UI_CHECK, UI_CHECK_LIMITS, UI_CHECK_SPEC, type UiFile } from "./ui-check";
 import { validateArgs, type JsonSchema } from "./validate";
 import { fetchReadable, type Lookup } from "./web";
 import { argsLine, connectorSpec, dotted, FIND_TOOLS, FIND_TOOLS_SPEC, isTradingTool, searchTools, TRADING_ORDER, TRADING_SPECS, type TradingToolName } from "./capabilities";
@@ -96,7 +103,21 @@ export interface ToolsServiceImpl extends ToolsService {
   connectSimulator(sim: SimulatedVenue): Promise<unknown>;
   /** registry tools this platform turns off (shell_run without a crew sandbox), so role tool sets leave them out */
   platformOff(): ReadonlySet<string>;
+  /**
+   * Before a reviewer's pass: runs ui_check on the UI files this run wrote
+   * or edited (a normal, logged tool call). null when the role has no
+   * ui_check or the run changed no UI file; throws when the run's changes
+   * cannot be read.
+   */
+  reviewCheck(tc: ToolContext & CapabilityContext): Promise<{ ok: boolean; output: string } | null>;
 }
+
+/** Roles that get ui_check after their registry tools (fixed order: the tools block stays cacheable). */
+export const UI_CHECK_ROLES: ReadonlySet<AgentRole> = new Set<AgentRole>(["designer", "engineer", "reviewer", "qa"]);
+/** list calls one ui_check may make to walk deep folders */
+const UI_CHECK_LISTS = 20;
+/** reads per file (64 KB each through the workspace port) */
+const UI_CHECK_READS = 10;
 
 export const SHELL_TIMEOUT_MS = 120_000;
 export const SHELL_OUTPUT_CAP = 200 * 1024;
@@ -182,10 +203,12 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     let specs = byRole.get(role);
     if (!specs) {
       specs = (ROLE_TOOLS[role] ?? []).filter(offered).map((name) => TOOL_SPECS[name]);
+      if (UI_CHECK_ROLES.has(role)) specs.push(UI_CHECK_SPEC);
       byRole.set(role, specs);
     }
     return specs;
   };
+  const activityOf = (tool: string): Activity => (tool === UI_CHECK ? "review" : activityForTool(tool));
 
   const networkAllowed = async () => (await deps.settings.get()).allowNetworkTools === true;
 
@@ -368,6 +391,80 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     const more = findings.length > 20 ? `\n+${findings.length - 20} more findings in the Security panel` : "";
     const head = `scan ${result.id} (${kind}) ${result.status}: ${findings.length} findings${counts ? ` (${counts})` : ""}${result.error ? `; error: ${result.error}` : ""}${kind === "deps" && !network ? "; OSV lookups skipped (network tools are off)" : ""}`;
     return { ok: result.status !== "failed", output: [head, ...lines].join("\n") + more, summary: head };
+  }
+
+  // ----------------------------------------------------------- ui_check
+  /** Every UI file under the given paths, through the jailed workspace port (sorted, capped, sizes known). */
+  async function uiFiles(root: string, paths: readonly string[]): Promise<{ files: Array<{ path: string; size: number }>; notes: string[] }> {
+    const found = new Map<string, number>();
+    const notes: string[] = [];
+    let large = 0;
+    let lists = 0;
+    const queue = [...paths];
+    const seen = new Set<string>();
+    while (queue.length && lists < UI_CHECK_LISTS) {
+      const p = queue.shift()!;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      lists++;
+      let nodes: FileNodeDTO[];
+      try {
+        nodes = await deps.workspace.list(root, p, 6);
+      } catch (e) {
+        notes.push(`skipped ${clip(p, 80)}: ${clip(e instanceof Error ? e.message : String(e), 120)}`);
+        continue;
+      }
+      const walk = (list: readonly FileNodeDTO[]) => {
+        for (const node of list) {
+          if (node.dir) {
+            if (node.children) walk(node.children);
+            else if (node.path !== p) queue.push(node.path);
+          } else if (isUiFile(node.path)) {
+            if (node.size > UI_CHECK_LIMITS.maxFileBytes) large++;
+            else found.set(node.path, node.size);
+          }
+        }
+      };
+      walk(nodes);
+    }
+    if (queue.length) notes.push(`${queue.length} deeper folders not checked: pass them in paths`);
+    if (large) notes.push(`${large} files over ${UI_CHECK_LIMITS.maxFileBytes / 1024} KB not checked (generated or vendored)`);
+    const all = [...found].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([path, size]) => ({ path, size }));
+    if (all.length > UI_CHECK_LIMITS.maxFiles) notes.push(`${all.length - UI_CHECK_LIMITS.maxFiles} more UI files not checked: pass narrower paths`);
+    return { files: all.slice(0, UI_CHECK_LIMITS.maxFiles), notes };
+  }
+
+  /** A whole text file, read in 64 KB line ranges; null for binary files. */
+  async function readText(root: string, path: string): Promise<string | null> {
+    let text = "";
+    let from = 1;
+    for (let i = 0; i < UI_CHECK_READS; i++) {
+      const r = await deps.workspace.read(root, path, { from });
+      if (r.binary) return null;
+      text += text && r.content ? `\n${r.content}` : r.content;
+      if (!r.truncated) break;
+      const got = r.content ? r.content.split("\n").length : 0;
+      if (!got) break;
+      from += got;
+    }
+    return text;
+  }
+
+  async function uiCheck(a: Args, call: Call): Promise<Outcome> {
+    const root = await call.workspace();
+    const wanted = Array.isArray(a.paths) ? (a.paths as string[]).map((p) => p.trim()).filter(Boolean) : [];
+    const { files, notes } = await uiFiles(root, wanted.length ? wanted : ["."]);
+    const texts: UiFile[] = [];
+    for (const f of files) {
+      if (call.signal?.aborted) break;
+      try {
+        const text = await readText(root, f.path);
+        if (text !== null) texts.push({ path: f.path, text });
+      } catch (e) {
+        notes.push(`skipped ${clip(f.path, 80)}: ${clip(e instanceof Error ? e.message : String(e), 120)}`);
+      }
+    }
+    return formatUiReport(scanUi(texts), texts.length, notes);
   }
 
   const handlers: Partial<Record<ToolName, Handler>> = {
@@ -588,6 +685,11 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
         return v.ok ? await findTools(v.value as Args, call) : fail(v.error);
       }
       if (isTradingTool(tool)) return await tradingTool(tool, rawArgs, call);
+      if (tool === UI_CHECK) {
+        if (!specsFor(call.role).some((sp) => sp.name === UI_CHECK)) return fail(`${UI_CHECK} is not available to the ${call.role} role`);
+        const v = validateArgs(UI_CHECK_SPEC.parameters as JsonSchema, rawArgs);
+        return v.ok ? await uiCheck(v.value as Args, call) : fail(v.error);
+      }
       if (deps.connectors && dotted(tool)) return await connectorTool(tool, rawArgs, call);
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
@@ -620,7 +722,7 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
   const service: ToolsServiceImpl = {
     specsFor,
     isControl: (tool) => CONTROL_TOOLS.has(tool),
-    isReadOnly: (tool) => READ_ONLY_TOOLS.has(tool) || tool === FIND_TOOLS || tool === "positions" || known.get(tool)?.risk === "read",
+    isReadOnly: (tool) => READ_ONLY_TOOLS.has(tool) || tool === FIND_TOOLS || tool === UI_CHECK || tool === "positions" || known.get(tool)?.risk === "read",
 
     async taskSpecs(input) {
       const out: ToolSpec[] = [];
@@ -657,7 +759,7 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
         await ctx.events.publish({
           type: "tool.call",
           ...who,
-          data: { callId, tool, activity: activityForTool(tool), argsPreview: clip(typeof safeArgs === "string" ? safeArgs : toJson(safeArgs), 160) },
+          data: { callId, tool, activity: activityOf(tool), argsPreview: clip(typeof safeArgs === "string" ? safeArgs : toJson(safeArgs), 160) },
         });
       } catch (e) {
         log.log("warn", "tool.call publish failed", { error: redact(String(e)) });
@@ -710,6 +812,15 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     },
 
     platformOff: () => platformOff,
+
+    async reviewCheck(tc) {
+      if (!specsFor(tc.role).some((sp) => sp.name === UI_CHECK)) return null;
+      // a failing read throws: the engine holds the pass until the reviewer runs ui_check itself
+      const paths = (await repo.changedPaths(tc.runId)).filter(isUiFile);
+      if (!paths.length) return null;
+      const r = await service.execute({ id: ctx.clock.id(), name: UI_CHECK, arguments: JSON.stringify({ paths: paths.slice(0, 40) }) }, tc);
+      return { ok: r.ok, output: r.output };
+    },
   };
   return service;
 }
