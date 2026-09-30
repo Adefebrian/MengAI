@@ -1,13 +1,14 @@
 // Typed API client over the Routes table in @mengai/shared. One call()
 // per route key ("GET /api/runs/:id"): path params, query and the JSON
 // body are typed from the table, the response is RouteResponse<K>.
-// The base is the local runtime (api/runtime.ts): "" when the page shares
-// its origin, and then cookies ride every request; another origin (the
-// MengAI website talking to 127.0.0.1) never sends cookies and carries the
-// paired bearer session token instead. Every mutating call carries the
-// x-mengai-csrf header the API requires with its Origin check.
+// The base is the local engine (api/runtime.ts): "" when the page shares
+// its origin, else the engine's loopback origin. There is no auth of any
+// kind: no token, no bearer header, no cookies across origins. Every
+// mutating call is Content-Type application/json (so a browser always
+// preflights it and a plain form post can never reach the engine) and
+// carries the x-mengai-csrf header.
 // Errors come back as ApiError with the server's { error: { code,
-// message } }, or a network code when the runtime cannot be reached.
+// message } }, or a network code when the engine cannot be reached.
 import { CSRF_HEADER, type RouteBody, type RouteKey, type RouteResponse } from "@mengai/shared";
 import type { EventSourceLike } from "../store/runStore";
 import { fetchEventSource } from "./sse";
@@ -51,10 +52,6 @@ export interface ApiClientConfig {
   /** origin prefix, "" for same origin (the default) */
   base?: string;
   fetch?: FetchLike;
-  /** the bearer session token from pairing, read on every request */
-  token?: () => string | null;
-  /** the runtime said this session is gone (401 unauthenticated) */
-  onUnauthenticated?: () => void;
 }
 
 export interface ApiClient {
@@ -62,14 +59,10 @@ export interface ApiClient {
   call<K extends RouteKey>(key: K, ...args: CallArgs<K>): Promise<RouteResponse<K>>;
   /** the absolute or same-origin URL for a GET route, for EventSource and <img> */
   url<K extends RouteKey>(key: K, ...args: CallArgs<K>): string;
-  /** open a server-sent events stream on a url() from this client, signed in the same way as call() */
+  /** open a server-sent events stream on a url() from this client */
   stream(url: string): EventSourceLike;
-  /**
-   * A src an <img> or <video> can load for a runtime file path ("/api/assets/:id/file").
-   * Same origin it is the path itself; a cross-origin runtime is read with the
-   * bearer token into a blob: URL the caller revokes.
-   */
-  media(path: string, signal?: AbortSignal): Promise<{ src: string; revoke: () => void }>;
+  /** a src an <img> or <video> can load for an engine file path ("/api/assets/:id/file") */
+  resolve(path: string): string;
 }
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -117,13 +110,8 @@ export async function errorFrom(res: Response): Promise<ApiError> {
 export function createApiClient(config: ApiClientConfig = {}): ApiClient {
   const base = (config.base ?? "").replace(/\/+$/, "");
   const doFetch: FetchLike = config.fetch ?? ((input, init) => fetch(input, init));
-  // Cookies only on the page's own origin; a cross-origin runtime gets the bearer token.
-  const credentials: RequestCredentials = base ? "omit" : "include";
-  const auth = (headers: Record<string, string>) => {
-    const token = config.token?.() ?? null;
-    if (token) headers.authorization = `Bearer ${token}`;
-    return headers;
-  };
+  // Nothing rides along: no cookies across origins, no Authorization header.
+  const credentials: RequestCredentials = base ? "omit" : "same-origin";
 
   const url = (key: RouteKey, opts?: { params?: Record<string, string>; query?: Query }) => {
     const [, pattern] = splitKey(key);
@@ -136,24 +124,23 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
       const opts = args[0] as { params?: Record<string, string>; query?: Query } | undefined;
       return url(key, opts);
     },
-    async media(path: string, signal?: AbortSignal) {
+    resolve(path: string): string {
       const absolute = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(path);
-      if (!base || absolute) return { src: path, revoke: () => {} };
-      const res = await doFetch(base + path, { method: "GET", headers: auth({}), credentials, signal });
-      if (!res.ok) throw await errorFrom(res);
-      const src = URL.createObjectURL(await res.blob());
-      return { src, revoke: () => URL.revokeObjectURL(src) };
+      return absolute ? path : base + path;
     },
     stream(u: string): EventSourceLike {
-      const headers = auth({});
-      if (headers.authorization || config.fetch) return fetchEventSource(u, { headers, credentials, fetch: config.fetch });
-      return new EventSource(u, { withCredentials: !base }) as unknown as EventSourceLike;
+      // an injected fetch (the demo server, tests) streams through it; a browser uses EventSource
+      if (config.fetch || typeof EventSource === "undefined") return fetchEventSource(u, { headers: {}, credentials, fetch: config.fetch });
+      return new EventSource(u, { withCredentials: false }) as unknown as EventSourceLike;
     },
     async call<K extends RouteKey>(key: K, ...args: CallArgs<K>): Promise<RouteResponse<K>> {
       const opts = (args[0] ?? {}) as { params?: Record<string, string>; query?: Query; body?: unknown; signal?: AbortSignal };
       const [method] = splitKey(key);
-      const headers = auth({ accept: "application/json" });
-      if (MUTATING.has(method)) headers[CSRF_HEADER] = "1";
+      const headers: Record<string, string> = { accept: "application/json" };
+      if (MUTATING.has(method)) {
+        headers[CSRF_HEADER] = "1";
+        headers["content-type"] = "application/json";
+      }
       const init: RequestInit = { method, headers, credentials, signal: opts.signal };
       if (opts.body !== undefined) {
         headers["content-type"] = "application/json";
@@ -165,13 +152,9 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") throw err;
         if (err instanceof Error && err.name === "AbortError") throw err;
-        throw new ApiError(0, "network", "Cannot reach MengAI on this machine. Check that the app is open, then try again.");
+        throw new ApiError(0, "network", "Cannot reach MengAI on this Mac. Check that the app is open, then try again.");
       }
-      if (!res.ok) {
-        const err = await errorFrom(res);
-        if (err.status === 401 && err.code === "unauthenticated") config.onUnauthenticated?.();
-        throw err;
-      }
+      if (!res.ok) throw await errorFrom(res);
       if (res.status === 204) return undefined as unknown as RouteResponse<K>;
       const text = await res.text();
       if (!text) return undefined as unknown as RouteResponse<K>;

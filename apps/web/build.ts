@@ -76,6 +76,7 @@ async function runBuild() {
   await Bun.write(join(outdir, "index.html"), await Bun.file(join(here, "src/index.html")).text());
   await copyFonts();
   await copyBrand();
+  await writeDemoSite();
 
   console.log("web build ok");
 }
@@ -88,6 +89,17 @@ async function copyBrand() {
   for (const file of await readdir(from)) {
     if (file.endsWith(".png")) await copyFile(join(from, file), join(out, file));
   }
+}
+
+// What the sample crew built (src/demo/site.ts), so the sample run's live
+// preview has a real page behind Open in new tab.
+async function writeDemoSite() {
+  const { DEMO_SITE_CSS, DEMO_SITE_CSV, DEMO_SITE_HTML } = await import("./src/demo/site");
+  const out = join(outdir, "demo-site");
+  await mkdir(out, { recursive: true });
+  await Bun.write(join(out, "index.html"), DEMO_SITE_HTML);
+  await Bun.write(join(out, "site.css"), DEMO_SITE_CSS);
+  await Bun.write(join(out, "sales-2026-09-29.csv"), DEMO_SITE_CSV);
 }
 
 async function copyFonts() {

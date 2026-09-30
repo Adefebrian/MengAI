@@ -7,7 +7,6 @@ import {
   CSRF_HEADER,
   PROVIDER_PRESETS,
   findPreset,
-  type ApprovalDTO,
   type AssetDTO,
   type ContextXrayDTO,
   type CreateProviderBody,
@@ -16,23 +15,22 @@ import {
   type LessonDTO,
   type ModelRouting,
   type OwnerSettings,
-  type PermissionDTO,
+  type PreviewDTO,
   type ProjectDTO,
   type ProviderDTO,
   type RunDTO,
   type RunSnapshotDTO,
   type ScanDTO,
-  type SessionDTO,
   type SkillDTO,
   type UsageReport,
   type UsageTotals,
 } from "@mengai/shared";
 import type { CreateConnectorBody, CreateTradingVenueBody, RunStage, TradingSettings, UpdateConnectorBody } from "@mengai/shared";
 import { matchPath } from "../router";
+import { DEMO_SITE_PAGE } from "./site";
 import { createCapabilityState, demoMind } from "./capabilities";
 import { replay } from "../store/runStore";
 import {
-  DEMO_APPROVAL,
   DEMO_CALLS,
   DEMO_EVENTS,
   demoFiles,
@@ -209,21 +207,68 @@ export function createDemoState() {
     { id: "e-1", suite: "core", policy: "legacy", metrics: { scenarios: 12, passed: 11, calls: 188, inputTokens: 1_284_400, outputTokens: 61_230, cachedTokens: 0, billableInputTokens: 1_284_400, maxPromptTokens: 21_870 }, createdAt: DEMO_T0 - D },
     { id: "e-2", suite: "core", policy: "v2", metrics: { scenarios: 12, passed: 12, calls: 121, inputTokens: 702_150, outputTokens: 48_900, cachedTokens: 431_900, billableInputTokens: 270_250, maxPromptTokens: 9_640 }, createdAt: DEMO_T0 - D },
   ];
-  const approvals: ApprovalDTO[] = [
-    { ...DEMO_APPROVAL },
-    { id: "ap-2", runId: "demo-older", agentId: null, capability: "network", risk: "read", title: "Fetch the date-fns changelog from registry.npmjs.org", detail: { url: "https://registry.npmjs.org/date-fns", reason: "Check the 4.x changes before the upgrade" }, status: "approved", scope: "session", createdAt: DEMO_T0 - 2 * D, decidedAt: DEMO_T0 - 2 * D + 20_000, expiresAt: DEMO_T0 - 2 * D + 600_000 },
-    { id: "ap-3", runId: "demo-older", agentId: null, capability: "fs", risk: "destructive", title: "Delete src/legacy (41 files)", detail: { path: "/Users/you/code/kopi-menu/src/legacy" }, status: "denied", scope: "once", createdAt: DEMO_T0 - 2 * D + 30 * 60_000, decidedAt: DEMO_T0 - 2 * D + 31 * 60_000, expiresAt: DEMO_T0 - 2 * D + 40 * 60_000 },
-  ];
-  const grants: PermissionDTO[] = [
-    { capability: "fs", mode: "ask", scope: ["/Users/you/code/warung-kas"], expiresAt: null, updatedAt: DEMO_T0 - D },
-    { capability: "shell", mode: "ask", scope: ["bun"], expiresAt: null, updatedAt: DEMO_T0 - D },
-    { capability: "network", mode: "off", scope: [], expiresAt: null, updatedAt: DEMO_T0 - D },
-  ];
-  return { snapshot, olderRun, projects, grants, providers, routing, settings, lessons, skills, assets, scans, findings, evals, approvals,
+  return { snapshot, olderRun, projects, providers, routing, settings, lessons, skills, assets, scans, findings, evals,
     setRouting: (r: ModelRouting) => (routing = r),
     getRouting: () => routing,
     setSettings: (s: OwnerSettings) => (settings = s),
     getSettings: () => settings,
+  };
+}
+
+/**
+ * The live preview, played in the page: Start installs for a moment, then
+ * starts, then serves the sample site (dist/demo-site). ?preview=ready opens
+ * it already running, ?preview=failed shows a start that failed with its
+ * log, ?preview=empty a project with nothing to preview yet.
+ */
+function createPreviewState() {
+  const q = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("preview");
+  const seed = q === "ready" || q === "failed" || q === "empty" ? q : "idle";
+  const origin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+  type Rec = { phase: "idle" | "run" | "stopped"; since: number; fail: boolean };
+  const recs = new Map<string, Rec>();
+  const rec = (projectId: string): Rec => {
+    let r = recs.get(projectId);
+    if (!r) {
+      r = seed === "ready" || seed === "failed" ? { phase: "run", since: 0, fail: seed === "failed" } : { phase: "idle", since: 0, fail: false };
+      // the older sample project's dev script is broken, so its start fails
+      if (projectId === "demo-project-2") r.fail = true;
+      recs.set(projectId, r);
+    }
+    return r;
+  };
+  const INSTALL = ["$ bun install", "bun install v1.3.14", "Resolving dependencies"];
+  const START = [...INSTALL, "+ csv-stringify@6.5.2", "3 packages installed [412.00ms]", "$ bun run dev"];
+  const FAIL = [...INSTALL, "3 packages installed [388.00ms]", "$ bun run dev", "$ vite --port 5173", 'error: Script not found "vite"', 'error: script "dev" exited with code 1'];
+  const dto = (projectId: string, over: Partial<PreviewDTO>): PreviewDTO => ({ projectId, status: "idle", url: null, command: null, kind: null, logTail: [], error: null, startedAt: null, ...over });
+  const get = (projectId: string): PreviewDTO => {
+    if (seed === "empty") return dto(projectId, { error: "No dev, start or preview script in package.json and no index.html at the top of the folder yet." });
+    const r = rec(projectId);
+    if (r.phase === "idle") return dto(projectId, {});
+    const base = { command: "bun run dev", kind: "script" as const, startedAt: r.since || Date.now() };
+    if (r.phase === "stopped") return dto(projectId, { ...base, status: "stopped", logTail: [...START, "Stopped by you"] });
+    const age = r.since ? Date.now() - r.since : Number.POSITIVE_INFINITY;
+    if (age < 1200) return dto(projectId, { ...base, status: "installing", logTail: INSTALL });
+    if (r.fail) {
+      if (age < 2000) return dto(projectId, { ...base, status: "starting", logTail: FAIL.slice(0, 5) });
+      return dto(projectId, { ...base, status: "failed", logTail: FAIL, error: "The dev script stopped before it served a page: vite is not installed in this project." });
+    }
+    if (age < 2600) return dto(projectId, { ...base, status: "starting", logTail: START });
+    const url = origin + DEMO_SITE_PAGE;
+    return dto(projectId, { ...base, status: "ready", url, logTail: [...START, `Serving the report on ${url}`] });
+  };
+  return {
+    get,
+    start(projectId: string): PreviewDTO {
+      if (seed === "empty") return get(projectId);
+      Object.assign(rec(projectId), { phase: "run", since: Date.now() });
+      return get(projectId);
+    },
+    stop(projectId: string): PreviewDTO {
+      const r = rec(projectId);
+      if (r.phase === "run") r.phase = "stopped";
+      return get(projectId);
+    },
   };
 }
 
@@ -240,6 +285,11 @@ function json(status: number, body: unknown): Response {
 export function createDemoFetch(): (input: string, init: RequestInit) => Promise<Response> {
   const st = createDemoState();
   const cap = createCapabilityState();
+  const preview = createPreviewState();
+  const knownProject = (id: string | undefined) => {
+    if (!id || !st.projects.some((p) => p.id === id)) throw new DemoHttpError(404, "not_found", "No project with that id.");
+    return id;
+  };
   let seq = 0;
   const nextId = (p: string) => `${p}-${(seq += 1)}`;
   const hint = (key: string) => key.slice(-4);
@@ -249,8 +299,6 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
 
   const routes: Array<[string, Handler]> = [
     ["GET /api/health", () => ({ ok: true, mode: "local", version: "0.1.0 demo", configured: true, automation: { available: false, accessibility: false, screen: false }, jev: { configured: true } })],
-    ["GET /api/session", (): SessionDTO => ({ authenticated: true, mode: "local", needsSetup: false })],
-    ["POST /api/auth/logout", () => ({ ok: true })],
     ["GET /api/projects", () => st.projects],
     ["POST /api/projects", ({ body }) => {
       const b = body as { name: string; workspacePath?: string };
@@ -260,7 +308,11 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
     }],
     ["GET /api/projects/:id/files", () => demoFiles(clockFn())],
     ["GET /api/projects/:id/file", ({ query }) => demoFile(query.get("path") ?? "", clockFn())],
-    ["POST /api/local/pick-folder", () => ({ path: "/Users/you/code/new-project" })],
+    ["GET /api/projects/:id", ({ params }) => st.projects.find((p) => p.id === knownProject(params.id))],
+    ["GET /api/projects/:id/preview", ({ params }) => preview.get(knownProject(params.id))],
+    ["POST /api/projects/:id/preview", ({ params }) => preview.start(knownProject(params.id))],
+    ["DELETE /api/projects/:id/preview", ({ params }) => preview.stop(knownProject(params.id))],
+    ["POST /api/projects/:id/reveal", ({ params }) => (knownProject(params.id), { ok: true })],
     ["GET /api/runs", () => runs()],
     ["POST /api/runs/estimate", ({ body }) => {
       const goal = String((body as { goal?: string }).goal ?? "");
@@ -477,24 +529,6 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       st.evals.unshift(v2, legacy);
       const savingsPct = Math.round((1 - v2.metrics.billableInputTokens / legacy.metrics.billableInputTokens) * 100);
       return { legacy, v2, savingsPct };
-    }],
-    ["GET /api/automation/approvals", () => st.approvals],
-    ["GET /api/automation/grants", () => st.grants],
-    ["PUT /api/automation/grants/:capability", ({ params, body }) => {
-      const g = st.grants.find((x) => x.capability === params.capability);
-      if (!g) throw new DemoHttpError(404, "not_found", "That capability is not part of this build.");
-      g.mode = (body as { mode: PermissionDTO["mode"] }).mode;
-      g.updatedAt = Date.now();
-      return g;
-    }],
-    ["POST /api/automation/approvals/:id", ({ params, body }) => {
-      const a = st.approvals.find((x) => x.id === params.id);
-      if (!a) throw new DemoHttpError(404, "not_found", "No request with that id.");
-      const b = body as { decision: "approve" | "deny"; scope?: "once" | "session" };
-      a.status = b.decision === "approve" ? "approved" : "denied";
-      a.scope = b.scope ?? "once";
-      a.decidedAt = Date.now();
-      return a;
     }],
     ["POST /api/killswitch", () => ({ stoppedRuns: 1, killedProcesses: 0 })],
     ["GET /api/settings", () => ({ ...st.getSettings(), prices: { ...st.getSettings().prices } })],

@@ -85,11 +85,14 @@ describe("demo screens for the new backend", () => {
     expect(el.querySelector(".trading-venues")?.textContent).toContain("What one cat learns, every cat uses at once.");
   });
 
-  test("trading wizard: credentials are masked, plain settings are not", () => {
-    expect(isSecretField({ key: "CCXT_MCP_APIKEY", label: "API key" })).toBe(true);
-    expect(isSecretField({ key: "CCXT_MCP_SECRET", label: "API secret" })).toBe(true);
-    expect(isSecretField({ key: "Authorization", label: "Auth header value" })).toBe(true);
-    expect(isSecretField({ key: "CCXT_MCP_EXCHANGE", label: "Exchange id, e.g. binance" })).toBe(false);
+  test("trading wizard: a field is masked unless its preset marks it plain (secret false)", () => {
+    const ccxt = TRADING_VENUE_PRESETS.find((p) => p.id === "ccxt-mcp")!;
+    const field = (key: string) => ccxt.secrets.find((f) => f.key === key)!;
+    expect(isSecretField(field("CCXT_MCP_APIKEY"))).toBe(true);
+    expect(isSecretField(field("CCXT_MCP_SECRET"))).toBe(true);
+    expect(isSecretField(field("CCXT_MCP_EXCHANGE"))).toBe(false);
+    expect(isSecretField({ secret: true })).toBe(true);
+    expect(isSecretField({})).toBe(true);
   });
 
   test("trading wizard: preset, command and secrets, paper or live, then the learning status; secrets never stay on the page", async () => {

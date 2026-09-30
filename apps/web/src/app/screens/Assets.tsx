@@ -3,41 +3,22 @@
 // 1.46), so the screen title is for assistive tech only. The create form
 // (card) sits beside the library (divided section, JEV
 // kit.media-frame.grid): every asset in a MediaFrame of one shape, the real
-// file or an honest placeholder that names the subject and its state. From
-// the website the file is read with the paired bearer token (api.media).
+// file or an honest placeholder that names the subject and its state. The
+// file loads straight from the engine on this Mac (api.resolve), no token.
 import type { AssetDTO, AssetKind } from "@mengai/shared";
 import { MediaFrame } from "@mengai/ui";
 import { EmptyState, ProductIcon, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useApp } from "../context";
 import { fmtAgo, fmtUsd } from "../format";
 import { useAction, useNow, useResource } from "../hooks";
 import { JOB_STATUS } from "../status";
 import { FormStatus, Page, Region, ScreenTitle, Segmented, SelectField, TextArea } from "../ui";
 
-/** The runtime file as a src: the path on the runtime's own page, a signed blob from the website. */
+/** The engine file as a src: the path on the engine's own page, the engine's loopback URL from the website. */
 function useMediaSrc(url: string | undefined): string | undefined {
   const { api } = useApp();
-  const [src, setSrc] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    setSrc(undefined);
-    if (!url) return;
-    const ctrl = new AbortController();
-    let revoke = () => {};
-    api.media(url, ctrl.signal).then(
-      (m) => {
-        if (ctrl.signal.aborted) return m.revoke();
-        revoke = m.revoke;
-        setSrc(m.src);
-      },
-      () => {},
-    );
-    return () => {
-      ctrl.abort();
-      revoke();
-    };
-  }, [api, url]);
-  return src;
+  return url ? api.resolve(url) : undefined;
 }
 
 function AssetTile({ a, now, onDelete }: { a: AssetDTO; now: number; onDelete: (id: string) => void }) {

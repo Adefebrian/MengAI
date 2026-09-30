@@ -1,12 +1,9 @@
-// A server-sent events reader over fetch, for the one case EventSource
-// cannot serve: a page on the MengAI website streaming from the local
-// runtime with a bearer session token. EventSource never sends an
-// Authorization header, and a token in the query string would land in
-// logs and history, so the stream is read with fetch instead. It has the
-// EventSourceLike shape the run store already drives: named events,
-// onopen, onerror, readyState and close. On any drop it closes (readyState
-// 2) and the store reopens with after=lastSeq, so there is no silent retry
-// in here.
+// A server-sent events reader over fetch, for a client built on an
+// injected fetch (the demo server in the page, tests) or a runtime with no
+// EventSource. It has the EventSourceLike shape the run store already
+// drives: named events, onopen, onerror, readyState and close. On any drop
+// it closes (readyState 2) and the store reopens with after=lastSeq, so
+// there is no silent retry in here.
 import type { EventSourceLike } from "../store/runStore";
 import type { FetchLike } from "./client";
 

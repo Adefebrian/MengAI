@@ -1,8 +1,11 @@
 // Home (/app): what is live, a new run with its estimate and budget beside
-// the runs it creates, the projects the crew may touch, and the company
-// itself: every role on the crew, what it does, its tools and its model.
+// the runs it creates, the projects the crew may touch (each with Open
+// folder, and an add form under them: the engine has no native folder
+// picker, so a folder is named by its path), and the company itself:
+// every role on the crew, what it does, its tools and its model.
 // Regions and containers per JEV ui.region_gate (head plain, setup plain,
-// live card, new run card, runs rows, projects divided, company rows).
+// live card, new run card, runs rows, projects divided, the add form in
+// plain spacing inside it at 0.58, company rows).
 import { Cat } from "@mengai/cats";
 import {
   ACTIVITY_LABEL,
@@ -30,6 +33,7 @@ import { fmtAgo, fmtInt, fmtUsd } from "../format";
 import { useAction, useNow, useResource } from "../hooks";
 import { RUN_STATUS, isFinished } from "../status";
 import { COMPANY_WORD } from "../run/stages";
+import { OpenFolderButton } from "../parts/OpenFolder";
 import { FormStatus, Page, PageHead, RadioGroup, Region, SelectField, TextArea, TextField } from "../ui";
 
 const ROLE_JOB: Record<AgentRole, string> = {
@@ -131,8 +135,8 @@ function LiveRun({ run, snap, project, still, ceo }: { run: RunDTO; snap: RunSna
   );
 }
 
-function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProject: (p: ProjectDTO) => void; focus: boolean }) {
-  const { api, settings, session } = useApp();
+function NewRun({ projects, focus }: { projects: ProjectDTO[]; focus: boolean }) {
+  const { api, settings } = useApp();
   const [projectId, setProjectId] = useState<string>("");
   const [goal, setGoal] = useState("");
   const [tokens, setTokens] = useState<string>("");
@@ -143,7 +147,6 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
   const ceo = leadCatName(settings?.ceoName);
   const est = useAction();
   const start = useAction();
-  const pick = useAction();
   const goalRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -182,16 +185,6 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
     });
   };
 
-  const addFolder = () =>
-    pick.run(async () => {
-      const picked = await api.call("POST /api/local/pick-folder");
-      if (!picked.path) return;
-      const name = picked.path.split("/").filter(Boolean).pop() ?? "project";
-      const p = await api.call("POST /api/projects", { body: { name, workspacePath: picked.path } });
-      onProject(p);
-      setProjectId(p.id);
-    });
-
   return (
     <section className="app-region app-card newrun" data-container="card" aria-labelledby="new-run-h" id="new-run">
       <div className="app-region-head">
@@ -204,7 +197,7 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
       </div>
       <form className="app-form" onSubmit={submit} noValidate>
         <div className="newrun-project">
-          <SelectField label="Project" value={projectId} onChange={(e) => setProjectId(e.target.value)} hint={projects.find((p) => p.id === projectId)?.workspacePath ?? "Add a folder the crew may work in"} disabled={projects.length === 0}>
+          <SelectField label="Project" value={projectId} onChange={(e) => setProjectId(e.target.value)} hint={projects.find((p) => p.id === projectId)?.workspacePath ?? "Add the folder the crew may work in"} disabled={projects.length === 0}>
             {projects.length === 0 ? <option value="">No project yet</option> : null}
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -212,12 +205,10 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
               </option>
             ))}
           </SelectField>
-          {session.mode === "local" ? (
-            <button type="button" className="btn-secondary newrun-folder" aria-busy={pick.busy || undefined} onClick={addFolder}>
-              <ProductIcon name="folder" size={20} />
-              <span>Add a folder</span>
-            </button>
-          ) : null}
+          <a className="btn btn-secondary newrun-folder" href="#add-project">
+            <ProductIcon name="folder" size={20} />
+            <span>Add a project</span>
+          </a>
         </div>
         <RadioGroup<CompanyKind>
           legend="Company"
@@ -289,14 +280,14 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
             Estimate the cost
           </button>
         </div>
-        <FormStatus error={start.error ?? est.error ?? pick.error} />
+        <FormStatus error={start.error ?? est.error} />
       </form>
     </section>
   );
 }
 
 export function HomeScreen({ hash }: { hash: string }) {
-  const { api, catsStill, session, settings } = useApp();
+  const { api, catsStill, settings } = useApp();
   const ceo = leadCatName(settings?.ceoName);
   const now = useNow(60_000);
   const runs = useResource((signal) => api.call("GET /api/runs", { signal }), "runs");
@@ -312,19 +303,30 @@ export function HomeScreen({ hash }: { hash: string }) {
   const projectById = new Map((projects.data ?? []).map((p) => [p.id, p]));
   const past = (runs.data ?? []).slice().sort((a, b) => b.createdAt - a.createdAt);
   const [newName, setNewName] = useState("");
+  const [newPath, setNewPath] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [pathError, setPathError] = useState<string | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
   const add = useAction();
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (hash === "#add-project") nameRef.current?.focus();
+  }, [hash]);
 
   const addProject = (e: FormEvent) => {
     e.preventDefault();
     const name = newName.trim();
-    if (!name) {
-      add.setError("Give the project a name.");
-      return;
-    }
+    const path = newPath.trim().replace(/(.)\/+$/, "$1");
+    setAdded(null);
+    setNameError(name ? null : "Give the project a name.");
+    setPathError(path && !path.startsWith("/") ? "Use the full path, starting with a slash, like /Users/you/code/shop." : null);
+    if (!name || (path && !path.startsWith("/"))) return;
     void add.run(async () => {
-      const p = await api.call("POST /api/projects", { body: { name } });
+      const p = await api.call("POST /api/projects", { body: path ? { name, workspacePath: path } : { name } });
       projects.setData((prev) => [...(prev ?? []), p]);
       setNewName("");
+      setNewPath("");
+      setAdded(`${p.name} added. The crew works in ${p.workspacePath}.`);
     });
   };
 
@@ -429,27 +431,49 @@ export function HomeScreen({ hash }: { hash: string }) {
                         {p.workspacePath}
                       </span>
                     </span>
-                    {p.lastRunId ? (
-                      <Link className="btn btn-ghost project-last" href={`/app/runs/${encodeURIComponent(p.lastRunId)}`}>
-                        Last run
-                      </Link>
-                    ) : null}
+                    <span className="project-actions">
+                      {p.lastRunId ? (
+                        <Link className="btn btn-ghost project-last" href={`/app/runs/${encodeURIComponent(p.lastRunId)}`}>
+                          Last run
+                        </Link>
+                      ) : null}
+                      <OpenFolderButton projectId={p.id} />
+                    </span>
                   </li>
                 ))}
               </ul>
             )}
-            {session.mode === "server" ? (
-              <form className="project-add" onSubmit={addProject} noValidate>
-                <TextField label="New project name" value={newName} onChange={(e) => setNewName(e.target.value)} error={add.error} hint="The server keeps it in its own jailed folder" />
+            <form className="project-add" id="add-project" onSubmit={addProject} noValidate aria-labelledby="add-project-h">
+              <h3 className="app-h3" id="add-project-h">
+                Add a project
+              </h3>
+              <div className="field-row">
+                <TextField ref={nameRef} label="Name" value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={120} autoComplete="off" error={nameError} hint="What the crew calls it" />
+                <TextField
+                  label="Folder on this Mac"
+                  className="num"
+                  value={newPath}
+                  onChange={(e) => setNewPath(e.target.value)}
+                  placeholder="/Users/you/code/shop"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  error={pathError}
+                  hint="Optional. Empty makes a fresh folder for it."
+                />
+              </div>
+              <div className="app-form-actions">
                 <button type="submit" className="btn-secondary" aria-busy={add.busy || undefined}>
-                  Add project
+                  <ProductIcon name="plus" size={20} />
+                  <span>Add project</span>
                 </button>
-              </form>
-            ) : null}
+              </div>
+              <FormStatus ok={added} error={add.error} />
+            </form>
           </Region>
         </div>
         <div className="app-split-side">
-          <NewRun projects={projects.data ?? []} onProject={(p) => projects.setData((prev) => [...(prev ?? []), p])} focus={hash === "#new-run"} />
+          <NewRun projects={projects.data ?? []} focus={hash === "#new-run"} />
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 // Every outbound address the landing uses, in one place. Download points
-// at the latest release, which always carries the current Mac build; the
-// app's onboarding uses the same address (src/api/runtime.ts).
+// at the v0.1.0 beta release (a prerelease, so releases/latest does not
+// point at it); the app's onboarding uses the same address
+// (src/api/runtime.ts).
 import { MAC_DOWNLOAD_URL, REPO_URL as SOURCE_URL } from "../api/runtime";
 
 export const AUTHOR_URL = "https://github.com/Adefebrian";

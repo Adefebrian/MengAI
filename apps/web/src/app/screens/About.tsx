@@ -1,28 +1,25 @@
 // About (/app/about): who built MengAI, under which license, what runs,
-// and how you are signed in. Head plain (the card runner-up would box the
-// page title, which the law refuses, so the next lawful option), facts as a
-// divided section, the session in plain spacing (JEV ui.region_gate
+// and how this browser reaches it. Head plain (the card runner-up would box
+// the page title, which the law refuses, so the next lawful option), facts
+// as a divided section, this browser in plain spacing (JEV ui.region_gate
 // b_session kept at 2.15; its card primary would sit on the card above, so
-// the next lawful option). The session left Settings, where JEV dropped it
-// (relevance 1.40). There are no accounts: the session is this browser's
-// pairing with the runtime on this machine.
+// the next lawful option). There are no accounts and no sign in: the page
+// talks straight to the engine on this Mac, so there is nothing to unpair.
 import { Cat } from "@mengai/cats";
 import { leadCatName } from "@mengai/shared";
-import { KeyValue, ProductIcon } from "@mengai/ui/src/product";
+import { KeyValue } from "@mengai/ui/src/product";
 import { useApp } from "../context";
-import { useAction, useResource } from "../hooks";
-import { FormStatus, Page, Region } from "../ui";
+import { useResource } from "../hooks";
+import { Page, Region } from "../ui";
 
 const REPO = "https://github.com/Adefebrian/MengAI";
 const AUTHOR = "https://github.com/Adefebrian";
 const LICENSE = `${REPO}/blob/main/LICENSE`;
 
 export function AboutScreen() {
-  const { api, catsStill, settings, runtime, forgetBrowser, demo } = useApp();
+  const { api, catsStill, settings, runtime, demo } = useApp();
   const ceo = leadCatName(settings?.ceoName);
   const health = useResource((signal) => api.call("GET /api/health", { signal }), "health");
-  const out = useAction();
-  const unpair = () => out.run(forgetBrowser);
   return (
     <Page>
       <header className="app-head about-head">
@@ -53,21 +50,13 @@ export function AboutScreen() {
         title="This browser"
         meta={
           demo
-            ? "Sample data only. Nothing here talks to a runtime."
-            : runtime.paired
-              ? `Paired with MengAI at ${runtime.label}. The key stays in this browser; unpair to drop it.`
-              : "Opened by MengAI itself. To end it, quit MengAI from the menu bar."
+            ? "Sample data only. Nothing here talks to an engine."
+            : runtime.own
+              ? `Served by MengAI itself at ${runtime.label}. Nothing to sign in to: quit MengAI from the menu bar to close it.`
+              : `Talks straight to MengAI at ${runtime.label} on this Mac. Nothing to sign in to and no key in this browser; only your view settings stay here.`
         }
       >
-        {runtime.paired ? (
-          <div className="app-form-actions">
-            <button type="button" className="btn-secondary" aria-busy={out.busy || undefined} onClick={unpair}>
-              <ProductIcon name="logout" size={20} />
-              <span>Unpair this browser</span>
-            </button>
-            <FormStatus error={out.error} />
-          </div>
-        ) : null}
+        {demo ? null : <p className="app-empty-line">The engine only answers this Mac, and only the sites on its own list.</p>}
       </Region>
     </Page>
   );

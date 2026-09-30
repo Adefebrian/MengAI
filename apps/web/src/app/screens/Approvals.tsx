@@ -1,136 +1,134 @@
-// Approvals (/app/approvals): every request a cat waits on, the standing
-// rule per workspace capability, and what was decided before. Regions per
-// JEV ui.region_gate: head plain, pending divided (each request an
-// actionable notification), permissions card, history divided. Local
-// computer control (input, screen, apps) is not part of this build, so
-// only files, shell and network have a rule here.
-import type { ApprovalDTO, Capability, PermissionDTO, PermissionMode } from "@mengai/shared";
-import { EmptyState, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
+// Approvals (/app/approvals): what waits on the owner right now, and what
+// was decided before. The engine's approval path in this build is the live
+// order: a trader cat proposes it, the risk manager reviews it, and it
+// waits here for Approve or Reject (paper orders never wait on you). A cat
+// that asks for something inside a run asks on that run's page, so those
+// asks are rows that open the run. Local computer control is not part of
+// this build, so there are no standing capability rules to set here.
+// Regions per JEV ui.region_gate: head plain, pending divided (each
+// request an actionable row), decided divided.
+import type { AgentDTO, ApprovalDTO, OrderDTO, RunDTO } from "@mengai/shared";
+import { DataRow, DataRows, EmptyState, ProductIcon, SkeletonRows } from "@mengai/ui/src/product";
+import { ApiError } from "../../api/client";
 import { useApp } from "../context";
 import { fmtAgo } from "../format";
-import { useAction, useNow, useResource } from "../hooks";
-import { ApprovalNotice } from "../parts/ApprovalNotice";
-import { APPROVAL_STATUS } from "../status";
-import { FormStatus, Page, PageHead, Region, Segmented } from "../ui";
+import { useNow, useResource } from "../hooks";
+import { OrderList, waitsOnYou } from "../parts/Orders";
+import { isFinished } from "../status";
+import { Page, PageHead, Region } from "../ui";
 
-const RULED: Array<{ cap: Capability; name: string; what: string }> = [
-  { cap: "fs", name: "Files", what: "Reading and writing inside the project folder" },
-  { cap: "shell", name: "Shell", what: "Commands in the sandbox, like bun test or bun add" },
-  { cap: "network", name: "Network", what: "Web research and dependency audits" },
-];
+interface RunAsk {
+  run: RunDTO;
+  approval: ApprovalDTO;
+  who: AgentDTO | null;
+}
 
-const MODE_WORD: Record<PermissionMode, string> = { off: "Off", ask: "Ask me", auto_read: "Auto for reads" };
-
-function Rule({ rule, grant, onSaved }: { rule: (typeof RULED)[number]; grant: PermissionDTO | undefined; onSaved: (g: PermissionDTO) => void }) {
-  const { api } = useApp();
-  const save = useAction();
-  return (
-    <div className="rule-row">
-      <p className="rule-name">
-        <span>{rule.name}</span>
-        <span className="rule-what">{rule.what}</span>
-      </p>
-      <Segmented<PermissionMode>
-        legend={`${rule.name} rule`}
-        name={`rule-${rule.cap}`}
-        value={grant?.mode ?? "off"}
-        options={(["off", "ask", "auto_read"] as const).map((m) => ({ value: m, label: MODE_WORD[m] }))}
-        disabled={save.busy}
-        onChange={(mode) =>
-          void save.run(async () => {
-            onSaved(await api.call("PUT /api/automation/grants/:capability", { params: { capability: rule.cap }, body: { mode } }));
-          })
-        }
-      />
-      <FormStatus error={save.error} />
-    </div>
-  );
+/** A 404 means the trading desk is not on this engine: nothing waits there. */
+function orEmpty<T>(err: unknown): T[] {
+  if (err instanceof ApiError && err.status === 404) return [];
+  throw err;
 }
 
 export function ApprovalsScreen() {
   const { api, refreshApprovals } = useApp();
   const now = useNow(30_000);
-  const list = useResource((signal) => api.call("GET /api/automation/approvals", { signal }), "approvals");
-  const grants = useResource((signal) => api.call("GET /api/automation/grants", { signal }), "grants");
-  const all = list.data ?? [];
-  const pending = all.filter((a) => a.status === "pending");
-  const past = all.filter((a) => a.status !== "pending").sort((a, b) => (b.decidedAt ?? b.createdAt) - (a.decidedAt ?? a.createdAt));
+  const orders = useResource((signal) => api.call("GET /api/trading/orders", { signal }).catch((err: unknown) => orEmpty<OrderDTO>(err)), "orders");
+  const asks = useResource(async (signal): Promise<RunAsk[]> => {
+    const runs = await api.call("GET /api/runs", { signal });
+    const live = runs.filter((r) => !isFinished(r.status)).slice(0, 10);
+    const snaps = await Promise.all(live.map((r) => api.call("GET /api/runs/:id", { params: { id: r.id }, signal }).catch(() => null)));
+    return snaps.flatMap((s) =>
+      s ? s.approvals.filter((a) => a.status === "pending").map((a) => ({ run: s.run, approval: a, who: s.agents.find((x) => x.id === a.agentId) ?? null })) : [],
+    );
+  }, "asks");
 
-  const decide = async (a: ApprovalDTO, decision: "approve" | "deny", scope: "once" | "session") => {
-    const next = await api.call("POST /api/automation/approvals/:id", { params: { id: a.id }, body: { decision, scope } });
-    list.setData((prev) => (prev ?? []).map((x) => (x.id === next.id ? next : x)));
+  const all = orders.data ?? [];
+  const pending = all.filter(waitsOnYou);
+  const decided = all
+    .filter((o) => o.mode === "live" && o.status !== "proposed")
+    .sort((a, b) => (b.decidedAt ?? b.createdAt) - (a.decidedAt ?? a.createdAt));
+  const runAsks = asks.data ?? [];
+  const waiting = pending.length + runAsks.length;
+  const loaded = !!orders.data && !!asks.data;
+
+  const decide = async (o: OrderDTO, decision: "approve" | "reject") => {
+    const next = await api.call("POST /api/trading/orders/:id/decision", { params: { id: o.id }, body: { decision } });
+    orders.setData((prev) => (prev ?? []).map((x) => (x.id === next.id ? next : x)));
     refreshApprovals();
   };
 
+  const error = orders.error ?? asks.error;
   return (
     <Page>
       <PageHead
         title="Approvals"
         lead={
-          list.data
-            ? pending.length
-              ? `${pending.length} ${pending.length === 1 ? "request waits" : "requests wait"} on you. A cat asks before it does anything risky outside its task.`
+          loaded
+            ? waiting
+              ? `${waiting} ${waiting === 1 ? "request waits" : "requests wait"} on you. A live order never goes out without your yes.`
               : "Nothing waits on you. Every cat has what it needs."
-            : "What the crew asks before it does anything risky."
+            : "What the crew asks you before it does anything that spends real money."
         }
       />
 
-      <Region container="divided" title="Waiting on you" meta={pending.length ? undefined : "When a cat needs a yes, it lands here and on the run."}>
-        {list.error ? (
-          <EmptyState icon="alertCircle" tone="danger" title="Approvals did not load" action={<button type="button" onClick={list.reload}>Try again</button>}>
-            {list.error}
+      <Region container="divided" title="Waiting on you" meta={waiting ? undefined : "A live order the crew proposes lands here, and a cat that asks inside a run asks on the run."}>
+        {error && !loaded ? (
+          <EmptyState
+            icon="alertCircle"
+            tone="danger"
+            title="Approvals did not load"
+            action={
+              <button
+                type="button"
+                onClick={() => {
+                  orders.reload();
+                  asks.reload();
+                }}
+              >
+                Try again
+              </button>
+            }
+          >
+            {error}
           </EmptyState>
-        ) : list.loading && !list.data ? (
+        ) : !loaded ? (
           <SkeletonRows rows={2} label="Loading approvals" />
-        ) : pending.length === 0 ? (
+        ) : waiting === 0 ? (
           <p className="app-empty-line">All quiet. No paw is raised.</p>
         ) : (
           <div className="pending-list">
-            {pending.map((a) => (
-              <ApprovalNotice key={a.id} approval={a} who={null} onDecide={decide} />
-            ))}
+            {runAsks.length ? (
+              <DataRows label="Asks inside a run">
+                {runAsks.map(({ run, approval, who }) => (
+                  <DataRow
+                    key={approval.id}
+                    href={`/app/runs/${encodeURIComponent(run.id)}`}
+                    leading={
+                      <span className="row-status" data-tone="warning">
+                        <ProductIcon name="alertTriangle" size={20} label="Needs you" />
+                      </span>
+                    }
+                    title={approval.title}
+                    titleAttr={approval.title}
+                    meta={
+                      <>
+                        <span>{who ? `${who.name} asks` : "A cat asks"}</span>
+                        <span title={run.goal}>{run.goal}</span>
+                        <span>{fmtAgo(approval.createdAt, now)}</span>
+                      </>
+                    }
+                    trailing={<ProductIcon name="chevronRight" size={20} />}
+                  />
+                ))}
+              </DataRows>
+            ) : null}
+            {pending.length ? <OrderList orders={pending} nameOf={() => null} now={now} onDecide={decide} label="Live orders waiting on you" /> : null}
           </div>
         )}
       </Region>
 
-      <Region container="card" title="Standing rules" className="app-card rules" meta="Destructive and sensitive actions always ask, whatever the rule says.">
-        {grants.data ? (
-          <div className="rule-list">
-            {RULED.map((r) => (
-              <Rule key={r.cap} rule={r} grant={grants.data!.find((g) => g.capability === r.cap)} onSaved={(g) => grants.setData((prev) => (prev ?? []).map((x) => (x.capability === g.capability ? g : x)).concat((prev ?? []).some((x) => x.capability === g.capability) ? [] : [g]))} />
-            ))}
-          </div>
-        ) : grants.error ? (
-          <p className="app-empty-line" role="alert">
-            {grants.error}
-          </p>
-        ) : (
-          <SkeletonRows rows={3} label="Loading rules" />
-        )}
-      </Region>
-
-      <Region container="divided" title="Decided" meta={past.length ? `${past.length} earlier ${past.length === 1 ? "request" : "requests"}` : undefined}>
-        {past.length === 0 ? (
-          <p className="app-empty-line">No decisions yet.</p>
-        ) : (
-          <ul className="history-list">
-            {past.map((a) => {
-              const look = APPROVAL_STATUS[a.status];
-              return (
-                <li className="history-row" key={a.id}>
-                  <StatusPill tone={look.tone} icon={look.icon}>
-                    {look.word}
-                  </StatusPill>
-                  <span className="history-title">{a.title}</span>
-                  <span className="history-meta">
-                    <span>{a.scope === "session" ? "For the session" : "Once"}</span>
-                    <span>{fmtAgo(a.decidedAt ?? a.createdAt, now)}</span>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+      <Region container="divided" title="Decided" meta={decided.length ? `${decided.length} earlier live ${decided.length === 1 ? "order" : "orders"}` : undefined}>
+        {decided.length === 0 ? <p className="app-empty-line">No decisions yet.</p> : <OrderList orders={decided} nameOf={() => null} now={now} label="Decided live orders" />}
       </Region>
     </Page>
   );

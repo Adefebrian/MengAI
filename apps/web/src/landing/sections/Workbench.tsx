@@ -18,8 +18,8 @@ export function WorkbenchSection() {
       title="Watch every line get written"
       lead={
         <>
-          The app shows the office and the work behind it: the file a cat is typing, every event in order, each call Oyen made and the minutes of every meeting.{" "}
-          <a href={WEB_APP_URL}>Open the app</a> to watch a sample run.
+          The app shows the office and the work behind it: the file a cat is typing, every event in order, each call Oyen made and the minutes of every meeting.
+          What ships opens as a live preview in the app and as a folder on your Mac. <a href={WEB_APP_URL}>Open the app</a> to watch a sample run.
         </>
       }
     >

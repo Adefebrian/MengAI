@@ -526,7 +526,11 @@ button.app-btn-destructive[aria-busy="true"]::after {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-8px);
+  min-width: 0;
   padding-top: var(--space-4px);
+}
+.run-actions + .run-actions {
+  padding-top: 0;
 }
 @media (min-width: 1024px) {
   .run-head {
@@ -541,6 +545,193 @@ button.app-btn-destructive[aria-busy="true"]::after {
     grid-column: 9 / span 4;
     justify-items: end;
   }
+  .run-actions {
+    justify-content: flex-end;
+  }
+}
+
+/* ------------------------------------------------------- live preview */
+/* The frame of what the crew built: one toolbar line (the URL, the width,
+   Reload, Open in new tab, Stop), then a tonal stage whose frame takes the
+   chosen width and never grows past the stage, then the output tail. */
+.run-preview-wrap {
+  min-width: 0;
+}
+.run-preview {
+  scroll-margin-top: var(--space-16px);
+}
+.preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8px) var(--space-12px);
+  min-width: 0;
+}
+.preview-url {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Below 640px every width is the region's own, so the toggle would do nothing. */
+.preview-widths {
+  display: none;
+  min-width: 0;
+}
+.preview-widths .app-seg {
+  inline-size: auto;
+}
+@media (min-width: 640px) {
+  .preview-widths {
+    display: block;
+  }
+}
+.preview-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+.preview-stage {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  min-width: 0;
+  padding: var(--space-12px);
+  background: var(--color-layer-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-12);
+  overflow: hidden;
+}
+.preview-frame {
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-width: 0;
+  block-size: 560px;
+}
+.preview-frame[data-width="phone"] {
+  max-inline-size: min(100%, 375px);
+}
+.preview-frame[data-width="tablet"] {
+  max-inline-size: min(100%, 768px);
+}
+@media (min-width: 640px) {
+  .preview-frame {
+    block-size: 640px;
+  }
+}
+@media (min-width: 1024px) {
+  .preview-frame {
+    block-size: 720px;
+  }
+}
+.preview-iframe {
+  box-sizing: border-box;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+}
+.preview-wait {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8px);
+  inline-size: 100%;
+  block-size: 100%;
+  padding: var(--space-24px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  text-align: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+}
+/* The output tail: a 44px disclosure row, then the lines in a scroller. */
+.preview-log {
+  display: grid;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+.preview-log-summary {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8px);
+  justify-self: start;
+  max-inline-size: 100%;
+  min-height: var(--control-h);
+  padding: 0 var(--space-12px) 0 var(--space-8px);
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  list-style: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-8);
+  cursor: pointer;
+  transition: background-color var(--dur-150) var(--ease-standard);
+}
+.preview-log-summary::-webkit-details-marker {
+  display: none;
+}
+@media (hover: hover) {
+  .preview-log-summary:hover {
+    background: var(--state-hover);
+  }
+}
+.preview-log-summary:active {
+  background: var(--state-pressed);
+}
+.preview-log-summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.preview-log-chevron {
+  display: inline-flex;
+  color: var(--color-ink-muted);
+  transition: transform var(--dur-150) var(--ease-standard);
+}
+.preview-log[open] .preview-log-chevron {
+  transform: rotate(90deg);
+}
+.app-root[data-motion="off"] .preview-log-chevron {
+  transition: none;
+}
+.preview-log-text {
+  box-sizing: border-box;
+  max-block-size: 240px;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-12px) var(--space-16px);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--color-layer-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+}
+.preview-log:not([open]) > .preview-log-text {
+  display: none;
+}
+.preview-log-text:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 /* The request that blocks a cat. */
@@ -1215,7 +1406,9 @@ button.ide-files-toggle[aria-expanded="true"] .ide-node-chevron {
   grid-template-columns: var(--space-40px) minmax(0, 1fr);
   column-gap: var(--space-12px);
   padding-inline: var(--space-4px) var(--space-16px);
-  white-space: pre-wrap;
+  /* break-spaces: a run of spaces at the wrap point wraps with the line
+     instead of hanging past the right edge of the code box */
+  white-space: break-spaces;
   overflow-wrap: anywhere;
 }
 .ide-text {
@@ -2250,12 +2443,42 @@ a.queue-row:focus-visible {
 }
 .project-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--space-12px);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-8px) var(--space-12px);
   align-items: center;
   min-width: 0;
   min-height: var(--control-h);
   padding: var(--space-8px) 0;
+}
+/* Last run and Open folder: under the name on a phone, beside it from 640px. */
+.project-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+@media (min-width: 640px) {
+  .project-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .project-actions {
+    grid-column: 3;
+    justify-content: flex-end;
+  }
+}
+/* Open folder: the button, a line for assistive tech, the cause when it fails. */
+.open-folder {
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto);
+  justify-items: start;
+  gap: var(--space-4px);
+  min-width: 0;
+  max-inline-size: 100%;
+}
+.open-folder-error {
+  max-inline-size: 32ch;
 }
 .project-row + .project-row,
 .company-row + .company-row,
@@ -2293,17 +2516,11 @@ a.queue-row:focus-visible {
 .project-add {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-8px);
-  align-items: start;
+  gap: var(--space-12px);
+  min-width: 0;
   max-inline-size: 640px;
-}
-@media (min-width: 640px) {
-  .project-add {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .project-add > button {
-    margin-top: calc(var(--line-n1) + var(--space-6px));
-  }
+  padding-top: var(--space-8px);
+  scroll-margin-top: var(--space-16px);
 }
 
 .company-list {

@@ -1,29 +1,14 @@
-// The local runtime connection layer: loopback-only addresses, where the
-// page looks, the pairing link, the per-runtime bearer session, the probe
-// that tells "not running" from "not paired", the pairing exchange, the
-// bearer header on every call, and the SSE reader for bearer streams.
+// The local engine connection layer: loopback-only addresses, where the
+// page looks, the probe that tells "not running" from "refuses this site",
+// the look that needs no sign in, a client that never carries a token or a
+// cookie across origins and sends every write as JSON, and the SSE reader.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createApiClient, type FetchLike } from "./client";
 import { connectRuntime, resetConnectForTests } from "./connect";
-import {
-  DEFAULT_RUNTIME_URL,
-  MAC_DOWNLOAD_URL,
-  baseFor,
-  clearSessionToken,
-  normalizeRuntimeUrl,
-  probeRuntime,
-  readPairLink,
-  readRuntimeSetting,
-  readSessionToken,
-  runtimeCandidates,
-  writeRuntimeSetting,
-  writeSessionToken,
-} from "./runtime";
+import { DEFAULT_RUNTIME_URL, MAC_DOWNLOAD_URL, baseFor, normalizeRuntimeUrl, probeRuntime, readRuntimeSetting, runtimeCandidates, writeRuntimeSetting } from "./runtime";
 import { fetchEventSource, parseSseChunk } from "./sse";
 
 const HEALTH = { ok: true, mode: "local", version: "0.1.0", configured: true, automation: { available: false, accessibility: false, screen: false }, jev: { configured: false } };
-const TOKEN = "pair-token-abcdefghijklmnop";
-const SESSION = "session-token-0123456789abcdef";
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -62,32 +47,8 @@ describe("runtime addresses", () => {
     expect(readRuntimeSetting()).toBeNull();
   });
 
-  test("the Mac download is the latest release", () => {
-    expect(MAC_DOWNLOAD_URL).toBe("https://github.com/Adefebrian/MengAI/releases/latest");
-  });
-});
-
-describe("pairing links and sessions", () => {
-  test("reads #pair, a pasted link, a bare token and #launch; drops a runtime that is not loopback", () => {
-    expect(readPairLink(`#pair=${TOKEN}`)).toEqual({ kind: "pair", token: TOKEN, runtime: null });
-    expect(readPairLink(`https://mengai.example/app#pair=${TOKEN}&runtime=http%3A%2F%2F127.0.0.1%3A4297`)).toEqual({ kind: "pair", token: TOKEN, runtime: "http://127.0.0.1:4297" });
-    expect(readPairLink(`#pair=${TOKEN}&runtime=https://evil.example`)?.runtime).toBeNull();
-    expect(readPairLink(TOKEN)).toEqual({ kind: "pair", token: TOKEN, runtime: null });
-    expect(readPairLink(`#launch=${TOKEN}`)?.kind).toBe("launch");
-    expect(readPairLink("#pair=short")).toBeNull();
-    expect(readPairLink("#pair=<script>alert(1)</script>xxxxxxxx")).toBeNull();
-  });
-
-  test("one bearer session per runtime origin", () => {
-    writeSessionToken("http://127.0.0.1:4190", SESSION);
-    writeSessionToken("http://127.0.0.1:4297", `${SESSION}-b`);
-    writeSessionToken("http://127.0.0.1:4298", "bad token with spaces");
-    expect(readSessionToken("http://127.0.0.1:4190")).toBe(SESSION);
-    expect(readSessionToken("http://127.0.0.1:4297")).toBe(`${SESSION}-b`);
-    expect(readSessionToken("http://127.0.0.1:4298")).toBeNull();
-    clearSessionToken("http://127.0.0.1:4190");
-    expect(readSessionToken("http://127.0.0.1:4190")).toBeNull();
-    expect(readSessionToken("http://127.0.0.1:4297")).toBe(`${SESSION}-b`);
+  test("the Mac download is the v0.1.0 beta prerelease, not releases/latest", () => {
+    expect(MAC_DOWNLOAD_URL).toBe("https://github.com/Adefebrian/MengAI/releases/tag/v0.1.0-beta");
   });
 });
 
@@ -114,30 +75,22 @@ describe("probe", () => {
 });
 
 describe("connect", () => {
-  test("a pairing link is exchanged once for a bearer session, which then signs every call without cookies", async () => {
+  test("ready as soon as health reads: no sign in, no token, no session call", async () => {
     const seen: Array<{ url: string; init: RequestInit }> = [];
     const fake: FetchLike = async (url, init) => {
       seen.push({ url, init });
       if (url.endsWith("/api/health")) return json(200, HEALTH);
-      if (url.endsWith("/api/auth/pair")) return json(200, { sessionToken: SESSION, origin: "https://mengai.example" });
-      if (url.endsWith("/api/session")) {
-        const auth = new Headers(init.headers).get("authorization");
-        return json(200, { authenticated: auth === `Bearer ${SESSION}`, mode: "local", needsSetup: false });
-      }
       return json(404, { error: { code: "not_found", message: "no" } });
     };
-    const c = await connectRuntime({ link: { kind: "pair", token: TOKEN, runtime: null }, fetch: fake, candidates: [DEFAULT_RUNTIME_URL] });
+    const c = await connectRuntime({ fetch: fake, candidates: [DEFAULT_RUNTIME_URL] });
     expect(c.kind).toBe("ready");
-    expect(readSessionToken(DEFAULT_RUNTIME_URL)).toBe(SESSION);
-    const pair = seen.find((s) => s.url.endsWith("/api/auth/pair"))!;
-    expect(JSON.parse(String(pair.init.body))).toEqual({ token: TOKEN });
-    expect(new Headers(pair.init.headers).get("x-mengai-csrf")).toBe("1");
-    const session = seen.find((s) => s.url.endsWith("/api/session"))!;
-    expect(session.init.credentials).toBe("omit");
-    expect(seen.filter((s) => s.url.endsWith("/api/auth/pair")).length).toBe(1);
+    if (c.kind === "ready") expect(c.health.version).toBe("0.1.0");
+    expect(seen.map((s) => s.url)).toEqual([`${DEFAULT_RUNTIME_URL}/api/health`]);
+    expect(seen[0]!.init.credentials).toBe("omit");
+    expect(new Headers(seen[0]!.init.headers).get("authorization")).toBeNull();
   });
 
-  test("offline when nothing answers; unpaired when the runtime answers but refuses this origin", async () => {
+  test("offline when nothing answers; refused when the engine answers but not this site", async () => {
     const down: FetchLike = async () => {
       throw new TypeError("Failed to fetch");
     };
@@ -147,58 +100,52 @@ describe("connect", () => {
       if (init.mode === "no-cors") return new Response(null, { status: 200 });
       throw new TypeError("Failed to fetch");
     };
-    const c = await connectRuntime({ fetch: closed, candidates: [DEFAULT_RUNTIME_URL] });
-    expect(c.kind).toBe("unpaired");
+    expect(await connectRuntime({ fetch: closed, candidates: [DEFAULT_RUNTIME_URL] })).toEqual({ kind: "refused", base: DEFAULT_RUNTIME_URL });
   });
 
-  test("a used pairing link says so, and a stale session token is dropped", async () => {
-    writeSessionToken(DEFAULT_RUNTIME_URL, SESSION);
-    const fake: FetchLike = async (url) => {
-      if (url.endsWith("/api/health")) return json(200, HEALTH);
-      if (url.endsWith("/api/auth/pair")) return json(401, { error: { code: "bad_token", message: "Pairing token is not valid" } });
-      return json(200, { authenticated: false, mode: "local", needsSetup: false });
+  test("a later candidate that answers wins over one that refuses", async () => {
+    const fake: FetchLike = async (url, init) => {
+      if (url.startsWith("http://127.0.0.1:4297")) return json(200, HEALTH);
+      if (init.mode === "no-cors") return new Response(null, { status: 200 });
+      throw new TypeError("Failed to fetch");
     };
-    const c = await connectRuntime({ link: { kind: "pair", token: TOKEN, runtime: null }, fetch: fake, candidates: [DEFAULT_RUNTIME_URL] });
-    expect(c.kind).toBe("unpaired");
-    if (c.kind === "unpaired") expect(c.error).toContain("used already");
-    expect(readSessionToken(DEFAULT_RUNTIME_URL)).toBeNull();
+    const c = await connectRuntime({ fetch: fake, candidates: [DEFAULT_RUNTIME_URL, "http://127.0.0.1:4297"] });
+    expect(c).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4297" });
   });
 });
 
 describe("client", () => {
-  test("same origin sends cookies; a cross-origin runtime sends the bearer token and no cookies; a lost session calls back", async () => {
+  test("never a token or a cookie across origins; every write is JSON with the CSRF header, even with no body", async () => {
     const seen: RequestInit[] = [];
     const fake: FetchLike = async (_u, init) => {
       seen.push(init);
-      return json(401, { error: { code: "unauthenticated", message: "Sign in first" } });
+      return json(200, { ok: true });
     };
-    let lost = 0;
     const local = createApiClient({ fetch: fake });
-    await local.call("GET /api/runs").catch(() => {});
-    expect(seen[0]!.credentials).toBe("include");
-    expect(new Headers(seen[0]!.headers).get("authorization")).toBeNull();
+    await local.call("GET /api/runs");
+    expect(seen[0]!.credentials).toBe("same-origin");
+    expect(new Headers(seen[0]!.headers).get("content-type")).toBeNull();
 
-    const remote = createApiClient({ base: DEFAULT_RUNTIME_URL, fetch: fake, token: () => SESSION, onUnauthenticated: () => (lost += 1) });
-    await remote.call("GET /api/runs").catch(() => {});
+    const remote = createApiClient({ base: DEFAULT_RUNTIME_URL, fetch: fake });
+    await remote.call("POST /api/projects/:id/reveal", { params: { id: "p1" } });
+    const reveal = new Headers(seen[1]!.headers);
     expect(seen[1]!.credentials).toBe("omit");
-    expect(new Headers(seen[1]!.headers).get("authorization")).toBe(`Bearer ${SESSION}`);
-    expect(lost).toBe(1);
-  });
-});
+    expect(reveal.get("authorization")).toBeNull();
+    expect(reveal.get("content-type")).toBe("application/json");
+    expect(reveal.get("x-mengai-csrf")).toBe("1");
+    expect(seen[1]!.body).toBeUndefined();
 
-describe("media from the runtime", () => {
-  test("same origin keeps the path; a cross-origin runtime is read with the bearer token into a blob url", async () => {
-    let auth: string | null = null;
-    const fake: FetchLike = async (_u, init) => {
-      auth = new Headers(init.headers).get("authorization");
-      return new Response(new Blob(["png"], { type: "image/png" }), { status: 200 });
-    };
-    const local = await createApiClient({ fetch: fake }).media("/api/assets/a1/file");
-    expect(local.src).toBe("/api/assets/a1/file");
-    const remote = await createApiClient({ base: DEFAULT_RUNTIME_URL, fetch: fake, token: () => SESSION }).media("/api/assets/a1/file");
-    expect(remote.src.startsWith("blob:")).toBe(true);
-    expect(auth as string | null).toBe(`Bearer ${SESSION}`);
-    remote.revoke();
+    await remote.call("POST /api/projects/:id/preview", { params: { id: "p1" }, body: { restart: true } });
+    expect(new Headers(seen[2]!.headers).get("content-type")).toBe("application/json");
+    expect(JSON.parse(String(seen[2]!.body))).toEqual({ restart: true });
+    await remote.call("DELETE /api/projects/:id/preview", { params: { id: "p1" } });
+    expect(new Headers(seen[3]!.headers).get("content-type")).toBe("application/json");
+  });
+
+  test("an engine file resolves to the engine origin from the website, to its own path on the engine page", () => {
+    expect(createApiClient().resolve("/api/assets/a1/file")).toBe("/api/assets/a1/file");
+    expect(createApiClient({ base: DEFAULT_RUNTIME_URL }).resolve("/api/assets/a1/file")).toBe(`${DEFAULT_RUNTIME_URL}/api/assets/a1/file`);
+    expect(createApiClient({ base: DEFAULT_RUNTIME_URL }).resolve("https://cdn.example/x.png")).toBe("https://cdn.example/x.png");
   });
 });
 
@@ -215,7 +162,7 @@ describe("sse over fetch", () => {
     ]);
   });
 
-  test("streams with the bearer header and closes on a drop so the store reopens after lastSeq", async () => {
+  test("streams with no Authorization header and closes on a drop so the store reopens after lastSeq", async () => {
     let headers: Headers | null = null;
     const fake: FetchLike = async (_u, init) => {
       headers = new Headers(init.headers);
@@ -228,13 +175,14 @@ describe("sse over fetch", () => {
       return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
     };
     const frames: string[] = [];
-    const es = fetchEventSource(`${DEFAULT_RUNTIME_URL}/api/events?after=0`, { headers: { authorization: `Bearer ${SESSION}` }, credentials: "omit", fetch: fake });
+    const es = fetchEventSource(`${DEFAULT_RUNTIME_URL}/api/events?after=0`, { headers: {}, credentials: "omit", fetch: fake });
     const closed = new Promise<void>((resolve) => {
       es.onerror = () => resolve();
     });
     es.addEventListener("mengai", (m) => frames.push(String(m.data)));
     await closed;
-    expect(headers!.get("authorization")).toBe(`Bearer ${SESSION}`);
+    expect(headers!.get("authorization")).toBeNull();
+    expect(headers!.get("accept")).toBe("text/event-stream");
     expect(frames).toEqual(['{"seq":1}']);
     expect(es.readyState).toBe(2);
   });

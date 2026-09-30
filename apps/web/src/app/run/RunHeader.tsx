@@ -1,8 +1,10 @@
 // Run header (JEV ui.component_recipe core.page_header, plain spacing): the
 // goal as the page title, one meta line (status icon plus word, the
-// stream, the project, crew size, the start clock), and the run controls.
-// The budget and progress live in the status strip right under it. Stop
-// asks first; Pause never does.
+// stream, the project, crew size, the start clock), and the run controls:
+// Pause or Resume and Stop while it runs, Preview so far before it ships
+// (the live preview leads the page once it has shipped), and Open folder
+// at any time. The budget and progress live in the status strip right
+// under it. Stop asks first; Pause never does.
 import type { ProjectDTO } from "@mengai/shared";
 import { ProductIcon, Sheet, StatusPill } from "@mengai/ui/src/product";
 import { useState } from "react";
@@ -10,6 +12,7 @@ import type { Connection, RunState } from "../../store/runStore";
 import { crewOrder, tokensUsed } from "../../store/runStore";
 import { fmtClock, fmtInt, fmtUsd } from "../format";
 import { useAction, useMedia } from "../hooks";
+import { OpenFolderButton } from "../parts/OpenFolder";
 import { RUN_STATUS, isFinished } from "../status";
 import { clip } from "./office";
 import { COMPANY_WORD, companyOf } from "./stages";
@@ -30,6 +33,7 @@ export function RunHeader({
   onPause,
   onResume,
   onStop,
+  onPreview,
 }: {
   state: RunState;
   project: ProjectDTO | null;
@@ -37,6 +41,8 @@ export function RunHeader({
   onPause: () => Promise<void>;
   onResume: () => Promise<void>;
   onStop: () => Promise<void>;
+  /** open the live preview before the run ships; absent when it is open already or not on this engine */
+  onPreview?: () => void;
 }) {
   const run = state.run!;
   const look = RUN_STATUS[run.status];
@@ -94,7 +100,7 @@ export function RunHeader({
       </div>
       <div className="run-head-side">
         {!finished && !replaying ? (
-          <div className="run-actions">
+          <div className="run-actions" data-kind="run">
             {run.status === "paused" ? (
               <button type="button" className="btn-secondary" aria-busy={act.busy || undefined} onClick={() => act.run(onResume)}>
                 <ProductIcon name="play" size={20} />
@@ -116,6 +122,17 @@ export function RunHeader({
               <ProductIcon name="stop" size={20} />
               <span>Stop</span>
             </button>
+          </div>
+        ) : null}
+        {onPreview || project ? (
+          <div className="run-actions" data-kind="work">
+            {onPreview ? (
+              <button type="button" className="btn-secondary" onClick={onPreview} title="Preview what the crew built so far">
+                <ProductIcon name="eye" size={20} />
+                <span>Preview so far</span>
+              </button>
+            ) : null}
+            {project ? <OpenFolderButton projectId={project.id} /> : null}
           </div>
         ) : null}
         {act.error ? (

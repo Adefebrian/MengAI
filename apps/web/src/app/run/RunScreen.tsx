@@ -16,7 +16,10 @@
 // hedge fund run adds its trading desk under the office. Below 1024px the
 // office is on top and every panel is a tab. A cat opens in a drawer (a
 // bottom sheet below 640px) from the office or its crew row, or from
-// #cat=<id>; a task opens in a sheet from #task=<id>.
+// #cat=<id>; a task opens in a sheet from #task=<id>. Once the run has
+// shipped, the live preview of what the crew built leads the page (right
+// under the header) with its Start preview call to action; before that it
+// opens from Preview so far in the header, in the same place.
 import type { OfficeProps } from "@mengai/cats";
 import type { ProjectDTO } from "@mengai/shared";
 import { Drawer, EmptyState, ProductIcon, SkeletonRows, TabPanel, Tabs } from "@mengai/ui/src/product";
@@ -38,6 +41,7 @@ import { Decisions } from "./Decisions";
 import { runApprovals, spendByAgent } from "./derive";
 import { leadOf, officeAgents, officeLabel, officeMeetings, officePlan } from "./office";
 import { OfficeStage } from "./OfficeStage";
+import { PreviewRegion, previewRunning, usePreview } from "./Preview";
 import { Replay } from "./Replay";
 import { RunHeader } from "./RunHeader";
 import { RunTracker } from "./RunTracker";
@@ -75,9 +79,12 @@ export function RunScreen({ runId }: { runId: string }) {
   const [project, setProject] = useState<ProjectDTO | null>(null);
   const live = data.state;
   const finished = !!live.run && isFinished(live.run.status);
+  const shipped = live.run?.status === "done";
   const tick = useNow(1000, !!live.run && !finished);
 
   const projectId = live.run?.projectId ?? null;
+  const preview = usePreview(projectId);
+  const [previewOpen, setPreviewOpen] = useState(false);
   useEffect(() => {
     if (!projectId) return;
     const ctrl = new AbortController();
@@ -170,6 +177,33 @@ export function RunScreen({ runId }: { runId: string }) {
   const approvals = replaying ? [] : runApprovals(live);
   const off = level === "off";
 
+  const showPreview =
+    !!projectId && !preview.unavailable && (shipped || previewOpen || previewRunning(preview.preview));
+  const openPreview =
+    projectId && !preview.unavailable && !showPreview
+      ? () => {
+          setPreviewOpen(true);
+          void preview.start();
+        }
+      : undefined;
+  const previewRegion = showPreview ? (
+    <motion.div
+      key="preview"
+      className="run-preview-wrap"
+      initial={off ? { opacity: 0 } : { opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0, transition: off ? T.reduced : T.slow }}
+      exit={{ opacity: 0, y: off ? 0 : 8, transition: off ? T.reduced : T.slowExit }}
+    >
+      <PreviewRegion
+        state={preview}
+        projectId={projectId!}
+        projectName={project?.name ?? null}
+        shipped={shipped}
+        onHide={shipped ? undefined : () => setPreviewOpen(false)}
+      />
+    </motion.div>
+  ) : null;
+
   const openXray = (agentId: string) => {
     setXrayAgent(agentId);
     setTab("xray");
@@ -253,7 +287,9 @@ export function RunScreen({ runId }: { runId: string }) {
         <RunTracker state={shown} replaying={replaying} />
       </div>
       <Page>
-      <RunHeader state={shown} project={project} replaying={replaying} onPause={data.pause} onResume={data.resume} onStop={data.stop} />
+      <RunHeader state={shown} project={project} replaying={replaying} onPause={data.pause} onResume={data.resume} onStop={data.stop} onPreview={openPreview} />
+
+      <AnimatePresence initial={false}>{previewRegion}</AnimatePresence>
 
       <AnimatePresence initial={false}>
         {approvals.length > 0 ? (

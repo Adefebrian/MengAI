@@ -28,10 +28,13 @@ app.use(
       // to <style>/<link>, never to a style="" attribute).
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
-      // blob: carries the runtime's generated images and clips, read with
-      // the paired bearer token (src/api/client.ts media()).
-      imgSrc: ["'self'", "data:", "blob:"],
-      mediaSrc: ["'self'", "blob:"],
+      // The engine's generated images and clips load straight from the
+      // engine on the visitor's own Mac (src/api/client.ts resolve()).
+      imgSrc: ["'self'", "data:", "blob:", "http://127.0.0.1:*", "http://localhost:*"],
+      mediaSrc: ["'self'", "blob:", "http://127.0.0.1:*", "http://localhost:*"],
+      // The live preview frames what the crew built, served by the engine
+      // on a free 127.0.0.1 port of the visitor's own Mac.
+      frameSrc: ["http://127.0.0.1:*", "http://localhost:*"],
       fontSrc: ["'self'"],
       // The app talks to the MengAI runtime on the visitor's own machine
       // (src/api/runtime.ts: loopback addresses only, 127.0.0.1:4190 by

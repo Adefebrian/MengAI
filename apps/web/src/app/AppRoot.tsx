@@ -1,23 +1,25 @@
-// The /app frame: the runtime gate (find MengAI on this machine, pair this
-// browser), then every screen inside the JAL Core AppShell (contained
-// scroll, island header, split bar with New run below 640px). There are no
-// accounts: the page talks to the owner's own runtime, so a runtime that is
-// not running shows the onboarding, and one that is running but not paired
-// shows the pairing screen, both inside the shell. Stop all, the kill
-// switch, sits in the header at every width and is never moved into More.
-import type { OwnerSettings, SessionDTO } from "@mengai/shared";
+// The /app frame: the engine gate (find MengAI on this Mac), then every
+// screen inside the JAL Core AppShell (contained scroll, island header,
+// split bar with New run below 640px). There are no accounts and no sign
+// in of any kind: the page talks straight to the crew engine on the
+// owner's own Mac, so an engine that is not running shows the onboarding
+// inside the shell, and the page connects by itself the moment it answers.
+// Stop all, the kill switch, sits in the header at every width and is
+// never moved into More.
+import type { HealthDTO, OwnerSettings } from "@mengai/shared";
 import { AppShell, type AppShellDestination } from "@mengai/ui";
 import { Glyph, Notice, ProductIcon, SkeletonRows } from "@mengai/ui/src/product";
 import { MotionConfig } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { createApiClient, type ApiClient } from "../api/client";
-import { connectRuntime, runtimeClient, takePairLink, type Connection } from "../api/connect";
-import { clearSessionToken, hasPairHash, originOf, readSessionToken, runtimeLabel, type PairLink } from "../api/runtime";
+import { connectRuntime, runtimeClient, type Connection } from "../api/connect";
+import { runtimeLabel } from "../api/runtime";
 import { createDemoFetch } from "../demo/demoApi";
 import { DEMO_LABEL } from "../demo/fixture";
 import { onLinkClick, type Location, type RouteMatch } from "../router";
 import { AppContext, readCatMotion, writeCatMotion, type AppContextValue, type CatMotion, type Flash } from "./context";
 import { useAction, useMedia } from "./hooks";
+import { waitsOnYou } from "./parts/Orders";
 import { RunScreen } from "./run/RunScreen";
 import { AboutScreen } from "./screens/About";
 import { ApprovalsScreen } from "./screens/Approvals";
@@ -27,7 +29,7 @@ import { EvalsScreen } from "./screens/Evals";
 import { HomeScreen } from "./screens/Home";
 import { MemoryScreen } from "./screens/Memory";
 import { NotFoundScreen } from "./screens/NotFound";
-import { PairScreen, RuntimeOfflineScreen } from "./screens/Onboarding";
+import { RuntimeOfflineScreen } from "./screens/Onboarding";
 import { ProvidersScreen } from "./screens/Providers";
 import { SecurityScreen } from "./screens/Security";
 import { SettingsScreen } from "./screens/Settings";
@@ -68,12 +70,12 @@ function destinations(pending: number): AppShellDestination[] {
   ];
 }
 
-const DEMO_SESSION: SessionDTO = { authenticated: true, mode: "local", needsSetup: false };
+const DEMO_HEALTH: HealthDTO = { ok: true, mode: "local", version: "0.1.0 demo", configured: true, automation: { available: false, accessibility: false, screen: false }, jev: { configured: true } };
 
 type Gate = { kind: "loading" } | Connection;
 
-/** How often the onboarding and pairing screens look again on their own. */
-const RECHECK_MS = 3000;
+/** How often the onboarding looks for the engine again on its own. */
+export const RECHECK_MS = 2000;
 
 /** Plain same-origin link clicks anywhere in the app become router navigation. */
 function interceptLinks(e: MouseEvent<HTMLDivElement>) {
@@ -86,92 +88,56 @@ function interceptLinks(e: MouseEvent<HTMLDivElement>) {
 }
 
 export function AppRoot({ route, location, demo }: { route: RouteMatch<AppRouteId> | null; location: Location; demo: boolean }) {
-  const [gate, setGate] = useState<Gate>(demo ? { kind: "ready", base: "", session: DEMO_SESSION } : { kind: "loading" });
-  const [pairing, setPairing] = useState(false);
-  const base = gate.kind === "ready" || gate.kind === "unpaired" ? gate.base : "";
-  const lost = useRef<() => void>(() => {});
-  const api = useMemo<ApiClient>(
-    () => (demo ? createApiClient({ fetch: createDemoFetch() }) : runtimeClient(base, { onUnauthenticated: () => lost.current() })),
-    [demo, base],
-  );
+  const [gate, setGate] = useState<Gate>(demo ? { kind: "ready", base: "", health: DEMO_HEALTH } : { kind: "loading" });
+  const base = gate.kind === "ready" ? gate.base : "";
+  const api = useMemo<ApiClient>(() => (demo ? createApiClient({ fetch: createDemoFetch() }) : runtimeClient(base)), [demo, base]);
 
-  const apply = useCallback((next: Connection, quiet: boolean) => {
-    setGate((cur) => {
-      // a quiet look again only moves the page when something changed
-      if (quiet && cur.kind === next.kind && next.kind !== "ready") return cur;
-      return next;
-    });
+  const check = useCallback((quiet = false) => {
+    if (!quiet) setGate((cur) => (cur.kind === "ready" ? cur : { kind: "loading" }));
+    return connectRuntime().then((next) =>
+      setGate((cur) => {
+        // a quiet look again only moves the page when something changed
+        if (quiet && cur.kind === next.kind && next.kind !== "ready") return cur;
+        return next;
+      }),
+    );
   }, []);
-
-  const check = useCallback(
-    (opts: { quiet?: boolean; link?: PairLink | null } = {}) => {
-      if (!opts.quiet) setGate((cur) => (cur.kind === "ready" ? cur : { kind: "loading" }));
-      return connectRuntime({ link: opts.link ?? null }).then((c) => apply(c, !!opts.quiet));
-    },
-    [apply],
-  );
-
-  // A session the runtime no longer knows sends the page back to pairing.
-  lost.current = () => setGate((cur) => (cur.kind === "ready" ? { kind: "unpaired", base: cur.base, error: "This browser's pairing ended. Pair it again from the MengAI menu.", health: null } : cur));
 
   useEffect(() => {
     if (demo) {
-      setGate({ kind: "ready", base: "", session: DEMO_SESSION });
+      setGate({ kind: "ready", base: "", health: DEMO_HEALTH });
       return;
     }
-    void check({ link: takePairLink() });
+    void check();
   }, [demo, check]);
 
-  // A pairing link opened in this tab later (the menu's Open in browser on an open tab).
-  useEffect(() => {
-    if (demo) return;
-    const onHash = () => {
-      if (!hasPairHash(window.location.hash)) return;
-      void check({ link: takePairLink() });
-    };
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, [demo, check]);
-
-  // Offline or unpaired, the page keeps looking: every few seconds while
-  // visible, and at once when another tab of this site pairs.
-  const waiting = gate.kind === "offline" || gate.kind === "unpaired";
+  // Not running yet, the page keeps looking: every 2 s while visible, at
+  // once when the tab comes back, and when another tab saves an address.
+  const waiting = gate.kind === "offline" || gate.kind === "refused";
   useEffect(() => {
     if (demo || !waiting) return;
+    const visible = () => typeof document === "undefined" || document.visibilityState !== "hidden";
     const tick = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      void check({ quiet: true });
+      if (visible()) void check(true);
     }, RECHECK_MS);
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === null || e.key.startsWith("mengai.runtime")) void check({ quiet: true });
+    const onVisible = () => {
+      if (visible()) void check(true);
     };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === "mengai.runtime") void check(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("storage", onStorage);
     return () => {
       clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("storage", onStorage);
     };
   }, [demo, waiting, check]);
 
   const retry = useCallback(() => void check(), [check]);
-  const pair = useCallback(
-    (link: PairLink) => {
-      setPairing(true);
-      void check({ link }).finally(() => setPairing(false));
-    },
-    [check],
-  );
-  const forget = useCallback(async () => {
-    const origin = originOf(base);
-    try {
-      if (readSessionToken(origin)) await api.call("POST /api/auth/logout");
-    } catch {
-      // the local copy goes either way
-    }
-    clearSessionToken(origin);
-    await check();
-  }, [api, base, check]);
 
-  return <Frame api={api} demo={demo} gate={gate} route={route} location={location} onRetry={retry} onPair={pair} pairing={pairing} onForget={forget} />;
+  return <Frame api={api} demo={demo} gate={gate} route={route} location={location} onRetry={retry} />;
 }
 
 function Frame({
@@ -181,9 +147,6 @@ function Frame({
   route,
   location,
   onRetry,
-  onPair,
-  pairing,
-  onForget,
 }: {
   api: ApiClient;
   demo: boolean;
@@ -191,9 +154,6 @@ function Frame({
   route: RouteMatch<AppRouteId> | null;
   location: Location;
   onRetry: () => void;
-  onPair: (link: PairLink) => void;
-  pairing: boolean;
-  onForget: () => Promise<void>;
 }) {
   const ready = gate.kind === "ready";
   const [settings, setSettings] = useState<OwnerSettings | null>(null);
@@ -211,12 +171,14 @@ function Frame({
     return () => ctrl.abort();
   }, [api, ready]);
 
+  // What waits on the owner: live orders the crew proposed (the one
+  // approval path the engine serves).
   useEffect(() => {
     if (!ready) return;
     const ctrl = new AbortController();
     const load = () =>
-      api.call("GET /api/automation/approvals", { signal: ctrl.signal }).then(
-        (list) => setPending(list.filter((a) => a.status === "pending").length),
+      api.call("GET /api/trading/orders", { signal: ctrl.signal }).then(
+        (list) => setPending(list.filter(waitsOnYou).length),
         () => {},
       );
     void load();
@@ -277,7 +239,6 @@ function Frame({
     ? {
         api,
         demo,
-        session: gate.session,
         settings,
         setSettings,
         catMotion,
@@ -288,8 +249,7 @@ function Frame({
         pendingApprovals: pending,
         refreshApprovals: () => setApprovalsNonce((n) => n + 1),
         notices,
-        runtime: { label: demo ? "Sample data in this page" : runtimeLabel(gate.base), paired: !demo && !!readSessionToken(originOf(gate.base)) },
-        forgetBrowser: onForget,
+        runtime: { label: demo ? "Sample data in this page" : runtimeLabel(gate.base), own: !demo && gate.base === "" },
       }
     : null;
 
@@ -310,8 +270,8 @@ function Frame({
 
   let body: ReactNode;
   if (gate.kind === "loading") body = <LoadingPage />;
-  else if (gate.kind === "offline") body = <RuntimeOfflineScreen tried={gate.tried} onRetry={onRetry} still={catsStill} />;
-  else if (gate.kind === "unpaired") body = <PairScreen base={gate.base} error={gate.error} onRetry={onRetry} onPair={onPair} pairing={pairing} still={catsStill} />;
+  else if (gate.kind === "offline") body = <RuntimeOfflineScreen where={gate.tried.at(-1) ?? null} refused={false} onRetry={onRetry} still={catsStill} />;
+  else if (gate.kind === "refused") body = <RuntimeOfflineScreen where={gate.base} refused onRetry={onRetry} still={catsStill} />;
   else body = <Screen route={route} location={location} />;
 
   return (

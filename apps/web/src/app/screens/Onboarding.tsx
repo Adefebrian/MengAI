@@ -1,28 +1,21 @@
-// The runtime gate, inside the app shell. MengAI has no accounts and the
-// website keeps nothing, so there is no sign in: the page finds the MengAI
-// runtime on this machine and pairs with it once.
-//   RuntimeOfflineScreen  nothing answers: download the Mac app, open it,
-//                         click Open in browser (or bun run dev); the page
-//                         looks again every few seconds on its own
-//   PairScreen            the runtime answers but this browser holds no
-//                         session: Open in browser from the menu, or paste
-//                         the pairing link
+// The engine gate, inside the app shell. MengAI has no accounts and the
+// website keeps nothing, so there is nothing to sign in to and no code to
+// copy: the crew engine runs on the owner's own Mac, and this page finds it
+// on its own.
+//   RuntimeOfflineScreen  nothing answers: download the Mac app and open
+//                         it (or run bun run dev from the repo); the page
+//                         looks again every 2 s and moves on by itself.
+//                         When something answers but refuses this site
+//                         (a site that is not on the engine's list), the
+//                         same screen says so and links the engine's own
+//                         page.
 // Regions per JEV ui.region_gate: the steps in plain spacing (2.65; card
-// 0.36 sat beside the address card, so the runner-up), the address and
-// the pasted link in a card (1.74, card 0.55). Oyen waits in the head.
+// 0.36 sat beside the address card, so the runner-up), the address in a
+// card (1.74, card 0.55). Oyen waits in the head.
 import { Cat } from "@mengai/cats";
 import { Notice, ProductIcon } from "@mengai/ui/src/product";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
-import {
-  DEFAULT_RUNTIME_URL,
-  MAC_DOWNLOAD_URL,
-  normalizeRuntimeUrl,
-  readPairLink,
-  readRuntimeSetting,
-  runtimeLabel,
-  writeRuntimeSetting,
-  type PairLink,
-} from "../../api/runtime";
+import { DEFAULT_RUNTIME_URL, MAC_DOWNLOAD_URL, normalizeRuntimeUrl, originOf, readRuntimeSetting, runtimeLabel, writeRuntimeSetting } from "../../api/runtime";
 import { FormStatus, Page, Region, TextField } from "../ui";
 
 function Head({ title, lead, still }: { title: string; lead: string; still: boolean }) {
@@ -69,7 +62,7 @@ function Looking({ where }: { where: string }) {
     <p className="onboard-looking" aria-live="polite">
       <ProductIcon name="hourglass" size={16} />
       <span>
-        Looking for MengAI at <span className="num">{where}</span> every few seconds. This page moves on by itself once it answers.
+        Looking for MengAI at <span className="num">{where}</span> every 2 seconds. This page moves on by itself once it answers.
       </span>
     </p>
   );
@@ -95,7 +88,7 @@ function AddressCard({ onSaved }: { onSaved: () => void }) {
     onSaved();
   };
   return (
-    <Region container="card" title="Runtime address" className="app-card onboard-card" meta="Where this page looks for MengAI. Only an address on this machine is allowed, so your keys never leave it.">
+    <Region container="card" title="Engine address" className="app-card onboard-card" meta="Where this page looks for MengAI. Only an address on this Mac is allowed, so your keys never leave it.">
       <form className="app-form" onSubmit={submit} noValidate>
         <TextField
           label="Address"
@@ -131,27 +124,38 @@ function AddressCard({ onSaved }: { onSaved: () => void }) {
   );
 }
 
-export function RuntimeOfflineScreen({ tried, onRetry, still }: { tried: string[]; onRetry: () => void; still: boolean }) {
-  const where = runtimeLabel(tried.at(-1) ?? DEFAULT_RUNTIME_URL);
+export function RuntimeOfflineScreen({ where, refused, onRetry, still }: { where: string | null; refused: boolean; onRetry: () => void; still: boolean }) {
+  const label = runtimeLabel(where ?? DEFAULT_RUNTIME_URL);
+  const own = `${originOf(where ?? DEFAULT_RUNTIME_URL)}/app`;
+  const site = typeof window === "undefined" ? "this site" : window.location.origin;
   return (
     <Page>
       <Head
-        title="Oyen is not answering yet"
-        lead="MengAI runs on your own machine. This page is only the window: your keys, your projects and the whole crew stay with you, and the website keeps nothing."
+        title={refused ? "Oyen is awake, but the door is shut" : "Oyen is not answering yet"}
+        lead="MengAI runs on your own Mac. This page is only the window: your keys, your projects and the whole crew stay with you, and the website keeps nothing."
         still={still}
       />
+      {refused ? (
+        <Notice tone="warning" title="MengAI does not take requests from this site">
+          It answers at <span className="num">{label}</span>, but only for the sites on its own list, and <span className="num">{site}</span> is not on it. Open{" "}
+          <a href={own} className="num" rel="noreferrer">
+            {label}/app
+          </a>{" "}
+          instead, the same crew in MengAI's own window, or add this site to MengAI's settings file and reopen it.
+        </Notice>
+      ) : null}
       <div className="app-split onboard-split">
         <div className="app-split-main">
           <Steps
             title="Wake the crew in three steps"
             steps={[
-              { title: "Download MengAI for Mac", text: "Free and open source. Drag it into Applications." },
-              { title: "Open it", text: "Oyen curls up in your menu bar and the crew wakes on this machine." },
-              { title: "Click Open in browser in its menu", text: "This page pairs with it in one click, and the crew comes to the window." },
+              { title: "Download MengAI for Mac", text: "Free and open source, a beta for now. Drag it into Applications." },
+              { title: "Open it", text: "Oyen curls up in your menu bar and the crew wakes on this Mac, on your own resources." },
+              { title: "This page connects by itself", text: "No code to copy and nothing to sign in to. Keep this tab open and the crew comes to the window." },
             ]}
           >
             <p className="app-region-meta">
-              Running from the source instead? Run <code className="num">bun run dev</code> in the repo and open the link it prints.
+              Running from the source instead? Run <code className="num">bun run dev</code> in the repo and keep this page open.
             </p>
             <div className="app-form-actions">
               <a className="btn" href={MAC_DOWNLOAD_URL} rel="noreferrer">
@@ -166,103 +170,11 @@ export function RuntimeOfflineScreen({ tried, onRetry, still }: { tried: string[
                 Watch the sample run
               </a>
             </div>
-            <Looking where={where} />
+            <Looking where={label} />
           </Steps>
         </div>
         <div className="app-split-side">
           <AddressCard onSaved={onRetry} />
-        </div>
-      </div>
-    </Page>
-  );
-}
-
-export function PairScreen({
-  base,
-  error,
-  onRetry,
-  onPair,
-  pairing,
-  still,
-}: {
-  base: string;
-  error: string | null;
-  onRetry: () => void;
-  onPair: (link: PairLink) => void;
-  pairing: boolean;
-  still: boolean;
-}) {
-  const [link, setLink] = useState("");
-  const [fieldError, setFieldError] = useState<string | null>(null);
-  const where = runtimeLabel(base);
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const parsed = readPairLink(link);
-    if (!parsed) {
-      setFieldError("Paste the whole link, the part after #pair= included.");
-      return;
-    }
-    setFieldError(null);
-    setLink("");
-    onPair(parsed);
-  };
-  return (
-    <Page>
-      <Head
-        title="Almost there. Pair this browser."
-        lead={`MengAI is awake at ${where}, but this browser has no key to its door yet. Pairing takes one click, and the key it gets stays in this browser and on your machine.`}
-        still={still}
-      />
-      {error ? (
-        <Notice tone="warning" title="Not paired yet">
-          {error}
-        </Notice>
-      ) : null}
-      <div className="app-split onboard-split">
-        <div className="app-split-main">
-          <Steps
-            title="Pair it once"
-            steps={[
-              { title: "Open the MengAI menu", text: "The paw in your menu bar." },
-              { title: "Click Open in browser", text: "A one-time link opens this page and pairs it. A copied link cannot pair anyone else." },
-            ]}
-          >
-            <p className="app-region-meta">
-              Running <code className="num">bun run dev</code>? Open the pairing link it printed, or paste it into the pairing link field.
-            </p>
-            <div className="app-form-actions">
-              <button type="button" className="btn-secondary" onClick={onRetry}>
-                <ProductIcon name="refresh" size={20} />
-                <span>Check again</span>
-              </button>
-              <a className="btn btn-ghost" href="/app/runs/demo?demo=1">
-                Watch the sample run
-              </a>
-            </div>
-          </Steps>
-        </div>
-        <div className="app-split-side">
-          <Region container="card" title="Paste a pairing link" className="app-card onboard-card" meta="For a link that opened in another browser. It works once.">
-            <form className="app-form" onSubmit={submit} noValidate>
-              <TextField
-                label="Pairing link"
-                type="password"
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                spellCheck={false}
-                autoCapitalize="off"
-                autoComplete="off"
-                placeholder={`${typeof window === "undefined" ? "" : window.location.origin}/app#pair=`}
-                error={fieldError}
-                hint="Hidden as you paste, like a password: it is one."
-              />
-              <div className="app-form-actions">
-                <button type="submit" aria-busy={pairing || undefined}>
-                  Pair this browser
-                </button>
-              </div>
-            </form>
-          </Region>
         </div>
       </div>
     </Page>

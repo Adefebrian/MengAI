@@ -153,9 +153,9 @@ function isHttp(p: TradingVenuePreset): boolean {
   return p.connector !== "mcp_stdio";
 }
 
-/** A preset field that carries a credential is masked; a plain setting (an exchange id) is not. */
-export function isSecretField(f: { key: string; label: string }): boolean {
-  return /key|secret|token|pass|auth|private|signature/i.test(`${f.key} ${f.label}`);
+/** A preset field is masked unless the preset marks it a plain setting (secret: false, an exchange id). */
+export function isSecretField(f: { secret?: boolean }): boolean {
+  return f.secret !== false;
 }
 
 function VenueRow({ v, now, onChange, onRemove }: { v: TradingVenueDTO; now: number; onChange: (next: TradingVenueDTO) => void; onRemove: (v: TradingVenueDTO) => void }) {

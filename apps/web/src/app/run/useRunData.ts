@@ -237,7 +237,10 @@ export function useRunData(runId: string): RunData {
 
   const decide = useCallback(
     async (a: ApprovalDTO, decision: "approve" | "deny", scope: "once" | "session") => {
-      const next = await api.call("POST /api/automation/approvals/:id", { params: { id: a.id }, body: { decision, scope } });
+      // the sample run answers in the page; a real ask goes to the engine
+      const next = isDemo
+        ? { status: decision === "approve" ? ("approved" as const) : ("denied" as const), scope, decidedAt: Date.now() }
+        : await api.call("POST /api/automation/approvals/:id", { params: { id: a.id }, body: { decision, scope } });
       const s = store.getState();
       const approvals = { ...s.approvals, [a.id]: { ...(s.approvals[a.id] ?? a), status: next.status, scope: next.scope, decidedAt: next.decidedAt } };
       if (isDemo) {
