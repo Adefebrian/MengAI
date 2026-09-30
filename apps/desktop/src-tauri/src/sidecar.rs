@@ -11,8 +11,10 @@
 //! `{"event":"ready","port":n,"controlToken":..}` (`controlToken` optional
 //! now that local mode has no auth; other fields are ignored); exits on
 //! SIGTERM or stdin close, stopping its children (live previews included).
-//! The shell sends SIGTERM on quit, force stops after 3 s, and then sweeps
-//! any descendant that outlived it (procs.rs).
+//! On macOS the shell sends SIGTERM on quit, force stops after 3 s, and then
+//! sweeps any descendant that outlived it (procs.rs). On Windows it closes
+//! stdin, force stops after 3 s by ending the sidecar's job object, which
+//! holds every process the engine started (winproc.rs).
 use std::ffi::{OsStr, OsString};
 use std::io::{self, BufRead, BufReader, Read};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -26,9 +28,13 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 use crate::applog::{AppLog, MAX_LINE};
+#[cfg(unix)]
 use crate::procs::{self, Proc};
 use crate::settings::Settings;
+#[cfg(unix)]
 use crate::signals;
+#[cfg(windows)]
+use crate::winproc;
 
 pub const READY_TIMEOUT: Duration = Duration::from_secs(30);
 pub const TERM_GRACE: Duration = Duration::from_secs(3);
@@ -36,6 +42,36 @@ pub const TERM_GRACE: Duration = Duration::from_secs(3);
 /// Parent env vars the sidecar may see. Everything else (cloud credentials,
 /// tokens exported in a dev terminal) is dropped. JEV sec.shell_hardening allowlist 1.0.
 const ENV_ALLOWLIST: &[&str] = &["HOME", "USER", "LOGNAME", "TMPDIR", "PATH", "LANG", "SHELL", "TZ"];
+/// The same allowlist for the Windows engine: what a Windows program needs to find the system
+/// (SystemRoot is required for networking), the user's folders and temp. Windows env names
+/// have no case, so on Windows every name below is compared without case.
+const ENV_ALLOWLIST_WINDOWS: &[&str] = &[
+    "SystemRoot",
+    "SystemDrive",
+    "windir",
+    "ComSpec",
+    "PATHEXT",
+    "Path",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "USERNAME",
+    "USERDOMAIN",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "ProgramData",
+    "ProgramFiles",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "CommonProgramFiles",
+    "NUMBER_OF_PROCESSORS",
+    "PROCESSOR_ARCHITECTURE",
+    "OS",
+    "LANG",
+    "TZ",
+];
 /// Set by the shell only; a value exported in the parent env is dropped.
 const ENV_OWNED: &[&str] = &[
     "MENGAI_MODE",
@@ -114,13 +150,31 @@ where
     K: AsRef<OsStr>,
     V: AsRef<OsStr>,
 {
+    build_env_for(cfg!(windows), parent, paths, settings)
+}
+
+/// `build_env` for either platform, so the Windows rules are tested on any machine.
+fn build_env_for<I, K, V>(windows: bool, parent: I, paths: &Paths, settings: &Settings) -> Vec<(OsString, OsString)>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
+    let allowlist = if windows { ENV_ALLOWLIST_WINDOWS } else { ENV_ALLOWLIST };
+    let listed = |list: &[&str], k: &str| {
+        if windows {
+            list.iter().any(|name| name.eq_ignore_ascii_case(k))
+        } else {
+            list.contains(&k)
+        }
+    };
     let mut env: Vec<(OsString, OsString)> = parent
         .into_iter()
         .filter(|(k, _)| {
             let Some(k) = k.as_ref().to_str() else { return false };
-            ENV_ALLOWLIST.contains(&k)
+            listed(allowlist, k)
                 || k.starts_with("LC_")
-                || (k.starts_with("MENGAI_") && !ENV_OWNED.contains(&k) && !ENV_DROPPED.contains(&k))
+                || (k.starts_with("MENGAI_") && !listed(ENV_OWNED, k) && !listed(ENV_DROPPED, k))
         })
         .map(|(k, v)| (k.as_ref().to_owned(), v.as_ref().to_owned()))
         .collect();
@@ -198,10 +252,14 @@ pub struct Sidecar {
     exit: Arc<ExitSignal>,
     ready: OnceLock<(u16, Option<String>)>,
     stop_done: Mutex<bool>,
+    /// Windows: the kill-on-close job holding the sidecar tree; None means the taskkill fallback.
+    #[cfg(windows)]
+    job: Option<winproc::Job>,
 }
 
 impl Sidecar {
     /// Spawns the sidecar in its own process group with piped stdio and starts the drain and monitor threads.
+    /// Windows: its own console process group with no console window, then into a kill-on-close job.
     pub fn spawn(
         mut cmd: Command,
         paths: &Paths,
@@ -209,16 +267,43 @@ impl Sidecar {
         log: Arc<AppLog>,
         events: Sender<Event>,
     ) -> io::Result<Arc<Self>> {
-        use std::os::unix::process::CommandExt;
         cmd.env_clear()
             .envs(build_env(std::env::vars_os(), paths, settings))
             .current_dir(&paths.data_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .process_group(0);
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+        #[cfg(windows)]
+        let job = {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(winproc::SIDECAR_FLAGS);
+            winproc::Job::new()
+                .map_err(|e| log.error("sidecar", &format!("could not create a job object for the engine ({e})")))
+                .ok()
+        };
         let mut child: Child = cmd.spawn()?;
         let pid = child.id();
+        // Right after the spawn, before the engine has booted far enough to start anything.
+        #[cfg(windows)]
+        let job = job.and_then(|job| match job.assign(&child) {
+            Ok(()) => Some(job),
+            Err(e) => {
+                log.error("sidecar", &format!("could not put the engine in its job object ({e})"));
+                None
+            }
+        });
+        #[cfg(windows)]
+        if job.is_none() {
+            log.error(
+                "sidecar",
+                "quitting falls back to taskkill /T, which misses processes whose parent already exited",
+            );
+        }
         let stdout = child.stdout.take().ok_or_else(|| io::Error::other("sidecar stdout not piped"))?;
         let stderr = child.stderr.take().ok_or_else(|| io::Error::other("sidecar stderr not piped"))?;
         let stdin = child.stdin.take();
@@ -230,6 +315,8 @@ impl Sidecar {
             exit: exit.clone(),
             ready: OnceLock::new(),
             stop_done: Mutex::new(false),
+            #[cfg(windows)]
+            job,
         });
 
         let out_log = log.clone();
@@ -287,12 +374,24 @@ impl Sidecar {
     /// Graceful: SIGTERM (the engine stops its previews and other children), wait up to 3 s,
     /// then SIGKILL the process group (stragglers such as the hands helper).
     /// Forced: SIGKILL the group now. Either way, descendants that live in their own process
-    /// groups and outlived the engine are killed last. Idempotent; a second caller waits for the first.
+    /// groups and outlived the engine are killed last. Windows: stdin close instead of SIGTERM,
+    /// and the job object instead of the group kill and the sweep (see stop_tree).
+    /// Idempotent; a second caller waits for the first.
     pub fn stop(&self, force: bool, log: &AppLog) {
         let Ok(mut done) = self.stop_done.lock() else { return };
         if *done {
             return;
         }
+        self.stop_tree(force, log);
+        // Closing stdin is the sidecar's second exit signal; drop it last.
+        if let Ok(mut stdin) = self.stdin.lock() {
+            stdin.take();
+        }
+        *done = true;
+    }
+
+    #[cfg(unix)]
+    fn stop_tree(&self, force: bool, log: &AppLog) {
         let mut tracked = self.descendants(log);
         if !force && !self.has_exited() {
             if let Err(e) = signals::terminate(self.pid) {
@@ -317,14 +416,47 @@ impl Sidecar {
             log.warn("sidecar", &format!("second process group kill failed: {e}"));
         }
         self.sweep(&tracked, log);
-        // Closing stdin is the sidecar's second exit signal; drop it last.
-        if let Ok(mut stdin) = self.stdin.lock() {
-            stdin.take();
+    }
+
+    /// Graceful: close stdin (Windows has no SIGTERM for a child without a console; the engine
+    /// treats stdin EOF like SIGTERM and stops its previews), wait up to 3 s. Then, and at once
+    /// when forced, end the job: every process the engine started, orphans included.
+    #[cfg(windows)]
+    fn stop_tree(&self, force: bool, log: &AppLog) {
+        if !force && !self.has_exited() {
+            if let Ok(mut stdin) = self.stdin.lock() {
+                stdin.take();
+            }
+            if !self.wait_exit(TERM_GRACE) {
+                log.warn("sidecar", "did not exit within 3 s of closing its stdin, ending its process tree");
+            }
         }
-        *done = true;
+        self.kill_tree(log);
+        self.wait_exit(Duration::from_secs(1));
+        // A process started while the first end was in flight: end the job once more.
+        self.kill_tree(log);
+    }
+
+    #[cfg(windows)]
+    fn kill_tree(&self, log: &AppLog) {
+        match &self.job {
+            Some(job) => {
+                if let Err(e) = job.terminate() {
+                    log.warn("sidecar", &format!("could not end the engine's job object: {e}"));
+                }
+            }
+            // taskkill walks the tree from the live engine; once it exited its pid may be reused.
+            None if self.has_exited() => {}
+            None => {
+                if let Err(e) = winproc::taskkill_tree(self.pid) {
+                    log.warn("sidecar", &format!("taskkill of the engine's process tree failed: {e}"));
+                }
+            }
+        }
     }
 }
 
+#[cfg(unix)]
 impl Sidecar {
     /// The engine's descendants right now; empty (and logged) when ps is unavailable or the engine is gone.
     fn descendants(&self, log: &AppLog) -> Vec<Proc> {
@@ -494,7 +626,7 @@ mod tests {
             ("MENGAI_DATA_DIR", "/evil"),
             ("MENGAI_MIGRATIONS_DIR", "/evil-sql"),
         ];
-        let env = build_env(parent, &paths, &settings);
+        let env = build_env_for(false, parent, &paths, &settings);
         let get = |k: &str| env.iter().rev().find(|(ek, _)| ek == k).map(|(_, v)| v.to_string_lossy().into_owned());
         assert_eq!(get("HOME").as_deref(), Some("/Users/x"));
         assert_eq!(get("LC_ALL").as_deref(), Some("en_US.UTF-8"));
@@ -512,6 +644,42 @@ mod tests {
         for owned in ENV_OWNED {
             assert_eq!(env.iter().filter(|(k, _)| k == owned).count(), 1, "{owned} set exactly once");
         }
+    }
+
+    #[test]
+    fn the_windows_env_keeps_what_windows_needs_and_ignores_case() {
+        let parent = vec![
+            ("SystemRoot", "C:\\Windows"),
+            ("Path", "C:\\Windows\\system32"),
+            ("TEMP", "C:\\Users\\x\\AppData\\Local\\Temp"),
+            ("USERPROFILE", "C:\\Users\\x"),
+            ("APPDATA", "C:\\Users\\x\\AppData\\Roaming"),
+            ("LocalAppData", "C:\\Users\\x\\AppData\\Local"),
+            ("HOME", "/c/Users/x"),
+            ("SHELL", "/usr/bin/bash"),
+            ("OPENAI_API_KEY", "nope"),
+            ("GITHUB_TOKEN", "nope"),
+            ("MENGAI_Port", "4312"),
+            ("MENGAI_Data_Dir", "C:\\evil"),
+            ("MENGAI_Dev_Open", "1"),
+            ("MENGAI_DEMO", "1"),
+        ];
+        let settings = Settings { site_origins: vec!["https://site.example".into()], port: 4280 };
+        let env = build_env_for(true, parent, &test_paths(), &settings);
+        let has = |k: &str| env.iter().any(|(ek, _)| ek.to_string_lossy().eq_ignore_ascii_case(k));
+        for kept in ["SystemRoot", "Path", "TEMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "MENGAI_DEMO"] {
+            assert!(has(kept), "{kept} must reach the Windows engine");
+        }
+        for dropped in ["HOME", "SHELL", "OPENAI_API_KEY", "GITHUB_TOKEN", "MENGAI_DEV_OPEN"] {
+            assert!(!has(dropped), "{dropped} must not reach the Windows engine");
+        }
+        // An owned name in another case is still owned: exactly one, set by the shell.
+        for owned in ENV_OWNED {
+            let n = env.iter().filter(|(k, _)| k.to_string_lossy().eq_ignore_ascii_case(owned)).count();
+            assert_eq!(n, 1, "{owned} set exactly once");
+        }
+        assert!(env.iter().any(|(k, v)| k == "MENGAI_PORT" && v == "4280"));
+        assert!(env.iter().any(|(k, v)| k == "MENGAI_DATA_DIR" && v == "/d"));
     }
 
     #[test]
@@ -552,6 +720,7 @@ mod tests {
         assert_eq!(read_line_bounded(&mut r, 64, &mut buf).unwrap(), None);
     }
 
+    #[cfg(unix)]
     fn fake_sidecar(name: &str, script: &str) -> (Arc<Sidecar>, std::sync::mpsc::Receiver<Event>, Arc<AppLog>) {
         let dir = std::env::temp_dir().join(format!("mengai-desktop-test-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -569,10 +738,12 @@ mod tests {
         (sc, rx, log)
     }
 
+    #[cfg(unix)]
     fn ready_line(port: u16) -> String {
         format!("{{\"event\":\"ready\",\"port\":{port},\"controlToken\":\"{CT}\"}}")
     }
 
+    #[cfg(unix)]
     /// Polls for up to 2 s until `probe` (a signal-0 check) reports ESRCH.
     fn gone(what: &str, probe: impl Fn() -> libc::c_int) -> bool {
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -588,10 +759,12 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn pgid_of(pid: u32) -> Option<u32> {
         procs::snapshot().unwrap().into_iter().find(|p| p.pid == pid).map(|p| p.pgid)
     }
 
+    #[cfg(unix)]
     #[test]
     fn handshake_then_graceful_stop() {
         let script =
@@ -611,6 +784,7 @@ mod tests {
         sc.stop(false, &log); // idempotent
     }
 
+    #[cfg(unix)]
     #[test]
     fn stubborn_sidecar_is_killed_with_its_group() {
         let script = format!("trap '' TERM; sleep 30 & echo '{}'; while true; do sleep 0.05; done", ready_line(40002));
@@ -624,6 +798,7 @@ mod tests {
         assert!(gone("sidecar process group", || unsafe { libc::killpg(sc.pid as libc::pid_t, 0) }));
     }
 
+    #[cfg(unix)]
     /// A live preview runs detached (own process group), so the group kill cannot reach it.
     fn detached_preview_script(on_term: &str) -> String {
         format!(
@@ -632,10 +807,12 @@ mod tests {
         )
     }
 
+    #[cfg(unix)]
     fn wait_ready(rx: &std::sync::mpsc::Receiver<Event>) {
         assert!(matches!(rx.recv_timeout(Duration::from_secs(5)).expect("event"), Event::Ready(_)));
     }
 
+    #[cfg(unix)]
     fn detached_child(sc: &Sidecar) -> u32 {
         let table = procs::snapshot().unwrap();
         let kids = procs::descendants(&table, sc.pid);
@@ -645,6 +822,7 @@ mod tests {
             .expect("a detached child in its own group")
     }
 
+    #[cfg(unix)]
     #[test]
     fn detached_children_are_swept_after_a_forced_stop() {
         let (sc, rx, log) = fake_sidecar("sweep-forced", &detached_preview_script(""));
@@ -657,6 +835,7 @@ mod tests {
         assert!(gone("detached preview", || unsafe { libc::kill(child as libc::pid_t, 0) }));
     }
 
+    #[cfg(unix)]
     #[test]
     fn detached_children_left_by_a_clean_exit_are_swept() {
         let (sc, rx, log) = fake_sidecar("sweep-clean", &detached_preview_script("exit 0"));
@@ -669,6 +848,7 @@ mod tests {
         assert!(gone("detached preview", || unsafe { libc::kill(child as libc::pid_t, 0) }));
     }
 
+    #[cfg(unix)]
     #[test]
     fn early_exit_is_reported() {
         let (_sc, rx, _log) = fake_sidecar("early", "echo 'crash' >&2; exit 3");

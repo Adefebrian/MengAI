@@ -28,7 +28,19 @@ export const SIDECAR_PLACEHOLDER_MARKER = "MENGAI_SIDECAR_PLACEHOLDER";
 export const BUN_TO_RUST_TRIPLE: Record<string, string> = {
   "bun-darwin-arm64": "aarch64-apple-darwin",
   "bun-darwin-x64": "x86_64-apple-darwin",
+  "bun-windows-x64": "x86_64-pc-windows-msvc",
 };
+
+/** Bun compile target of the Windows sidecar. */
+export const WINDOWS_BUN_TARGET = "bun-windows-x64";
+
+/** Where the desktop app builds: macOS makes the dmg, Windows the NSIS installer. */
+export type DesktopPlatform = "darwin" | "win32";
+
+export function desktopPlatform(platform: string = process.platform): DesktopPlatform {
+  if (platform === "darwin" || platform === "win32") return platform;
+  throw new Error(`the desktop app builds on macOS or Windows, not on ${platform}`);
+}
 
 export const tauriCli = join(repoRoot, "node_modules", "@tauri-apps", "cli", "tauri.js");
 /** Where the release script leaves the final dmg (gitignored by the root `dist/` rule). */
@@ -38,6 +50,11 @@ export const distDir = join(desktopDir, "dist");
 export const DMG_ARCH: Record<string, string> = {
   "aarch64-apple-darwin": "aarch64",
   "x86_64-apple-darwin": "x64",
+};
+
+/** Arch label the Tauri NSIS bundler puts in the installer name, per Rust target triple. */
+export const NSIS_ARCH: Record<string, string> = {
+  "x86_64-pc-windows-msvc": "x64",
 };
 
 /** Ad-hoc signing identity for codesign and the Tauri bundler: signed, but by no one. */
@@ -62,11 +79,59 @@ export function parseSidecarScript(script: string): SidecarScript {
   return { bunTarget: target, triple, outfile: resolve(apiDir, outfile) };
 }
 
-export async function readSidecarScript(): Promise<SidecarScript> {
+async function readSidecarScriptText(): Promise<string> {
   const pkg = (await Bun.file(join(apiDir, "package.json")).json()) as { scripts?: Record<string, string> };
   const script = pkg.scripts?.["build:sidecar"];
   if (!script) throw new Error("apps/api/package.json has no build:sidecar script");
-  return parseSidecarScript(script);
+  return script;
+}
+
+export async function readSidecarScript(): Promise<SidecarScript> {
+  return parseSidecarScript(await readSidecarScriptText());
+}
+
+/** How to compile the sidecar on this platform, run in apps/api. */
+export interface SidecarBuild extends SidecarScript {
+  cmd: string[];
+}
+
+/**
+ * The Windows sidecar build: apps/api build:sidecar with the same entry and flags, compiled
+ * for bun-windows-x64 under the name Tauri expects for externalBin. The api script itself only
+ * names the Mac target, so it stays the one source of truth for everything else.
+ */
+export function windowsSidecarBuild(script: string, bun: string = process.execPath): SidecarBuild {
+  const tokens = script.trim().split(/\s+/);
+  if (tokens[0] !== "bun" || tokens[1] !== "build" || !tokens.includes("--compile")) {
+    throw new Error(`build:sidecar is not a bun build --compile command: ${script}`);
+  }
+  const triple = BUN_TO_RUST_TRIPLE[WINDOWS_BUN_TARGET]!;
+  const outfile = sidecarPath(triple);
+  const cmd = [bun];
+  let target = false;
+  let out = false;
+  for (let i = 1; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.startsWith("--target=")) {
+      cmd.push(`--target=${WINDOWS_BUN_TARGET}`);
+      target = true;
+    } else if (t === "--outfile") {
+      cmd.push("--outfile", outfile);
+      out = true;
+      i++;
+    } else {
+      cmd.push(t);
+    }
+  }
+  if (!target || !out) throw new Error(`build:sidecar script is missing --target or --outfile: ${script}`);
+  return { bunTarget: WINDOWS_BUN_TARGET, triple, outfile, cmd };
+}
+
+/** The sidecar build for `platform`: macOS runs apps/api build:sidecar as is. */
+export async function sidecarBuild(platform: DesktopPlatform = desktopPlatform()): Promise<SidecarBuild> {
+  const script = await readSidecarScriptText();
+  if (platform === "win32") return windowsSidecarBuild(script);
+  return { ...parseSidecarScript(script), cmd: [process.execPath, "run", "build:sidecar"] };
 }
 
 export interface TauriConf {
@@ -89,6 +154,13 @@ export function cargoTargetDir(env: Record<string, string | undefined> = process
 
 export function bundleDir(triple: string, env: Record<string, string | undefined> = process.env): string {
   return join(cargoTargetDir(env), triple, "release", "bundle");
+}
+
+/** File name of the NSIS installer Tauri writes: `<productName>_<version>_<arch>-setup.exe`. */
+export function nsisName(productName: string, version: string, triple: string): string {
+  const arch = NSIS_ARCH[triple];
+  if (!arch) throw new Error(`no NSIS arch label for ${triple}`);
+  return `${productName}_${version}_${arch}-setup.exe`;
 }
 
 /** File name of the dmg Tauri writes: `<productName>_<version>_<arch>.dmg`. */
@@ -133,8 +205,18 @@ export function releaseSigning(parent: Record<string, string | undefined> = proc
   return { env, identity, adhoc, notarize };
 }
 
+/** externalBin file for a target triple; Tauri expects the .exe suffix on Windows. */
+export function sidecarFileName(triple: string): string {
+  return `${SIDECAR_NAME}-${triple}${triple.includes("windows") ? ".exe" : ""}`;
+}
+
 export function sidecarPath(triple: string): string {
-  return join(tauriDir, "binaries", `${SIDECAR_NAME}-${triple}`);
+  return join(tauriDir, "binaries", sidecarFileName(triple));
+}
+
+/** A Windows PE image starts with "MZ". */
+export function isPE(bytes: Uint8Array): boolean {
+  return bytes.length >= 2 && bytes[0] === 0x4d && bytes[1] === 0x5a;
 }
 
 /** Mach-O 64-bit magic (little endian) or a fat binary; anything else is not a real sidecar. */
@@ -151,7 +233,11 @@ export async function assertRealSidecar(path: string): Promise<void> {
   if (new TextDecoder().decode(head).includes(SIDECAR_PLACEHOLDER_MARKER)) {
     throw new Error(`sidecar at ${path} is the build placeholder, the api build did not replace it`);
   }
-  if (!isMachO(head)) throw new Error(`sidecar at ${path} is not a Mach-O executable`);
+  if (path.endsWith(".exe")) {
+    if (!isPE(head)) throw new Error(`sidecar at ${path} is not a Windows executable`);
+  } else if (!isMachO(head)) {
+    throw new Error(`sidecar at ${path} is not a Mach-O executable`);
+  }
 }
 
 /** The sidecar embeds these migrations; the bundle also carries the folder, passed as the MENGAI_MIGRATIONS_DIR override. */
@@ -197,8 +283,8 @@ export async function syncDir(src: string, dest: string, opts: { keep?: string[]
   }
   let copied = 0;
   for await (const rel of new Bun.Glob("**/*").scan({ cwd: src, onlyFiles: true, dot: true })) {
-    // dotfiles stay out of the bundle, except a leading .well-known folder (tdmrep.json)
-    if (rel.split("/").some((seg, i) => seg.startsWith(".") && !(i === 0 && seg === ".well-known"))) continue;
+    // dotfiles stay out of the bundle, except a leading .well-known folder (tdmrep.json); split on both separators for Windows
+    if (rel.split(/[\\/]/).some((seg, i) => seg.startsWith(".") && !(i === 0 && seg === ".well-known"))) continue;
     if (opts.skip?.(rel)) continue;
     const to = join(dest, rel);
     await mkdir(join(to, ".."), { recursive: true });

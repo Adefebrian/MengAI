@@ -1,7 +1,8 @@
 // Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! Owner settings for the shell: `settings.json` in the app data dir
-//! (`~/Library/Application Support/id.mengai.app/settings.json`).
+//! (`~/Library/Application Support/id.mengai.app/settings.json` on macOS,
+//! `%APPDATA%\id.mengai.app\settings.json` on Windows).
 //!
 //! ```json
 //! { "siteOrigins": ["https://mengai.example"], "port": 4280 }
@@ -238,7 +239,7 @@ fn private_file(path: &Path, create_new: bool) -> io::Result<File> {
     opts.open(path)
 }
 
-/// Writes the default template (0600) unless a file is already there.
+/// Writes the default template (0600 on Unix; on Windows the per-user data folder's ACL applies) unless a file is already there.
 pub fn write_template(path: &Path) -> io::Result<()> {
     match private_file(path, true) {
         Ok(mut f) => f.write_all(TEMPLATE.as_bytes()),
@@ -394,10 +395,12 @@ mod tests {
         let _ = fs::remove_file(&path);
         assert_eq!(load(&path).unwrap(), Loaded { settings: Settings::default(), missing: true, migration: None });
         write_template(&path).unwrap();
+        #[cfg(unix)]
         let mode = |p: &Path| {
             use std::os::unix::fs::PermissionsExt;
             fs::metadata(p).unwrap().permissions().mode() & 0o777
         };
+        #[cfg(unix)]
         assert_eq!(mode(&path), 0o600);
         assert_eq!(load(&path).unwrap(), Loaded { settings: Settings::default(), missing: false, migration: None });
         fs::write(&path, "{\"siteUrl\":\"https://site.example\",\"port\":4282}").unwrap();
@@ -406,6 +409,7 @@ mod tests {
         assert_eq!(old.settings.site_origins, vec!["https://site.example".to_string()]);
         assert!(old.migration.is_some());
         rewrite(&path, &old.settings).unwrap();
+        #[cfg(unix)]
         assert_eq!(mode(&path), 0o600);
         assert!(!path.with_extension("json.tmp").exists());
         let text = fs::read_to_string(&path).unwrap();

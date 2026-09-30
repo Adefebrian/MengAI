@@ -1,14 +1,15 @@
 // Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-//! MengAI macOS shell (Tauri 2).
+//! MengAI desktop shell (Tauri 2) for macOS and Windows.
 //!
-//! One instance per Mac: a second launch hands off to the running one, which
+//! One instance per computer: a second launch hands off to the running one, which
 //! shows its window, and exits before it starts anything (instance.rs). The
 //! shell spawns the compiled Bun API sidecar on the configured port, or on the
 //! first free port of 4280..4289 when that one is held by another program
 //! (ports.rs), waits for its ready line, opens the main window on
 //! http://127.0.0.1:<port>/app (local mode has no auth, so no token rides
-//! along), and owns the kill switch (tray item and Cmd+Shift+Escape). The
+//! along), and owns the kill switch (tray item, and Cmd+Shift+Escape on macOS
+//! or Ctrl+Shift+Escape on Windows). The
 //! window is the UI; the owner's website reaches the same engine once its
 //! origin is listed in settings.json. Quitting stops the
 //! engine and everything it started, live previews included. Every startup
@@ -20,11 +21,15 @@ mod applog;
 mod control;
 mod instance;
 mod ports;
+#[cfg(unix)]
 mod procs;
 mod settings;
 mod sidecar;
+#[cfg(unix)]
 mod signals;
 mod window;
+#[cfg(any(windows, test))]
+mod winproc;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,7 +38,9 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, OnceLock};
 use std::thread;
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem};
+#[cfg(target_os = "macos")]
+use tauri::menu::{PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent, Wry};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
@@ -56,6 +63,22 @@ const HANDS_BIN: &str = "hands/mengai-hands";
 /// Holds `sqlite/*.sql` (bundle.resources maps the repo migrations/sqlite there).
 const MIGRATIONS_DIR: &str = "migrations";
 
+/// Words that differ between macOS and Windows in dialogs and the log.
+#[cfg(target_os = "macos")]
+mod words {
+    pub const DEVICE: &str = "this Mac";
+    pub const TRAY: &str = "menu bar item";
+    pub const FILES: &str = "Finder";
+    pub const KILL_KEYS: &str = "Cmd+Shift+Escape";
+}
+#[cfg(not(target_os = "macos"))]
+mod words {
+    pub const DEVICE: &str = "this computer";
+    pub const TRAY: &str = "tray icon";
+    pub const FILES: &str = "File Explorer";
+    pub const KILL_KEYS: &str = "Ctrl+Shift+Escape";
+}
+
 /// Menu ids, shared by the tray menu and the app menu (one global handler).
 const MENU_SHOW: &str = "show";
 const MENU_SETTINGS: &str = "settings";
@@ -73,8 +96,14 @@ struct Shell {
     instance: OnceLock<InstanceLock>,
 }
 
+/// Cmd+Shift+Escape on macOS, Ctrl+Shift+Escape on Windows.
+#[cfg(target_os = "macos")]
 fn kill_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Escape)
+}
+#[cfg(not(target_os = "macos"))]
+fn kill_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Escape)
 }
 
 fn main() {
@@ -147,10 +176,18 @@ fn setup(app: &AppHandle) {
 
 /// Menus, shortcut, paths, settings, then the sidecar and its supervisor. Err is the dialog text.
 fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
-    build_tray(app).map_err(|e| format!("MengAI could not create its menu bar item ({e})."))?;
+    build_tray(app).map_err(|e| format!("MengAI could not create its {} ({e}).", words::TRAY))?;
+    // Windows has no app menu bar; the tray icon carries every item.
+    #[cfg(target_os = "macos")]
     build_app_menu(app).map_err(|e| format!("MengAI could not create its app menu ({e})."))?;
     if let Err(e) = app.global_shortcut().register(kill_shortcut()) {
-        log.error("shell", &format!("global kill shortcut Cmd+Shift+Escape is unavailable ({e}); the tray item and the header button still work"));
+        log.error(
+            "shell",
+            &format!(
+                "global kill shortcut {} is unavailable ({e}); the tray item and the header button still work",
+                words::KILL_KEYS
+            ),
+        );
     }
 
     let data_dir = app.path().app_data_dir().map_err(|e| format!("MengAI could not locate its data folder ({e})."))?;
@@ -159,8 +196,10 @@ fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
     // Before any port probe or spawn: a second shell never starts a second engine on this data dir.
     let lock = instance::lock(&data_dir).map_err(|e| match e {
         LockError::Held => format!(
-            "MengAI is already running on this Mac (another copy uses {}). Use its window or its menu bar item, or quit it, then open MengAI again.",
-            data_dir.display()
+            "MengAI is already running on {} (another copy uses {}). Use its window or its {}, or quit it, then open MengAI again.",
+            words::DEVICE,
+            data_dir.display(),
+            words::TRAY
         ),
         LockError::Io(e) => format!(
             "MengAI could not lock its data folder at {} ({e}).",
@@ -465,6 +504,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /// The macOS default app menu with "Show settings file" under About.
+#[cfg(target_os = "macos")]
 fn build_app_menu(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::default(app)?;
     let settings = settings_item(app)?;
@@ -494,7 +534,7 @@ fn on_menu(app: &AppHandle, id: &str) {
     }
 }
 
-/// Reveals settings.json in Finder, writing the default template first when it is missing.
+/// Reveals settings.json in Finder (File Explorer on Windows), writing the default template first when it is missing.
 fn show_settings_file(app: &AppHandle) {
     let Some(shell) = app.try_state::<Shell>() else { return };
     let outcome = match shell.settings_path.get() {
@@ -504,7 +544,7 @@ fn show_settings_file(app: &AppHandle) {
             .and_then(|()| {
                 app.opener()
                     .reveal_item_in_dir(path)
-                    .map_err(|e| format!("MengAI could not show {} in Finder ({e}).", path.display()))
+                    .map_err(|e| format!("MengAI could not show {} in {} ({e}).", path.display(), words::FILES))
             }),
     };
     if let Err(message) = outcome {
@@ -519,7 +559,8 @@ fn notice(app: &AppHandle, message: &str) {
 }
 
 /// SIGTERM (the engine stops its live previews and other children), 3 s grace, then the
-/// process group, then any descendant that outlived the engine. Runs on RunEvent::Exit.
+/// process group, then any descendant that outlived the engine; on Windows stdin close, 3 s
+/// grace, then the engine's job object. Runs on RunEvent::Exit.
 fn shutdown(app: &AppHandle) {
     let Some(shell) = app.try_state::<Shell>() else { return };
     shell.quitting.store(true, Ordering::SeqCst);

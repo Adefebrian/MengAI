@@ -1,6 +1,7 @@
 // Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-//! Append-only app log at ~/Library/Logs/id.mengai.app/mengai.log.
+//! Append-only app log at ~/Library/Logs/id.mengai.app/mengai.log (macOS) or
+//! %LOCALAPPDATA%\id.mengai.app\logs\mengai.log (Windows).
 //!
 //! Sidecar stdout and stderr land here line by line. Every line is scrubbed:
 //! control characters removed, length capped, the per-launch control token

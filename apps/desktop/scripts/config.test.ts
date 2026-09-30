@@ -14,16 +14,24 @@ import {
   MIGRATIONS_RESOURCE,
   SIDECAR_NAME,
   SIDECAR_PLACEHOLDER_MARKER,
+  WINDOWS_BUN_TARGET,
   assertMigrations,
+  assertRealSidecar,
   desktopDir,
+  desktopPlatform,
   isMachO,
+  isPE,
+  nsisName,
   parseSidecarScript,
   readSidecarScript,
   repoRoot,
+  sidecarBuild,
   sidecarPath,
   sqliteMigrationsDir,
   tauriDir,
+  windowsSidecarBuild,
 } from "./lib";
+import { ENV_ALLOWLIST, ENV_ALLOWLIST_WINDOWS, sidecarEnv, stopFor } from "./smoke";
 
 const read = (rel: string) => Bun.file(join(tauriDir, rel)).text();
 const json = async <T = any>(rel: string): Promise<T> => JSON.parse(await read(rel)) as T;
@@ -165,7 +173,8 @@ describe("sidecar naming", () => {
     expect(main).toContain(`const HANDS_BIN: &str = "hands/${HANDS_BIN_NAME}";`);
     expect(main).toContain('const WEB_DIR: &str = "web";');
     const build = await read("build.rs");
-    expect(build).toContain(`format!("${SIDECAR_NAME}-{target}")`);
+    expect(build).toContain(`format!("${SIDECAR_NAME}-{target}{exe}")`);
+    expect(build).toContain('let exe = if target.contains("windows") { ".exe" } else { "" };');
     expect(build).toContain(`const PLACEHOLDER_MARKER: &str = "${SIDECAR_PLACEHOLDER_MARKER}";`);
   });
 
@@ -181,6 +190,141 @@ describe("sidecar naming", () => {
     expect(isMachO(new Uint8Array([0xcf, 0xfa, 0xed, 0xfe]))).toBe(true);
     expect(isMachO(new Uint8Array([0xca, 0xfe, 0xba, 0xbe]))).toBe(true);
     expect(isMachO(new TextEncoder().encode("#!/bin/sh"))).toBe(false);
+  });
+});
+
+describe("windows", () => {
+  const win = () => json("tauri.windows.conf.json");
+
+  test("tauri.windows.conf.json makes a per-user NSIS installer and keeps the app identity", async () => {
+    const conf = await win();
+    expect(conf.bundle.targets).toEqual(["nsis"]);
+    const nsis = conf.bundle.windows.nsis;
+    expect(nsis.installMode).toBe("currentUser");
+    expect(nsis.installerIcon).toBe("icons/icon.ico");
+    for (const icon of [...(conf.bundle.icon as string[]), nsis.installerIcon, nsis.uninstallerIcon]) {
+      expect(existsSync(join(tauriDir, icon))).toBe(true);
+    }
+    expect(conf.bundle.icon).toContain("icons/icon.ico");
+    // Identity, version, sidecar, resources and security come from tauri.conf.json unchanged.
+    for (const key of ["version", "identifier", "productName", "mainBinaryName", "app"]) expect(conf[key]).toBeUndefined();
+    for (const key of ["externalBin", "resources", "macOS"]) expect(conf.bundle[key]).toBeUndefined();
+    expect(JSON.stringify(conf)).not.toContain("Mac");
+    // NSIS takes the pre-release version as is (VIProductVersion 0.1.0.0); only MSI needs a numeric one.
+    expect((await json("tauri.conf.json")).version).toBe("0.1.0-beta");
+  });
+
+  test("the main capability applies on Windows too", async () => {
+    expect((await json("capabilities/main.json")).platforms).toEqual(["macOS", "windows"]);
+  });
+
+  test("the Windows sidecar is the api build:sidecar command retargeted, named for externalBin", async () => {
+    const pkg = await Bun.file(join(repoRoot, "apps", "api", "package.json")).json();
+    const b = windowsSidecarBuild(pkg.scripts["build:sidecar"], "bun");
+    expect(b.bunTarget).toBe(WINDOWS_BUN_TARGET);
+    expect(b.triple).toBe("x86_64-pc-windows-msvc");
+    expect(b.outfile).toBe(join(tauriDir, "binaries", `${SIDECAR_NAME}-x86_64-pc-windows-msvc.exe`));
+    expect(b.cmd.slice(0, 3)).toEqual(["bun", "build", "--compile"]);
+    expect(b.cmd).toContain("--minify");
+    expect(b.cmd).toContain("src/local.ts");
+    expect(b.cmd).toContain(`--target=${WINDOWS_BUN_TARGET}`);
+    expect(b.cmd[b.cmd.indexOf("--outfile") + 1]).toBe(b.outfile);
+    expect(b.cmd.join(" ")).not.toContain("darwin");
+    expect(() => windowsSidecarBuild("bun src/local.ts")).toThrow();
+    expect(() => windowsSidecarBuild("bun build --compile src/local.ts")).toThrow(/--target or --outfile/);
+    expect((await sidecarBuild("win32")).outfile).toBe(b.outfile);
+    const mac = await sidecarBuild("darwin");
+    expect(mac.triple).toBe("aarch64-apple-darwin");
+    expect(mac.cmd.slice(1)).toEqual(["run", "build:sidecar"]);
+  });
+
+  test("build picks the platform path and names the installer like the NSIS bundler", async () => {
+    expect(desktopPlatform("darwin")).toBe("darwin");
+    expect(desktopPlatform("win32")).toBe("win32");
+    expect(() => desktopPlatform("linux")).toThrow(/macOS or Windows/);
+    expect(nsisName("MengAI", "0.1.0-beta", "x86_64-pc-windows-msvc")).toBe("MengAI_0.1.0-beta_x64-setup.exe");
+    expect(() => nsisName("MengAI", "0.1.0-beta", "aarch64-apple-darwin")).toThrow();
+    const build = await Bun.file(join(desktopDir, "scripts", "build.ts")).text();
+    expect(build).toContain('if (desktopPlatform() === "win32") await buildWindows(passthrough);');
+    const windows = await Bun.file(join(desktopDir, "scripts", "windows.ts")).text();
+    expect(windows).toContain("assertMigrations()");
+    expect(windows).toContain('await tauri(["build", "--target", sidecar.triple, ...passthrough]);');
+    expect(windows).toContain("smokeWindowsDir(release)");
+    expect(windows).toContain("copyFile(installer, final)");
+    // No macOS tooling on the Windows path.
+    for (const tool of ["codesign", "hdiutil", "stageHands"]) expect(windows).not.toContain(tool);
+  });
+
+  test("a PE sidecar passes, the placeholder and a Mach-O named .exe do not", async () => {
+    expect(isPE(new TextEncoder().encode("MZ\x90\x00"))).toBe(true);
+    expect(isPE(new Uint8Array([0xcf, 0xfa, 0xed, 0xfe]))).toBe(false);
+    const dir = mkdtempSync(join(tmpdir(), "mengai-pe-"));
+    try {
+      const exe = join(dir, "mengai-api-x86_64-pc-windows-msvc.exe");
+      writeFileSync(exe, new Uint8Array([0x4d, 0x5a, 0x90, 0x00]));
+      await assertRealSidecar(exe);
+      writeFileSync(exe, new Uint8Array([0xcf, 0xfa, 0xed, 0xfe]));
+      await expect(assertRealSidecar(exe)).rejects.toThrow(/not a Windows executable/);
+      writeFileSync(exe, `#!/bin/sh\n# ${SIDECAR_PLACEHOLDER_MARKER}\n`);
+      await expect(assertRealSidecar(exe)).rejects.toThrow(/placeholder/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the smoke env mirrors the shell's allowlists, without case on Windows", async () => {
+    const sidecar = await read("src/sidecar.rs");
+    const list = (name: string) =>
+      [...(new RegExp(`const ${name}: &\\[&str\\] =\\s*&\\[([^\\]]*)\\]`).exec(sidecar)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    expect(list("ENV_ALLOWLIST")).toEqual(ENV_ALLOWLIST);
+    expect(list("ENV_ALLOWLIST_WINDOWS")).toEqual(ENV_ALLOWLIST_WINDOWS);
+    expect(ENV_ALLOWLIST_WINDOWS).toContain("SystemRoot");
+    const parent = { SystemRoot: "C:\\Windows", PATH: "C:\\bin", HOME: "/x", OPENAI_API_KEY: "nope", LC_ALL: "C" };
+    expect(Object.keys(sidecarEnv({ MENGAI_MODE: "local" }, parent, "win32")).sort()).toEqual(["LC_ALL", "MENGAI_MODE", "PATH", "SystemRoot"]);
+    expect(Object.keys(sidecarEnv({}, parent, "darwin")).sort()).toEqual(["HOME", "LC_ALL", "PATH"]);
+    expect(stopFor("sigterm", "win32")).toBe("stdin");
+    expect(stopFor("sigterm", "darwin")).toBe("sigterm");
+  });
+
+  test("the Windows shell stops the tree with a job object and keeps the macOS path", async () => {
+    const main = await read("src/main.rs");
+    expect(main).toContain("#[cfg(unix)]\nmod procs;");
+    expect(main).toContain("#[cfg(unix)]\nmod signals;");
+    expect(main).toContain("#[cfg(any(windows, test))]\nmod winproc;");
+    expect(main).toContain("Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Escape)");
+    expect(main).toContain("Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Escape)");
+    const sidecar = await read("src/sidecar.rs");
+    expect(sidecar).toContain("cmd.creation_flags(winproc::SIDECAR_FLAGS);");
+    expect(sidecar).toContain("cmd.process_group(0);");
+    const winproc = await read("src/winproc.rs");
+    expect(winproc).toContain("pub const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;");
+    expect(winproc).toContain("pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;");
+    expect(winproc).toContain("pub const KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;");
+    expect(winproc).toContain('join("System32").join("taskkill.exe")');
+    const instance = await read("src/instance.rs");
+    expect(instance).toContain("file.try_lock()");
+    expect(instance).not.toContain("libc::flock");
+    const cargo = await read("Cargo.toml");
+    expect(cargo).toMatch(/\[target\.'cfg\(unix\)'\.dependencies\]\n(#[^\n]*\n)*libc = "0\.2"/);
+    expect(cargo).toContain('rust-version = "1.89"');
+  });
+
+  test("the release workflow builds the installer on Windows and uploads it to the given tag", async () => {
+    const wf = await Bun.file(join(repoRoot, ".github", "workflows", "release-desktop.yml")).text();
+    expect(wf).toContain("workflow_dispatch:");
+    expect(wf).toContain("default: v0.1.0-beta");
+    expect(wf).toContain("runs-on: windows-latest");
+    expect(wf).toContain("contents: write");
+    expect(wf).toContain('bun-version: "1.3.14"');
+    expect(wf).toContain("bun install --frozen-lockfile");
+    expect(wf).toContain("bun run --cwd apps/desktop build");
+    expect(wf).toContain('gh release upload "$TAG"');
+    expect(wf).toContain("--clobber");
+    expect(wf).toContain("GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}");
+    // The tag reaches the shell through env only, never spliced into a script.
+    for (const line of wf.split("\n").filter((l) => l.includes("${{ inputs.tag }}"))) expect(line.trim()).toStartWith("TAG:");
+    for (const uses of wf.matchAll(/uses:\s*(\S+)/g)) expect(uses[1]).toMatch(/@(v\d+|stable)$/);
+    expect(new RegExp(String.fromCodePoint(0x2014)).test(wf)).toBe(false);
   });
 });
 

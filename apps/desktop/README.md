@@ -1,6 +1,7 @@
 # @mengai/desktop
 
-The MengAI macOS app: a Tauri 2 shell around the compiled Bun engine
+The MengAI desktop app for macOS, plus a Windows beta
+([Windows](#windows-beta)): a Tauri 2 shell around the compiled Bun engine
 (sidecar). The shell owns the window, the tray, the global kill shortcut and
 the process lifecycle. All product logic lives in the engine (apps/api) and
 the web app (apps/web); the shell never renders its own UI.
@@ -156,7 +157,8 @@ close, stops its children and exits.
 
 ## Kill switch
 
-Tray item "Kill switch" and the global shortcut Cmd+Shift+Escape send
+Tray item "Kill switch" and the global shortcut Cmd+Shift+Escape
+(Ctrl+Shift+Escape on Windows) send
 `POST /api/killswitch` with `Host: 127.0.0.1:<port>`,
 `Content-Type: application/json`, header `x-mengai-control: <controlToken>`
 when the engine sent one, and body `{"by":"tray"}` or `{"by":"shortcut"}`,
@@ -302,6 +304,94 @@ Application Support, Caches and WebKit folders when this run created them and
 keeps `~/Library/Logs/id.mengai.app`. Nothing in the smoke sends Apple Events
 or leaves loopback, so it never triggers a macOS permission prompt. It refuses
 to run while that app is already open.
+
+## Windows (beta)
+
+Same shell, same engine, compiled for Windows: the Rust shell builds for
+`x86_64-pc-windows-msvc` and the engine is the same Bun code compiled with
+`--target=bun-windows-x64`.
+
+### Install
+
+Run `MengAI_<version>_x64-setup.exe`. It installs for the current user only
+(`%LOCALAPPDATA%\MengAI`, no administrator prompt) and fetches the WebView2
+runtime if the PC lacks it. The beta is not code signed, so SmartScreen
+shows "Windows protected your PC" on first run: choose More info, then Run
+anyway.
+
+| What | Where |
+|---|---|
+| data, `settings.json`, `shell.lock` | `%APPDATA%\id.mengai.app` |
+| app log | `%LOCALAPPDATA%\id.mengai.app\logs\mengai.log` |
+| engine | `mengai-api.exe` next to `MengAI.exe`, with `web` and `migrations` beside them |
+
+### What differs from macOS
+
+- Features: Windows has no equivalent yet of the macOS Seatbelt profile that
+  keeps crew processes away from the engine port, so crew shell commands, live
+  trading (paper works), stdio MCP servers (remote MCP and HTTP connectors
+  work) and live preview of dev scripts (static sites work) are off. The
+  engine reports this in `/api/health` (`platform`, `features`), refuses those
+  calls, and the UI labels them "Coming soon". The shell decides none of it.
+- Menus: no app menu bar. The tray icon carries Show MengAI, Show settings file
+  (opens File Explorer), Kill switch and Quit MengAI. Closing the window hides
+  it to the tray.
+- Kill switch shortcut: Ctrl+Shift+Escape. Windows itself uses that chord for
+  Task Manager; if registering it fails, the log says so and the tray item and
+  the in-app header button still work.
+- Spawn: the engine runs in its own console process group with no console
+  window (`CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`) and a Windows env
+  allowlist (`SystemRoot`, `Path`, `TEMP`, `USERPROFILE`, `APPDATA`,
+  `LOCALAPPDATA` and the other system folders, compared without case) plus the
+  same owned `MENGAI_*` contract variables.
+- Quit: right after the spawn the shell puts the engine in a job object that
+  ends every process in it when its handle closes. Quit closes the engine's
+  stdin (Windows has no SIGTERM for it; the engine treats stdin EOF the same
+  way and stops its previews), waits up to 3 s, then ends the job: the engine
+  and everything it started, detached previews and their orphans included.
+  If the shell crashes, Windows closes the handle and ends the job anyway. If
+  the job cannot be created, the log says so and the stop falls back to
+  `taskkill /PID <pid> /T /F`, which misses processes whose parent already
+  exited.
+- Data dir lock: the same `shell.lock`, through std `File::try_lock`
+  (LockFileEx on Windows, flock on macOS). File modes such as 0600 are Unix
+  only; on Windows the per-user profile folders' permissions apply.
+
+### Build the installer
+
+On Windows 10 or 11 with Bun 1.3.14 and Rust stable for MSVC (the Visual
+Studio Build Tools with the C++ workload). Tauri downloads NSIS on first use.
+
+```sh
+bun install --frozen-lockfile
+bun run --cwd apps/desktop build
+```
+
+On Windows `scripts/build.ts` hands over to `scripts/windows.ts`, which builds
+`apps/web`, compiles the sidecar from the `apps/api` `build:sidecar` command
+retargeted to `bun-windows-x64` into
+`src-tauri/binaries/mengai-api-x86_64-pc-windows-msvc.exe`, boots it once
+(ready line, `/api/health` on a free port, embedded migrations, stopped by
+closing stdin), runs `tauri build --target x86_64-pc-windows-msvc`
+(`tauri.windows.conf.json` makes NSIS the only bundle), smokes the bundled
+`mengai-api.exe` from `src-tauri/target/x86_64-pc-windows-msvc/release`
+(the same layout the installer writes) three times, and copies the installer
+to `apps/desktop/dist/MengAI_<version>_x64-setup.exe` with its sha256. The
+version stays `0.1.0-beta`: NSIS accepts it (its file version reads
+0.1.0.0); only an MSI would need a numeric one.
+
+`bun run smoke` on Windows runs the same three sidecar checks against that
+build folder, or against an installed copy with
+`bun run smoke -- --dir "%LOCALAPPDATA%\MengAI"`.
+
+### Release from CI
+
+`.github/workflows/release-desktop.yml` runs by hand (Actions tab, Run
+workflow) with an input `tag` (default `v0.1.0-beta`). A `windows-latest`
+job sets up Bun 1.3.14 and stable Rust, runs the build above and attaches the
+installer to that existing release with `gh release upload <tag> <file>
+--clobber`, so a rerun replaces it. Create the release first; the job stops
+with a clear message when it does not exist.
 
 ## Signing and notarization
 

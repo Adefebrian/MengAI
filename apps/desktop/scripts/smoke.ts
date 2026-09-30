@@ -1,29 +1,45 @@
 // Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-// Smoke test for the built macOS app. Bun only, no user interaction, and no
+// Smoke test for the built desktop app. Bun only, no user interaction, and no
 // macOS permission prompt (no AppleScript, no Apple Events, loopback only).
 //
-//   bun run smoke                     the dmg in dist/, mounted read-only and detached after
-//   bun run smoke -- --app <path>     a MengAI.app instead of the dmg
-//   bun run smoke -- --open           also launch the app with `open -g`, confirm its sidecar
+//   bun run smoke                     macOS: the dmg in dist/, mounted read-only and detached after
+//   bun run smoke -- --app <path>     macOS: a MengAI.app instead of the dmg
+//   bun run smoke -- --open           macOS: also launch the app with `open -g`, confirm its sidecar
 //                                     answers, then quit it (SIGTERM to the shell; the sidecar
 //                                     exits on stdin close, the documented contract)
+//   bun run smoke -- --dir <path>     Windows: an install folder (MengAI.exe, mengai-api.exe,
+//                                     web, migrations); default the tauri build output folder,
+//                                     which has the same layout as the NSIS install
 //
-// Sidecar checks run the bundled Contents/MacOS/mengai-api the way the shell does
-// (cleared env, stdin held open), each on a fresh temp data dir:
+// Sidecar checks run the bundled mengai-api (Contents/MacOS on macOS, next to MengAI.exe
+// on Windows) the way the shell does (cleared env, stdin held open), each on a fresh temp
+// data dir, on a free port the engine picks itself:
 //   1 embedded: no MENGAI_MIGRATIONS_DIR, so the SQL compiled into the binary is used
 //   2 shell:    MENGAI_MIGRATIONS_DIR = Contents/Resources/migrations, stopped by closing stdin
 //   3 restart:  the data dir of 1 again, nothing left to apply
 // Each one: ready line within 30 s (valid port; controlToken valid when present, local
 // mode has no auth), GET /api/health 200, GET / and GET /app (what the window loads)
 // serve the bundled web app, schema_migrations holds every bundled version, clean exit
-// within 5 s.
+// within 5 s. Windows has no SIGTERM for a process (Bun ends it with TerminateProcess), so
+// every Windows check stops the engine by closing stdin, as the Windows shell does.
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { mkdtemp, readdir, rm, rmdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { capture, distDir, dmgName, readSidecarScript, readTauriConf, SIDECAR_NAME } from "./lib";
+import {
+  BUN_TO_RUST_TRIPLE,
+  capture,
+  cargoTargetDir,
+  desktopPlatform,
+  distDir,
+  dmgName,
+  readSidecarScript,
+  readTauriConf,
+  SIDECAR_NAME,
+  WINDOWS_BUN_TARGET,
+} from "./lib";
 
 const READY_MS = 30_000;
 const EXIT_MS = 5_000;
@@ -31,7 +47,35 @@ const HTTP_MS = 3_000;
 /** Same rule as the shell's token_ok (src-tauri/src/sidecar.rs). */
 const TOKEN = /^[A-Za-z0-9._~-]{16,512}$/;
 /** Parent vars the shell passes through (sidecar.rs ENV_ALLOWLIST). */
-const ENV_ALLOWLIST = ["HOME", "USER", "LOGNAME", "TMPDIR", "PATH", "LANG", "SHELL", "TZ"];
+export const ENV_ALLOWLIST = ["HOME", "USER", "LOGNAME", "TMPDIR", "PATH", "LANG", "SHELL", "TZ"];
+/** The same on Windows, compared without case (sidecar.rs ENV_ALLOWLIST_WINDOWS). */
+export const ENV_ALLOWLIST_WINDOWS = [
+  "SystemRoot",
+  "SystemDrive",
+  "windir",
+  "ComSpec",
+  "PATHEXT",
+  "Path",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "USERNAME",
+  "USERDOMAIN",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  "ProgramW6432",
+  "CommonProgramFiles",
+  "NUMBER_OF_PROCESSORS",
+  "PROCESSOR_ARCHITECTURE",
+  "OS",
+  "LANG",
+  "TZ",
+];
 
 export interface SidecarCheck {
   label: string;
@@ -83,12 +127,25 @@ function lines(stream: ReadableStream<Uint8Array>, onLine: (line: string) => voi
   })();
 }
 
-function sidecarEnv(extra: Record<string, string>): Record<string, string> {
+/** The parent vars the shell would pass on `platform`, plus `extra`. */
+export function sidecarEnv(
+  extra: Record<string, string>,
+  parent: Record<string, string | undefined> = process.env,
+  platform: string = process.platform,
+): Record<string, string> {
+  const windows = platform === "win32";
+  const allow = windows ? ENV_ALLOWLIST_WINDOWS.map((k) => k.toUpperCase()) : ENV_ALLOWLIST;
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && (ENV_ALLOWLIST.includes(k) || k.startsWith("LC_"))) env[k] = v;
+  for (const [k, v] of Object.entries(parent)) {
+    const name = windows ? k.toUpperCase() : k;
+    if (v !== undefined && (allow.includes(name) || k.startsWith("LC_"))) env[k] = v;
   }
   return { ...env, ...extra };
+}
+
+/** How each check stops the engine on this platform (see the header). */
+export function stopFor(wanted: SidecarCheck["stop"], platform: string = process.platform): SidecarCheck["stop"] {
+  return platform === "win32" ? "stdin" : wanted;
 }
 
 /** Boots the sidecar once and checks the contract end to end. Throws with the sidecar's stderr tail on failure. */
@@ -145,7 +202,7 @@ export async function checkSidecar(c: SidecarCheck): Promise<SidecarResult> {
       if (page.status !== 200 || !/<html/i.test(body)) fail(`GET ${path} did not serve the bundled web app (status ${page.status})`);
     }
 
-    if (c.stop === "sigterm") proc.kill("SIGTERM");
+    if (stopFor(c.stop) === "sigterm") proc.kill("SIGTERM");
     else proc.stdin.end();
     const exitCode = await withTimeout(proc.exited, EXIT_MS, "clean exit").catch((e: Error) => fail(e.message));
     if (exitCode !== 0) fail(`sidecar exited with ${exitCode} after ${c.stop}`);
@@ -169,22 +226,34 @@ export async function checkSidecar(c: SidecarCheck): Promise<SidecarResult> {
   }
 }
 
-/** Contents/Resources/migrations/sqlite/*.sql inside the app: what both the embedded set and the folder must cover. */
-async function bundledVersions(app: string): Promise<string[]> {
-  const dir = join(app, "Contents", "Resources", "migrations", "sqlite");
+/** <resources>/migrations/sqlite/*.sql: what both the embedded set and the folder must cover. */
+async function bundledVersions(resources: string): Promise<string[]> {
+  const dir = join(resources, "migrations", "sqlite");
   const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
   if (files.length === 0) throw new Error(`no bundled migrations in ${dir}`);
   return files;
 }
 
 /** The three sidecar checks against a built MengAI.app. Temp data dirs are removed afterwards. */
-export async function smokeApp(app: string): Promise<SidecarResult[]> {
-  const bin = join(app, "Contents", "MacOS", SIDECAR_NAME);
-  const resources = join(app, "Contents", "Resources");
+export function smokeApp(app: string): Promise<SidecarResult[]> {
+  return smokeLayout(join(app, "Contents", "MacOS", SIDECAR_NAME), join(app, "Contents", "Resources"));
+}
+
+/**
+ * The three sidecar checks against a Windows install layout: mengai-api.exe next to
+ * MengAI.exe, with web and migrations beside them (the NSIS install folder, or the tauri
+ * build output folder, which tauri-build fills the same way).
+ */
+export function smokeWindowsDir(dir: string): Promise<SidecarResult[]> {
+  return smokeLayout(join(dir, `${SIDECAR_NAME}.exe`), dir);
+}
+
+/** The three sidecar checks for a sidecar binary and the folder holding web/ and migrations/. */
+export async function smokeLayout(bin: string, resources: string): Promise<SidecarResult[]> {
   const webDir = join(resources, "web");
   if (!existsSync(bin)) throw new Error(`sidecar missing at ${bin}`);
   if (!existsSync(join(webDir, "index.html"))) throw new Error(`bundled web app missing at ${webDir}`);
-  const expect = await bundledVersions(app);
+  const expect = await bundledVersions(resources);
   const results: SidecarResult[] = [];
   const dirs: string[] = [];
   try {
@@ -292,8 +361,19 @@ export async function smokeOpen(app: string, productName: string, identifier: st
   }
 }
 
+/** Windows: the checks against an install folder (`--dir`) or the tauri build output folder. */
+async function mainWindows(args: string[]): Promise<void> {
+  const dirArg = args.includes("--dir") ? args[args.indexOf("--dir") + 1] : undefined;
+  const dir = dirArg ?? join(cargoTargetDir(), BUN_TO_RUST_TRIPLE[WINDOWS_BUN_TARGET]!, "release");
+  for (const r of await smokeWindowsDir(dir)) {
+    console.log(`ok sidecar ${r.label}: ready in ${r.readyMs} ms on 127.0.0.1:${r.port}, health ${r.health}, migrations ${r.versions.join(" ")}, exit ${r.exitCode}`);
+  }
+  console.log("smoke passed");
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  if (desktopPlatform() === "win32") return mainWindows(args);
   const conf = await readTauriConf();
   const { triple } = await readSidecarScript();
   const appArg = args.includes("--app") ? args[args.indexOf("--app") + 1] : undefined;

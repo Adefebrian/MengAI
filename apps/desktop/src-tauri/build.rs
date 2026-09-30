@@ -23,7 +23,9 @@ fn ensure_sidecar() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let target = env::var("TARGET").expect("TARGET");
     let release = env::var("PROFILE").map(|p| p == "release").unwrap_or(false);
-    let path = manifest_dir.join("binaries").join(format!("mengai-api-{target}"));
+    // Tauri resolves a Windows externalBin with the .exe suffix after the target triple.
+    let exe = if target.contains("windows") { ".exe" } else { "" };
+    let path = manifest_dir.join("binaries").join(format!("mengai-api-{target}{exe}"));
     println!("cargo:rerun-if-changed={}", path.display());
 
     let is_placeholder = fs::read(&path)
