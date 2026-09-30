@@ -5,13 +5,15 @@
 //! `%APPDATA%\id.mengai.app\settings.json` on Windows).
 //!
 //! ```json
-//! { "siteOrigins": ["https://mengai.example"], "port": 4280 }
+//! { "siteOrigins": ["https://mengai.example"], "port": 4280, "island": true }
 //! ```
 //!
 //! `siteOrigins` becomes MENGAI_SITE_ORIGINS (a comma list) for the sidecar:
 //! the exact https origins of websites that serve the MengAI UI and may call
 //! this engine. Empty keeps only the engine's own origins. `port` becomes
-//! MENGAI_PORT (default 4280, the address the website UI talks to).
+//! MENGAI_PORT (default 4280, the address the website UI talks to). `island`
+//! shows the island on the notch (macOS, default true); the tray item "Show
+//! island" changes it live and saves it here (`set_island`).
 //!
 //! A missing file means defaults and a template is written. A file that
 //! exists but does not parse or validate stops startup with a dialog (JEV
@@ -41,18 +43,20 @@ const MIN_PORT: u64 = 1024;
 const MAX_FILE: u64 = 16 * 1024;
 const MAX_URL: usize = 2048;
 pub const MAX_ORIGINS: usize = 16;
-pub const TEMPLATE: &str = "{\n  \"siteOrigins\": [],\n  \"port\": 4280\n}\n";
+pub const TEMPLATE: &str = "{\n  \"siteOrigins\": [],\n  \"port\": 4280,\n  \"island\": true\n}\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     /// Normalized exact origins (`https://host[:port]`, no trailing slash), deduplicated, in file order.
     pub site_origins: Vec<String>,
     pub port: u16,
+    /// The island on the notch (macOS; ignored on Windows).
+    pub island: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { site_origins: Vec::new(), port: DEFAULT_PORT }
+        Self { site_origins: Vec::new(), port: DEFAULT_PORT, island: true }
     }
 }
 
@@ -79,6 +83,8 @@ struct Raw {
     site_url: Option<String>,
     #[serde(default)]
     port: Option<u64>,
+    #[serde(default)]
+    island: Option<bool>,
 }
 
 /// Parses and validates the file text. Err is the reason shown to the owner.
@@ -129,7 +135,8 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
         Some(p) if (MIN_PORT..=u16::MAX as u64).contains(&p) => (p as u16, migration),
         Some(p) => return Err(format!("\"port\" is {p}, it must be between {MIN_PORT} and 65535")),
     };
-    Ok(Parsed { settings: Settings { site_origins, port }, migration })
+    let island = raw.island.unwrap_or(true);
+    Ok(Parsed { settings: Settings { site_origins, port, island }, migration })
 }
 
 /// One `siteOrigins` entry: an exact https origin of a public host. No path, query,
@@ -201,7 +208,7 @@ pub fn render(settings: &Settings) -> String {
     let quoted: Vec<String> =
         settings.site_origins.iter().map(|o| serde_json::to_string(o).unwrap_or_else(|_| "\"\"".into())).collect();
     let list = if quoted.is_empty() { "[]".to_string() } else { format!("[\n    {}\n  ]", quoted.join(",\n    ")) };
-    format!("{{\n  \"siteOrigins\": {list},\n  \"port\": {}\n}}\n", settings.port)
+    format!("{{\n  \"siteOrigins\": {list},\n  \"port\": {},\n  \"island\": {}\n}}\n", settings.port, settings.island)
 }
 
 /// Ok(None) when the file does not exist. Err covers unreadable, oversized and invalid files.
@@ -265,6 +272,16 @@ pub fn rewrite(path: &Path, settings: &Settings) -> io::Result<()> {
     }
 }
 
+/// Saves the tray's "Show island" choice. Reads the file as it is now (never this
+/// launch's fallback port), changes only `island` and rewrites it; a missing file
+/// becomes the defaults with that value. An invalid file is left untouched (Err is
+/// the reason), so the owner's broken edit is never overwritten.
+pub fn set_island(path: &Path, on: bool) -> Result<(), String> {
+    let mut settings = read(path)?.map(|p| p.settings).unwrap_or_default();
+    settings.island = on;
+    rewrite(path, &settings).map_err(|e| format!("it could not be written ({e})"))
+}
+
 /// What `load` found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loaded {
@@ -293,7 +310,7 @@ mod tests {
     #[test]
     fn template_parses_to_the_defaults() {
         assert_eq!(parse(TEMPLATE).unwrap(), Parsed { settings: Settings::default(), migration: None });
-        assert_eq!(settings("{}"), Settings { site_origins: vec![], port: 4280 });
+        assert_eq!(settings("{}"), Settings { site_origins: vec![], port: 4280, island: true });
         assert_eq!(settings("{\"siteOrigins\":null}"), Settings::default());
         assert_eq!(render(&Settings::default()), TEMPLATE);
     }
@@ -317,7 +334,8 @@ mod tests {
             s,
             Settings {
                 site_origins: vec!["https://mengai.example".into(), "https://app.example:8443".into()],
-                port: 5000
+                port: 5000,
+                island: true
             }
         );
         assert_eq!(site_origin("https://xn--mnchen-3ya.example").unwrap(), "https://xn--mnchen-3ya.example");
@@ -358,7 +376,10 @@ mod tests {
     #[test]
     fn old_site_url_is_migrated() {
         let p = parse("{\"siteUrl\":\"https://MengAI.example/\",\"port\":4281}").unwrap();
-        assert_eq!(p.settings, Settings { site_origins: vec!["https://mengai.example".into()], port: 4281 });
+        assert_eq!(
+            p.settings,
+            Settings { site_origins: vec!["https://mengai.example".into()], port: 4281, island: true }
+        );
         assert_eq!(p.migration, Some(Migration { dropped: None }));
         let p = parse("{\"siteUrl\":null,\"port\":4280}").unwrap();
         assert_eq!(p.settings, Settings::default());
@@ -385,6 +406,53 @@ mod tests {
         assert!(parse("{\"port\": 70000}").is_err());
         assert!(parse("{\"port\": \"4280\"}").is_err());
         assert!(parse("[1]").is_err());
+        assert!(parse("{\"island\": \"yes\"}").is_err());
+        assert!(parse("{\"island\": 1}").is_err());
+    }
+
+    #[test]
+    fn the_island_setting_defaults_on_and_round_trips() {
+        assert!(Settings::default().island);
+        assert!(
+            settings("{\"siteOrigins\":[],\"port\":4280}").island,
+            "an older file without the key keeps the island on"
+        );
+        assert!(settings("{\"island\":null}").island);
+        let off = settings("{\"island\":false}");
+        assert!(!off.island);
+        assert_eq!(settings(&render(&off)), off);
+        assert!(render(&off).contains("\"island\": false"));
+    }
+
+    #[test]
+    fn the_tray_saves_only_the_island_key() {
+        let dir = std::env::temp_dir().join(format!("mengai-settings-island-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(FILE_NAME);
+        let _ = fs::remove_file(&path);
+        // Missing file: the defaults with the choice.
+        set_island(&path, false).unwrap();
+        assert_eq!(load(&path).unwrap().settings, Settings { island: false, ..Settings::default() });
+        // The owner's origins and port stay; only island changes.
+        fs::write(&path, "{\"siteOrigins\":[\"https://site.example\"],\"port\":4285,\"island\":false}").unwrap();
+        set_island(&path, true).unwrap();
+        let now = load(&path).unwrap();
+        assert_eq!(
+            now.settings,
+            Settings { site_origins: vec!["https://site.example".into()], port: 4285, island: true }
+        );
+        assert!(now.migration.is_none());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        // A broken file is never overwritten.
+        fs::write(&path, "{\"port\": 80}").unwrap();
+        assert!(set_island(&path, false).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{\"port\": 80}");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
     }
 
     #[test]

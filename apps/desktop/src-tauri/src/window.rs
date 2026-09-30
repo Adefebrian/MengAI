@@ -81,13 +81,14 @@ fn open_external(app: &AppHandle, url: &Url, port: u16) {
     }
 }
 
+/// The main window's only IPC grant: pick_folder, for the exact engine origin. The
+/// island commands are never in it (they go to the island window, src/island.rs).
+pub fn main_capability(port: u16) -> CapabilityBuilder {
+    CapabilityBuilder::new("sidecar-origin").remote(origin(port)).window(MAIN_WINDOW).permission("allow-pick-folder")
+}
+
 pub fn open_main(app: &AppHandle, port: u16) -> tauri::Result<()> {
-    app.add_capability(
-        CapabilityBuilder::new("sidecar-origin")
-            .remote(origin(port))
-            .window(MAIN_WINDOW)
-            .permission("allow-pick-folder"),
-    )?;
+    app.add_capability(main_capability(port))?;
     let home = Url::parse(&app_url(port)).map_err(tauri::Error::InvalidUrl)?;
     let nav_app = app.clone();
     let popup_app = app.clone();

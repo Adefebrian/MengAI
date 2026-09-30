@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-island-open-main"
+description = "Enables the island_open_main command without any pre-configured scope."
+commands.allow = ["island_open_main"]
+
+[[permission]]
+identifier = "deny-island-open-main"
+description = "Denies the island_open_main command without any pre-configured scope."
+commands.deny = ["island_open_main"]

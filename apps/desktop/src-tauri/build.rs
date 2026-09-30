@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Build script: makes sure the externalBin path exists so `cargo check` works
 // on a fresh clone (tauri-build refuses to run without it), then runs
-// tauri-build with an app ACL manifest so `pick_folder` is gated by a
-// capability instead of being open to every origin.
+// tauri-build with an app ACL manifest so `pick_folder` and the three island
+// commands are gated by capabilities instead of being open to every origin
+// (pick_folder for the main window, the island commands for the island window,
+// both granted at runtime for the exact engine origin).
 //
 // The placeholder only ever exists in debug builds. A release build with no
 // real sidecar, or with the placeholder still in place, fails here, loudly.
@@ -13,9 +15,12 @@ const PLACEHOLDER_MARKER: &str = "MENGAI_SIDECAR_PLACEHOLDER";
 
 fn main() {
     ensure_sidecar();
-    tauri_build::try_build(
-        tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&["pick_folder"])),
-    )
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(&[
+        "pick_folder",
+        "island_geometry",
+        "island_set_state",
+        "island_open_main",
+    ])))
     .expect("tauri-build failed");
 }
 

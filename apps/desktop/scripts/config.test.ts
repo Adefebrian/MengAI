@@ -154,7 +154,7 @@ describe("capabilities", () => {
     expect(win).toContain(".remote(origin(port))");
     expect(win).toContain('format!("http://127.0.0.1:{port}")');
     const build = await read("build.rs");
-    expect(build).toContain('commands(&["pick_folder"])');
+    expect(build).toMatch(/commands\(&\[\s*"pick_folder",/);
   });
 });
 
@@ -363,7 +363,7 @@ describe("shared contract", () => {
     expect(settings).toContain("pub const DEFAULT_PORT: u16 = 4280;");
     const template = /pub const TEMPLATE: &str = "((?:[^"\\]|\\.)*)";/.exec(settings)?.[1];
     expect(template).toBeDefined();
-    expect(JSON.parse(JSON.parse(`"${template}"`))).toEqual({ siteOrigins: [], port: 4280 });
+    expect(JSON.parse(JSON.parse(`"${template}"`))).toEqual({ siteOrigins: [], port: 4280, island: true });
     // https only, no loopback host (preview apps run on loopback ports), the old siteUrl migrated.
     expect(settings).toContain('if url.scheme() != "https"');
     expect(settings).toContain("if is_loopback_host(host)");
@@ -449,6 +449,11 @@ describe("dependencies and house rules", () => {
       "serde",
       "serde_json",
       "libc",
+      // macOS only, already in Cargo.lock through tauri, tao and wry (the island, src/island.rs).
+      "objc2",
+      "objc2-foundation",
+      "objc2-app-kit",
+      "block2",
     ]);
     for (const d of deps) expect(audited.has(d)).toBe(true);
     for (const needed of ["tauri", "tauri-plugin-shell", "tauri-plugin-dialog", "tauri-plugin-opener", "tauri-plugin-global-shortcut", "tauri-plugin-single-instance"]) {

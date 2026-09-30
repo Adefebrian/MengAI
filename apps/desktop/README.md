@@ -98,24 +98,28 @@ folder** is handled by the engine, which reveals the project in Finder.
 |---|---|---|
 | Show MengAI | tray | shows the window |
 | Show settings file | tray, MengAI app menu | writes the default settings.json if it is missing, then reveals it in Finder |
+| Show island | tray (macOS) | check item: shows or hides the [island](#island) now and saves `island` in settings.json |
 | Kill switch | tray | see below |
 | Quit MengAI | tray, Cmd+Q | stops the engine, its live previews and everything else it started, then quits |
 
 ## Settings
 
 `~/Library/Application Support/id.mengai.app/settings.json`, written as the
-template below (mode 0600) on first launch. Changes apply on the next launch.
+template below (mode 0600) on first launch. Changes apply on the next launch
+(`island` also changes live from the tray item "Show island").
 
 ```json
 {
   "siteOrigins": [],
-  "port": 4280
+  "port": 4280,
+  "island": true
 }
 ```
 
 | Key | Meaning |
 |---|---|
 | `siteOrigins` | Exact origins of websites that serve the MengAI UI and may call this engine, for example `["https://mengai.example"]`. Passed to the engine as `MENGAI_SITE_ORIGINS` (comma list). Each entry must be https with a public host: no path, query, fragment, credentials or wildcard, and no loopback host (`localhost`, `*.localhost`, `127.x`, `[::1]`, `0.0.0.0`). Entries are stored as their bare origin and deduplicated; at most 16. Empty means only the engine's own origins. |
+| `island` | Show the [island](#island) on the notch (macOS; ignored on Windows). Default `true`; a file without the key keeps it on. The tray item "Show island" rewrites only this key (temp file and rename, mode 0600) from the file as it is on disk, so a fallback engine port is never saved; an invalid file is left untouched and a dialog says so. |
 | `port` | Loopback port of the engine, 1024 to 65535, passed as `MENGAI_PORT`. Inside 4280..4289 a busy port falls back to the first free port of that range, which the website UI also probes; outside it the exact port is used (no fallback), so change the web app's runtime address with it. |
 
 An older file with `"siteUrl"` is migrated on launch: an https origin moves
@@ -132,6 +136,58 @@ Every sidecar stdout and stderr line after that goes to
 `~/Library/Logs/id.mengai.app/mengai.log` (0600, control characters
 stripped, 8 KB per line, one rotation at 5 MB, known key shapes and bearer
 tokens masked).
+
+## Island
+
+macOS only; Windows has no island. Once the engine is ready the shell opens a
+second window, label `island`, on `http://127.0.0.1:<port>/island` (the engine
+origin, so the API, `GET /api/events` and approval writes work as in the main
+window). It sits on the MacBook notch and the web page draws the crew in it:
+collapsed, peek on hover, expanded when a live trading order or a cat needs
+the owner (Approve and Deny always take a click). Without a notch (older Mac,
+lid closed, external display) it is a pill centered just under the menu bar.
+
+The window: transparent (`app.macOSPrivateApi`, Cargo feature
+`macos-private-api`; this rules out the Mac App Store, the dmg is the only
+channel), no decorations, no shadow, not resizable or movable, out of the
+Window menu and window cycling (Cmd+backtick), on every Space and over full screen apps
+(collection behavior can join all spaces, full screen auxiliary, stationary,
+ignores cycle), level `NSMainMenuWindowLevel + 3` (over the menu bar and its
+status items, under menus opened from it), not hidden with the app. It is
+ordered in with `orderFrontRegardless`, so it never activates MengAI or takes
+focus when it appears; it becomes key only when the owner clicks it, and
+accept-first-mouse lets that first click reach Approve, Deny or Open.
+WKWebView tracks the pointer only in the key window (and entered/exited only
+in the active app), so hover, the peek at the crew, would wait for a click:
+the shell replaces those tracking areas in the island's views with always
+active copies (same owner, rect and user info; public AppKit calls only),
+each time the island is placed. It may
+load only `/island` on the exact engine origin; other navigations and new
+windows are refused.
+
+Commands, granted at runtime (capability `island-origin`) to the island
+window only, for the exact engine origin only, never to local content. The
+main window keeps its single grant `allow-pick-folder`, and each command also
+refuses any caller other than the island window.
+
+| Command | What it does |
+|---|---|
+| `island_geometry()` | `{ hasNotch, notchWidth, notchHeight, menuBarHeight, scale }` in points. Notch width is the gap between `NSScreen.auxiliaryTopLeftArea` and `auxiliaryTopRightArea`, notch height `safeAreaInsets.top`, menu bar height the top of the frame minus the top of the visible frame (24 when the menu bar hides itself), scale `backingScaleFactor`. The display with a notch wins, else the primary display. |
+| `island_set_state({ state, width, height })` | `state` is `collapsed`, `peek` or `expanded`. Sets the native frame at once (no native animation; the page animates inside) to exactly that size, bounded to 8..640 by 8..480 points and to the display. The top touches the top edge centered on the notch, or sits 6 points under the menu bar, centered; the origin is snapped to device pixels. Clicks next to the island reach the menu bar. |
+| `island_open_main({ path })` | Shows, unminimizes and focuses the main window and routes it to `path`, which must be `/app` or start with `/app/`, `/app?` or `/app#` (no control characters, spaces, backslashes or dot segments that leave `/app`). A loaded app routes client side (popstate); otherwise the window navigates. |
+
+Display changes (`NSApplicationDidChangeScreenParametersNotification`: lid
+closed, display plugged or unplugged, main display changed) re-read the
+geometry. The island moves to the new position; when the geometry the page
+read changed, it goes back to its default size and the page reloads and asks
+again. With no display at all it is hidden.
+
+On and off: `island` in settings.json (default on) and the tray check item
+"Show island", which applies live and saves. The kill switch closes the
+island for the rest of the session (the saved setting stays, so it is back on
+the next launch, and the tray item brings it back now). Quit closes it before
+the engine stops. Cmd+W on the island is ignored. A failure to open it is
+logged and turns it off for the session; the app keeps working.
 
 ## Quit and live previews
 
@@ -184,6 +240,8 @@ above), shows an error dialog and quits.
 | kill switch not confirmed | kill group and sweep now, error dialog, quit |
 | `/bin/ps` unavailable during a stop | logged; the group kill still runs |
 | global shortcut already taken | logged as an error; tray item and the in-app header button still work |
+| island cannot open or no display is connected | logged; the island stays off for the session, the app keeps working |
+| "Show island" cannot be saved (settings.json invalid or unwritable) | warning dialog naming the file; the island stays as toggled until quit |
 
 ## Develop
 

@@ -14,12 +14,15 @@
 //! origin is listed in settings.json. Quitting stops the
 //! engine and everything it started, live previews included. Every startup
 //! failure and every failure to reach the engine is loud: an error dialog and
-//! a clean stop, never a panic and never a silent fallback.
+//! a clean stop, never a panic and never a silent fallback. On macOS the island
+//! (island.rs) sits on the notch once the engine is ready; it is optional, so a
+//! failure there is logged and the island stays off.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod applog;
 mod control;
 mod instance;
+mod island;
 mod ports;
 #[cfg(unix)]
 mod procs;
@@ -38,7 +41,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, OnceLock};
 use std::thread;
 
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{IsMenuItem, Menu, MenuItem};
 #[cfg(target_os = "macos")]
 use tauri::menu::{PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
@@ -123,7 +126,12 @@ fn main() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![pick_folder])
+        .invoke_handler(tauri::generate_handler![
+            pick_folder,
+            island::island_geometry,
+            island::island_set_state,
+            island::island_open_main
+        ])
         .on_menu_event(|app, event| on_menu(app, event.id().as_ref()))
         .setup(|app| {
             setup(app.handle());
@@ -145,12 +153,22 @@ fn main() {
                 }
             }
         }
+        RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { api, .. }, .. }
+            if label == island::ISLAND_WINDOW =>
+        {
+            // Cmd+W while the island is key: it stays. The tray item, the kill switch and quit close it.
+            let quitting = app.try_state::<Shell>().map(|s| s.quitting.load(Ordering::SeqCst)).unwrap_or(true);
+            if !quitting {
+                api.prevent_close();
+            }
+        }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => window::show_main(app),
         RunEvent::ExitRequested { .. } => {
             if let Some(shell) = app.try_state::<Shell>() {
                 shell.quitting.store(true, Ordering::SeqCst);
             }
+            island::close(app);
         }
         RunEvent::Exit => shutdown(app),
         _ => {}
@@ -169,6 +187,7 @@ fn setup(app: &AppHandle) {
         settings_path: OnceLock::new(),
         instance: OnceLock::new(),
     });
+    app.manage(island::Island::new(log.clone()));
     if let Err(message) = start(app, &log) {
         spawn_fatal(app, message);
     }
@@ -208,6 +227,7 @@ fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
     })?;
     let _ = app.state::<Shell>().instance.set(lock);
     let loaded = load_settings(app, log, &data_dir)?;
+    island::apply_setting(app, loaded.island);
     let settings = Settings { port: engine_port(log, &loaded, &data_dir)?, ..loaded };
     let resources =
         app.path().resource_dir().map_err(|e| format!("MengAI could not locate its bundled resources ({e})."))?;
@@ -372,6 +392,7 @@ fn supervise(app: AppHandle, rx: Receiver<Event>, settings: Settings) {
             if let Err(e) = window::open_main(&app, ready.port) {
                 return fatal(&app, &format!("MengAI could not open its window ({e})."), false);
             }
+            island::engine_ready(&app, ready.port);
         }
         Ok(Event::Broken(reason)) => {
             return fatal(
@@ -434,6 +455,7 @@ fn fatal(app: &AppHandle, message: &str, force: bool) {
     };
     shell.log.error("shell", message);
     shell.quitting.store(true, Ordering::SeqCst);
+    island::close(app);
     if let Some(sc) = shell.sidecar.get() {
         sc.stop(force, &shell.log);
     }
@@ -456,6 +478,7 @@ fn trigger_killswitch(app: &AppHandle, by: Trigger) {
     if shell.kill_in_flight.swap(true, Ordering::SeqCst) {
         return;
     }
+    island::stop_for_session(app);
     let handle = app.clone();
     let spawned = thread::Builder::new().name("killswitch".into()).spawn(move || {
         let shell = handle.state::<Shell>();
@@ -492,7 +515,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let settings = settings_item(app)?;
     let kill = MenuItem::with_id(app, MENU_KILLSWITCH, "Kill switch", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, MENU_QUIT, "Quit MengAI", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &settings, &kill, &quit])?;
+    // macOS only: the island check item, between the settings file and the kill switch.
+    let island = island::tray_item(app)?;
+    let mut items: Vec<&dyn IsMenuItem<Wry>> = vec![&show, &settings];
+    if let Some(item) = &island {
+        items.push(item);
+    }
+    items.extend([&kill as &dyn IsMenuItem<Wry>, &quit]);
+    let menu = Menu::with_items(app, &items)?;
     TrayIconBuilder::with_id("mengai")
         .icon(tauri::include_image!("icons/tray.png"))
         .icon_as_template(true)
@@ -524,13 +554,34 @@ fn on_menu(app: &AppHandle, id: &str) {
         MENU_SHOW => window::show_main(app),
         MENU_SETTINGS => show_settings_file(app),
         MENU_KILLSWITCH => trigger_killswitch(app, Trigger::Tray),
+        island::MENU_ISLAND => toggle_island(app),
         MENU_QUIT => {
             if let Some(shell) = app.try_state::<Shell>() {
                 shell.quitting.store(true, Ordering::SeqCst);
             }
+            island::close(app);
             app.exit(0);
         }
         _ => {}
+    }
+}
+
+/// Tray item "Show island": flips the island now and saves the choice to settings.json.
+fn toggle_island(app: &AppHandle) {
+    let on = island::toggle(app);
+    let Some(shell) = app.try_state::<Shell>() else { return };
+    let Some(path) = shell.settings_path.get() else { return };
+    match settings::set_island(path, on) {
+        Ok(()) => shell.log.info("settings", &format!("saved island {on}")),
+        Err(reason) => {
+            let message = format!(
+                "MengAI could not save \"Show island\" to {}: {reason}. The island stays {} until MengAI quits.",
+                path.display(),
+                if on { "on" } else { "off" }
+            );
+            shell.log.warn("settings", &message);
+            notice(app, &message);
+        }
     }
 }
 

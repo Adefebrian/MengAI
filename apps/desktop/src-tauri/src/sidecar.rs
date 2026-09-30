@@ -609,6 +609,7 @@ mod tests {
         let settings = Settings {
             site_origins: vec!["https://site.example".into(), "https://app.example:8443".into()],
             port: 4280,
+            ..Settings::default()
         };
         let parent = vec![
             ("HOME", "/Users/x"),
@@ -664,7 +665,8 @@ mod tests {
             ("MENGAI_Dev_Open", "1"),
             ("MENGAI_DEMO", "1"),
         ];
-        let settings = Settings { site_origins: vec!["https://site.example".into()], port: 4280 };
+        let settings =
+            Settings { site_origins: vec!["https://site.example".into()], port: 4280, ..Settings::default() };
         let env = build_env_for(true, parent, &test_paths(), &settings);
         let has = |k: &str| env.iter().any(|(ek, _)| ek.to_string_lossy().eq_ignore_ascii_case(k));
         for kept in ["SystemRoot", "Path", "TEMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "MENGAI_DEMO"] {

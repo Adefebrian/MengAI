@@ -17,7 +17,9 @@ path = "src/main.rs"
 tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
-tauri = { version = "2.12", features = ["tray-icon"] }
+# macos-private-api: the transparent island window (tauri.conf.json app.macOSPrivateApi).
+# It rules out the Mac App Store, which MengAI does not ship to (dmg only).
+tauri = { version = "2.12", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-shell = "2.4"
 tauri-plugin-dialog = "2.8"
 tauri-plugin-opener = "2.6"
@@ -29,6 +31,41 @@ serde_json = "1"
 # Already in the lockfile through tauri; JEV be.new_tech adopt 0.96. Windows
 # uses a job object instead (src/winproc.rs, no crate).
 libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The island on the notch (src/island.rs): NSScreen safe area and auxiliary top
+# areas, the window level above the menu bar, collection behavior, a frame set in
+# one call, the screen change notification and always active copies of the web
+# view's tracking areas (hover while the island is not key). Tauri exposes none
+# of these. All
+# four crates are already in Cargo.lock at these versions through tauri, tao and
+# wry, so nothing new enters the build; only feature flags are added. JEV
+# be.new_tech declare_locked_crates 1.0.
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-core-foundation",
+  "NSArray",
+  "NSDictionary",
+  "NSEnumerator",
+  "NSGeometry",
+  "NSNotification",
+  "NSObject",
+  "NSOperation",
+  "NSString",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "NSApplication",
+  "NSResponder",
+  "NSScreen",
+  "NSTrackingArea",
+  "NSView",
+  "NSWindow",
+] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2.4"
