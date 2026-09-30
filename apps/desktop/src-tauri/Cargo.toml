@@ -1,6 +1,6 @@
 [package]
 name = "mengai-desktop"
-version = "0.1.0"
+version = "0.1.0-beta"
 description = "MengAI macOS shell: spawns the compiled Bun API sidecar and hosts the web app"
 authors = ["Adefebrian"]
 license = "PolyForm-Noncommercial-1.0.0"
