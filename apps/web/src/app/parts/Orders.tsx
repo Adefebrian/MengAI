@@ -25,6 +25,12 @@ function orderType(o: OrderDTO): string {
   return o.type === "limit" && o.limitPrice !== null ? `limit at ${fmtPrice(o.limitPrice)}` : "at market";
 }
 
+/** A rationale reads as a sentence: its first letter capitalised. */
+export function sentence(text: string): string {
+  const t = text.trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+
 /** Orders a person must answer: live and proposed. Paper orders never wait on you. */
 export function waitsOnYou(o: OrderDTO): boolean {
   return o.status === "proposed" && o.mode === "live";
@@ -84,8 +90,8 @@ function OrderRow({
           ) : null}
           <span>{fmtAgo(o.filledAt ?? o.decidedAt ?? o.createdAt, now)}</span>
         </span>
-        {o.reason ? <span className="order-reason">{o.reason}</span> : null}
-        {o.riskNote ? <span className="order-risk">Risk check: {o.riskNote}</span> : null}
+        {o.reason ? <span className="order-reason">{sentence(o.reason)}</span> : null}
+        {o.riskNote ? <span className="order-risk">Risk check: {sentence(o.riskNote)}</span> : null}
         {ask ? (
           <span className="order-actions">
             <button type="button" aria-busy={busy === "approve" || undefined} disabled={busy !== null} onClick={() => void decide("approve")}>

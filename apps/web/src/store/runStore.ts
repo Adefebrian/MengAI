@@ -24,6 +24,7 @@ import {
   type UsageTotals,
 } from "@mengai/shared";
 import { useSyncExternalStore } from "react";
+import { crewLooksMap } from "./looks";
 
 export type Connection = "idle" | "connecting" | "live" | "reconnecting" | "closed" | "demo";
 
@@ -252,7 +253,7 @@ export function stateFromSnapshot(s: RunSnapshotDTO, prev?: RunState): RunState 
     roles,
     meetings: Object.fromEntries(meetings.map((m) => [m.id, m])),
     meetingOrder: meetings.map((m) => m.id),
-    agents,
+    agents: crewLooksMap(agents),
     agentOrder: [...s.agents.map((a) => a.id), ...gone.filter((a) => a && typeof a.id === "string" && !s.agents.some((b) => b.id === a.id)).map((a) => a.id)],
     tasks,
     taskOrder: s.tasks.map((t) => t.id),
@@ -381,7 +382,7 @@ export function reduceRun(state: RunState, e: MengaiEvent): RunState {
       const known = !!next.agents[agent.id];
       return {
         ...next,
-        agents: { ...next.agents, [agent.id]: agent },
+        agents: crewLooksMap({ ...next.agents, [agent.id]: agent }),
         agentOrder: known ? next.agentOrder : [...next.agentOrder, agent.id],
         activitySince: { ...next.activitySince, [agent.id]: e.ts },
       };

@@ -52,7 +52,7 @@ export function RunHeader({
   // for assistive tech.
   const desktop = useMedia("(min-width: 1024px)");
   const phone = !useMedia("(min-width: 640px)");
-  const shortGoal = clip(run.goal, phone ? 60 : desktop ? 100 : 84);
+  const shortGoal = clip(run.goal, phone ? 72 : desktop ? 100 : 84);
 
   return (
     <header className="run-head">

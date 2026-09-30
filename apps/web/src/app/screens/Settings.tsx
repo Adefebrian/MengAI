@@ -88,8 +88,8 @@ export function SettingsScreen() {
     const a = Number(maxAgents.trim() || "0");
     const d = Number(maxDepth.trim() || "0");
     const errors: typeof orgError = {};
-    if (!Number.isInteger(a) || a < 0) errors.agents = "Use 0 for Unlimited, or a whole number.";
-    if (!Number.isInteger(d) || d < 0) errors.depth = "Use 0 for Unlimited, or a whole number.";
+    if (!Number.isInteger(a) || a < 0) errors.agents = "Use 0 for no cap, or a whole number.";
+    if (!Number.isInteger(d) || d < 0) errors.depth = "Use 0 for no cap, or a whole number.";
     setOrgError(errors);
     if (errors.agents || errors.depth) return;
     void org.run(async () => {
@@ -146,7 +146,7 @@ export function SettingsScreen() {
             value={maxAgents}
             onChange={(e) => setMaxAgents(e.target.value)}
             error={orgError.agents}
-            hint={agentsN > 0 ? `Up to ${fmtInt(agentsN)} ${agentsN === 1 ? "cat" : "cats"}, ${ceo} included.` : "0 means Unlimited."}
+            hint={agentsN > 0 ? `Up to ${fmtInt(agentsN)} ${agentsN === 1 ? "cat" : "cats"}, ${ceo} included.` : "0 means no cap."}
           />
           <TextField
             label="Max depth"
@@ -154,7 +154,7 @@ export function SettingsScreen() {
             value={maxDepth}
             onChange={(e) => setMaxDepth(e.target.value)}
             error={orgError.depth}
-            hint={depthN > 0 ? `${fmtInt(depthN)} ${depthN === 1 ? "level" : "levels"} of the org below ${ceo}.` : "0 means Unlimited."}
+            hint={depthN > 0 ? `${fmtInt(depthN)} ${depthN === 1 ? "level" : "levels"} of the org below ${ceo}.` : "0 means no cap."}
           />
         </div>
         <p className="settings-org-now">

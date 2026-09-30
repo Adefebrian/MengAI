@@ -480,6 +480,13 @@ button.app-btn-destructive[aria-busy="true"]::after {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* a phone gives the goal three lines before it clamps */
+@media (max-width: 639.98px) {
+  .run-goal {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+}
 .run-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1195,19 +1202,24 @@ button.ide-files-toggle[aria-expanded="true"] .ide-node-chevron {
   outline: 2px solid var(--color-focus);
   outline-offset: -2px;
 }
+/* long lines soft-wrap inside the pane, under their own text, never past its edge */
 .ide-lines {
   display: grid;
-  min-width: max-content;
+  min-width: 0;
   font: inherit;
 }
 .ide-row {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: var(--space-40px) auto;
+  grid-template-columns: var(--space-40px) minmax(0, 1fr);
   column-gap: var(--space-12px);
   padding-inline: var(--space-4px) var(--space-16px);
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ide-text {
+  min-width: 0;
 }
 .ide-num {
   color: var(--color-ink-subtle);

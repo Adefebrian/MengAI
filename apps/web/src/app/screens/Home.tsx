@@ -23,6 +23,7 @@ import {
 import { DataRow, DataRows, EmptyState, Meter, Notice, ProductIcon, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, navigate } from "../../router";
+import { withCrewLooks } from "../../store/looks";
 import { tokensUsed } from "../../store/runStore";
 import { useApp } from "../context";
 import { fmtAgo, fmtInt, fmtUsd } from "../format";
@@ -77,7 +78,7 @@ function LiveRun({ run, snap, project, still, ceo }: { run: RunDTO; snap: RunSna
   const tasks = snap?.tasks.filter((t) => t.status !== "cancelled") ?? [];
   const done = tasks.filter((t) => t.status === "done").length;
   const agents = snap
-    ? [...snap.agents].sort((a, b) => (a.role === "lead" ? -1 : b.role === "lead" ? 1 : a.createdAt - b.createdAt))
+    ? withCrewLooks(snap.agents).sort((a, b) => (a.role === "lead" ? -1 : b.role === "lead" ? 1 : a.createdAt - b.createdAt))
     : [];
   const asking = agents.filter((a) => a.status === "approval");
   return (

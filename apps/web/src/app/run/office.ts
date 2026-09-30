@@ -100,6 +100,56 @@ export function latestFiles(s: RunState): Record<string, { path: string; ts: num
 /** How long a line the cat said stays in its bubble, in event time. */
 const SAY_FRESH_MS = 9000;
 
+/** How long a finished task stays on the desk plate while its cat walks the verdict or the delivery over, in event time. */
+const DESK_LINGER_MS = 9000;
+
+const OPEN_TASK = new Set<TaskDTO["status"]>(["running", "waiting", "review", "blocked"]);
+
+/**
+ * The task on a cat's desk, from the same task state the strip reads: the
+ * task it is on, else the open task it still holds (a maker waiting on its
+ * review), else the task it just finished while the verdict or the delivery
+ * walks over. No task means the plate reads No task yet and the monitor
+ * keeps the paw.
+ */
+export function deskTask(a: AgentDTO, s: RunState): TaskDTO | undefined {
+  if (a.status === "stopped" || s.departed[a.id]) return undefined;
+  const cur = a.currentTaskId ? s.tasks[a.currentTaskId] : undefined;
+  if (cur && cur.status !== "cancelled") return cur;
+  const now = clockOf(s);
+  let recent: TaskDTO | undefined;
+  for (let i = s.taskOrder.length - 1; i >= 0; i--) {
+    const t = s.tasks[s.taskOrder[i]!];
+    if (!t || t.assigneeId !== a.id) continue;
+    if (OPEN_TASK.has(t.status)) return t;
+    if (!recent && t.status === "done" && now - t.updatedAt <= DESK_LINGER_MS) recent = t;
+  }
+  return recent;
+}
+
+/** The desk plate line for a task: "Review: X" reads Reviewing X, "Fix: X" reads Fixing X. */
+export function plateTitle(title: string): string {
+  const review = /^review:\s*/i.exec(title);
+  if (review) return `Reviewing ${title.slice(review[0].length)}`;
+  const fix = /^fix:\s*/i.exec(title);
+  if (fix) return `Fixing ${title.slice(fix[0].length)}`;
+  return title;
+}
+
+/**
+ * The activity the desk shows, which picks the monitor glyph: a cat on a
+ * review keeps the diff up between reads, the CEO on the plan keeps the
+ * board, and a cat that holds a task never rests on the paw screen.
+ */
+export function deskActivity(a: AgentDTO, task: TaskDTO | undefined, s: RunState): AgentDTO["activity"] {
+  if (!task || a.status === "stopped") return a.activity;
+  const reviewing = /^review:/i.test(task.title) || isReviewTask(task, s);
+  if (reviewing && (a.activity === "think" || a.activity === "rest" || a.activity === "read")) return "review";
+  if (a.role === "lead" && /^plan\b/i.test(task.title) && (a.activity === "think" || a.activity === "rest")) return "plan";
+  if (a.activity === "rest") return a.status === "waiting" ? "wait" : "think";
+  return a.activity;
+}
+
 /**
  * The office props per cat. `roleTitle` rides along for the desk plate: the
  * scene contract (packages/cats) does not read it yet, so the plate shows
@@ -114,7 +164,7 @@ export function officeAgents(s: RunState, spend: Record<string, AgentSpend>): Ar
     const fresh = said && now - said.ts <= SAY_FRESH_MS && said.ts >= (s.activitySince[a.id] ?? 0) - 1;
     const fromCalls = energyOf(spend[a.id], budget);
     const fromAgent = budget > 0 ? Math.min(1, tokensUsed(a.usage) / budget) : 0;
-    const task = a.currentTaskId ? s.tasks[a.currentTaskId] : undefined;
+    const task = deskTask(a, s);
     return {
       id: a.id,
       name: a.name,
@@ -122,11 +172,11 @@ export function officeAgents(s: RunState, spend: Record<string, AgentSpend>): Ar
       roleTitle: roleTitleOf(a),
       look: a.look,
       status: a.status,
-      activity: a.activity,
+      activity: deskActivity(a, task, s),
       mood: a.mood,
       energy: Math.max(fromCalls, fromAgent),
       parentId: a.parentId,
-      taskTitle: task?.title ?? null,
+      taskTitle: task ? plateTitle(task.title) : null,
       statusText: fresh ? clip(said.text, 96) : a.statusText,
       file: files[a.id]?.path ?? null,
     };
@@ -137,7 +187,19 @@ export function officeMeetings(s: RunState): OfficeMeeting[] {
   return s.meetingOrder
     .map((id) => s.meetings[id])
     .filter((m): m is NonNullable<typeof m> => !!m)
-    .map((m) => ({ id: m.id, kind: m.kind, title: m.title, agentIds: m.agentIds.filter((id) => !!s.agents[id]), agenda: m.agenda, endedAt: m.endedAt, notes: m.notes }));
+    // the seats come from the live crew: each cat once, only cats still in the office, the CEO at the head
+    .map((m) => ({ id: m.id, kind: m.kind, title: m.title, agentIds: meetingSeats(m.agentIds, s), agenda: m.agenda, endedAt: m.endedAt, notes: m.notes }));
+}
+
+function meetingSeats(ids: readonly string[], s: RunState): string[] {
+  const seen = new Set<string>();
+  const out = ids.filter((id) => {
+    const a = s.agents[id];
+    if (!a || s.departed[id] || a.status === "stopped" || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return out.sort((x, y) => (s.agents[x]!.role === "lead" ? -1 : s.agents[y]!.role === "lead" ? 1 : 0));
 }
 
 type PlanStatus = "todo" | "doing" | "review" | "done";

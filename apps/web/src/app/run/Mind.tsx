@@ -172,8 +172,19 @@ function Diff({ before, after }: { before: string; after: string }) {
   );
 }
 
-function History({ history, name, now }: { history: StrategyVersionDTO[]; name: string; now: number }) {
-  if (history.length === 0) return <p className="app-empty-line mind-empty">No versions yet. The first one appears after a check the cat learns from.</p>;
+/** Newest first: the highest version on top, the later write first on a tie. */
+export function newestFirst(history: readonly StrategyVersionDTO[]): StrategyVersionDTO[] {
+  return [...history].sort((a, b) => b.version - a.version || b.createdAt - a.createdAt);
+}
+
+/** "a engineer" reads "an engineer", for a reason written before the server fixed its article. */
+export function withArticles(text: string): string {
+  return text.replace(/\b([Aa]) (?=[aeioAEIO])/g, "$1n ");
+}
+
+function History({ history: raw, name, now }: { history: StrategyVersionDTO[]; name: string; now: number }) {
+  if (raw.length === 0) return <p className="app-empty-line mind-empty">No versions yet. The first one appears after a check the cat learns from.</p>;
+  const history = newestFirst(raw);
   return (
     <ol className="mind-list">
       {history.map((v) => {
@@ -418,7 +429,7 @@ export function Mind({
         ) : (
           <p className="app-empty-line mind-empty">{agent.role === "lead" ? "It runs the company and answers to you." : "No crew of its own."}</p>
         )}
-        {agent.hireReason ? <p className="mind-why">Hired because {agent.hireReason.charAt(0).toLowerCase() + agent.hireReason.slice(1)}</p> : null}
+        {agent.hireReason ? <p className="mind-why">Hired because {withArticles(agent.hireReason.charAt(0).toLowerCase() + agent.hireReason.slice(1))}</p> : null}
       </Group>
 
       <Group
