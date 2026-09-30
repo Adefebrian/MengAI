@@ -20,6 +20,7 @@
 // browser can open it, and keeps serving when stdin closes.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseEnv } from "@mengai/config";
 import { bootstrap, type BootstrapOptions, type Platform } from "./core/bootstrap";
 import { buildConfig, localHosts, randomToken, type BootConfig } from "./core/config";
@@ -39,7 +40,13 @@ export interface StartLocalOptions {
 
 /** apps/web/dist next to this source tree; null inside a compiled sidecar (the shell passes MENGAI_WEB_DIR). */
 export function defaultWebDir(): string | null {
-  const dir = new URL("../../web/dist/", import.meta.url).pathname;
+  // fileURLToPath, not .pathname: a Windows path must not come out as /C:/...
+  let dir: string;
+  try {
+    dir = fileURLToPath(new URL("../../web/dist/", import.meta.url));
+  } catch {
+    return null;
+  }
   return existsSync(join(dir, "index.html")) ? dir : null;
 }
 

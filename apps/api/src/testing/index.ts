@@ -3,6 +3,8 @@
 // Shared test kit for every module: an in-memory SQLite Db with the real
 // migrations applied, a deterministic clock, and in-memory fakes for the
 // kv, vault, event sink and logger ports. Import from "../../testing".
+// testPlatform() pins the platform features (lib/platform.ts), so a test
+// that boots the container behaves the same on the macOS and Linux CI.
 import type { EventType, MengaiEvent } from "@mengai/shared";
 import { createDb } from "../core/adapters/db-bunsql";
 import { applyMigrations } from "../core/migrate";
@@ -12,6 +14,12 @@ import type { EventInput, EventSink } from "../core/ports/events";
 import type { Kv } from "../core/ports/kv";
 import type { Logger } from "../core/ports/logger";
 import type { Vault } from "../core/ports/vault";
+import { detectPlatform, type PlatformInfo } from "../lib/platform";
+
+/** darwin with a working sandbox (every feature on) unless another platform is named; the sandbox probe never runs */
+export function testPlatform(platform: NodeJS.Platform = "darwin", sandbox: string | null = null): PlatformInfo {
+  return detectPlatform({ platform, sandboxUnavailable: () => sandbox });
+}
 
 export async function createTestDb(): Promise<Db> {
   const db = createDb({ url: ":memory:" });

@@ -4,6 +4,7 @@
 // Live preview and Open folder (local engine only) are rate limited per ip:
 // they start processes on the owner's computer.
 import type { FileContent, FileNodeDTO, PreviewDTO, ProjectDTO } from "@mengai/shared";
+import { isAbsolute } from "node:path";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -19,7 +20,8 @@ const createBody = z
       .string()
       .min(1)
       .max(4096)
-      .refine((p) => p.startsWith("/") && !p.includes("\0"), "must be an absolute path")
+      // node:path, so C:\Users\... is absolute on Windows and /Users/... on macOS
+      .refine((p) => isAbsolute(p) && !p.includes("\0"), "must be an absolute path")
       .optional(),
   })
   .strict();

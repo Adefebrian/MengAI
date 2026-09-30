@@ -16,9 +16,14 @@
 // venue's crew skills; a venue error becomes a crew lesson.
 // The kill switch cancels every open order and stops trading until the
 // owner saves the settings again. Texts state facts, never advice.
+// Without a crew sandbox (lib/platform.ts) live trading is off: live mode,
+// live proposals and the owner's approval of a live order are refused with
+// the "Coming soon" reason and nothing reaches a venue's order tool; paper
+// trading works as everywhere else.
 import type { AgentRole, PositionDTO, TradingSettings } from "@mengai/shared";
 import type { ModuleContext } from "../../core/module";
 import { conflict, HttpError, notFound } from "../../lib/http";
+import { comingSoonError, featureOff, type PlatformInfo } from "../../lib/platform";
 import { clip, redact } from "../../lib/redact";
 import { applyFill, cents, EMPTY_BOOK, limitFill, unrealized } from "./broker";
 import { dailyLoss, dayStart, liveGate, normalizeSettings } from "./gates";
@@ -32,6 +37,8 @@ export { normSymbol, parsePrice, SYMBOL_RE, toVenueSymbol, venueArgs } from "./s
 export interface TradingDeps {
   /** the connectors service: price tools, the venue tool of live orders, and the connectors of trading venues */
   venue?: TradingVenue | null;
+  /** boot-time platform features: liveTrading off refuses every live order; absent keeps every feature on */
+  platform?: PlatformInfo;
 }
 
 const MAX_QTY = 1e9;
@@ -46,7 +53,9 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
   const repo = createTradingRepo(ctx.db);
   const log = ctx.logger.child({ module: "trading" });
   const last = new Map<string, { price: number; source: string; at: number }>();
-  const desk = createDesk({ ctx, repo, venue: deps.venue ?? null, settings: async () => (await repo.settings()).value, log });
+  const desk = createDesk({ ctx, repo, venue: deps.venue ?? null, settings: async () => (await repo.settings()).value, log, platform: deps.platform });
+  /** null when live orders may run; otherwise the coming soon reason */
+  const liveOff = featureOff(deps.platform, "liveTrading");
 
   async function publishOrder(o: OrderRow): Promise<void> {
     try {
@@ -146,6 +155,11 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
   async function executeLive(o: OrderRow, signal?: AbortSignal): Promise<void> {
     const now = ctx.clock.now();
     o.decidedAt = now;
+    if (liveOff) {
+      o.status = "failed";
+      o.error = liveOff;
+      return;
+    }
     const tool = (await venueTools()).find((t) => t.name === o.venueTool);
     if (!tool) {
       o.status = "failed";
@@ -172,6 +186,7 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
   }
 
   async function gateFor(o: OrderRow, settings: TradingSettings, halted: boolean): Promise<string | null> {
+    if (liveOff) return liveOff;
     const now = ctx.clock.now();
     const livePositions = await repo.positions("live");
     const openLoss = livePositions.reduce((sum, p) => sum + unrealized(p, last.get(p.symbol)?.price ?? p.lastPrice), 0);
@@ -192,6 +207,7 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
     },
 
     async saveSettings(s) {
+      if (liveOff && s.mode === "live") throw comingSoonError(liveOff);
       const value = normalizeSettings(s);
       await repo.saveSettings(value, ctx.clock.now());
       // a live ccxt venue carries the max order size as its own cap
@@ -246,9 +262,10 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
         if (!venue) throw new TradingError(`the venue tool ${clip(want, 60)} is not connected`, "not_found");
         if (!venue.money) throw new TradingError(`${venue.name} does not place orders; name the connector tool that does`);
       }
-      // live when asked; without an answer, live only when the owner set live mode and a live venue is ready
+      if (input.live === true && liveOff) throw new TradingError(`${liveOff} Propose it on paper instead.`, "gate");
+      // live when asked; without an answer, live only when the owner set live mode and a live venue is ready (never without the crew sandbox)
       let mode: "paper" | "live" = input.live === true ? "live" : "paper";
-      if (input.live === undefined && !venue && (await repo.settings()).value.mode === "live" && (await desk.hasLiveVenue())) mode = "live";
+      if (input.live === undefined && !venue && !liveOff && (await repo.settings()).value.mode === "live" && (await desk.hasLiveVenue())) mode = "live";
       if (!venue) {
         const route = await desk.route(mode);
         if (route) {
@@ -381,6 +398,7 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
       } else {
         if (o.status !== "proposed") throw conflict(`the order is ${o.status}`);
         if (o.mode !== "live") throw conflict("paper orders fill after the risk review; there is nothing to approve");
+        if (liveOff) throw comingSoonError(liveOff);
         if (o.riskVerdict === null) throw conflict("the risk manager has not reviewed this order yet");
         if (o.riskVerdict !== "approve") throw conflict("the risk manager rejected this order");
         const why = await gateFor(o, (await repo.settings()).value, await isHalted());

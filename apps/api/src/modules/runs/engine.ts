@@ -1572,7 +1572,10 @@ export class RunEngine {
       return close ? { role: close.archetype, roleId: close.id } : { role: archetype, roleId: null };
     }
     await this.setAgent(by, { statusText: VOICE.definingRole(title) });
-    const tools = archetypeTools(archetype);
+    // tools the platform turns off (shell_run without a crew sandbox) never reach the role packet or the role
+    const off = this.deps.tools.platformOff?.();
+    const onPlatform = (list: string[]) => (off?.size ? list.filter((t) => !off.has(t)) : list);
+    const tools = onPlatform(archetypeTools(archetype));
     let charter = fallbackCharter(title, archetype, task);
     let subset = tools;
     try {
@@ -1591,7 +1594,7 @@ export class RunEngine {
       const parsed = parseRoleReply(res.text);
       if (parsed) {
         charter = roleCharterText(title, archetype, parsed.lines);
-        subset = toolSubset(archetype, parsed.tools);
+        subset = onPlatform(toolSubset(archetype, parsed.tools));
       }
     } catch (e) {
       if (signal.aborted) throw signal.reason;

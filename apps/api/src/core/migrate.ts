@@ -10,6 +10,7 @@
 // to EMBEDDED_MIGRATIONS below; container.test.ts fails when the two drift.
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Db, Dialect } from "./ports/db";
 // @ts-ignore Bun text import: there are no type declarations for .sql files
 import postgres0001 from "../../../../migrations/postgres/0001_init.sql" with { type: "text" };
@@ -29,7 +30,15 @@ import postgres0005 from "../../../../migrations/postgres/0005_trading_venues.sq
 import sqlite0005 from "../../../../migrations/sqlite/0005_trading_venues.sql" with { type: "text" };
 
 /** Repo migrations folder (dev and server image); inside a compiled binary this path does not exist. */
-export const MIGRATIONS_ROOT = new URL("../../../../migrations/", import.meta.url).pathname;
+export const MIGRATIONS_ROOT = (() => {
+  const url = new URL("../../../../migrations/", import.meta.url);
+  // fileURLToPath, so a Windows path is C:\... and not /C:/...; a non-file URL keeps its path
+  try {
+    return fileURLToPath(url);
+  } catch {
+    return url.pathname;
+  }
+})();
 
 export interface Migration {
   /** file name, the version recorded in schema_migrations */

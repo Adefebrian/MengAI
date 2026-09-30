@@ -20,7 +20,7 @@ import { captureEvents, createTestDb, memoryKv, memoryVault, silentLogger } from
 import { createConnectorsModule } from "./index";
 import { toolsFromOpenApi } from "./http";
 import { classify } from "./risk";
-import { parseCommand, secretEnv } from "./stdio";
+import { createStdioSpawner, parseCommand, scrubbedEnv, secretEnv } from "./stdio";
 
 const FIXTURE = join(import.meta.dir, "fixtures", "fake-mcp.ts");
 const REACH_FIXTURE = join(import.meta.dir, "fixtures", "reach-mcp.ts");
@@ -382,4 +382,24 @@ describe("routes", () => {
       await mod.close?.();
     }
   }, 20_000);
+});
+
+describe("stdio servers on Windows", () => {
+  test("kill() ends the tree through taskkill instead of a process group", async () => {
+    const killed: number[] = [];
+    const spawn = createStdioSpawner(undefined, { platform: "win32", killTree: (pid) => void killed.push(pid) });
+    const proc = spawn(["/bin/cat"], { env: { PATH: "/usr/bin:/bin" }, cwd: tmpdir() });
+    proc.kill();
+    expect(killed).toEqual([proc.pid!]);
+    expect(await proc.exited).toBeNull();
+  });
+
+  test("the child env has a ; separated PATH under SystemRoot and no Unix folder", () => {
+    const env = scrubbedEnv({ tmpdir: "C:\\data\\c1", extra: { API_KEY: "k" }, home: "C:\\Users\\me", exists: (p) => p === "C:\\Users\\me\\.bun\\bin", platform: "win32", systemRoot: "C:\\Windows" });
+    expect(env.PATH).toBe("C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Users\\me\\.bun\\bin");
+    expect(env.PATH).not.toContain("/usr/bin");
+    expect(env).toMatchObject({ SystemRoot: "C:\\Windows", USERPROFILE: "C:\\Users\\me", HOME: "C:\\Users\\me", TEMP: "C:\\data\\c1", TMP: "C:\\data\\c1", API_KEY: "k" });
+    // macOS keeps its PATH
+    expect(scrubbedEnv({ tmpdir: "/tmp/x", extra: {}, home: "/Users/me", exists: () => false, platform: "darwin" }).PATH).toBe("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
+  });
 });

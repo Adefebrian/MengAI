@@ -10,6 +10,8 @@
 // engine passes in; order placement and fund movement only through the
 // trading gate. A connector tool that fails during a run becomes a crew-wide
 // lesson (once per tool and error shape), so every cat learns from it.
+// Where the platform has no crew sandbox (lib/platform.ts), shell_run is
+// dropped from every role and a call to it answers the "Coming soon" reason.
 import {
   activityForTool,
   ROLE_TOOLS,
@@ -39,6 +41,7 @@ import {
   type WorkspaceService,
 } from "../../core/services";
 import { enginePorts } from "../../lib/engine-guard";
+import { featureOff, type PlatformInfo } from "../../lib/platform";
 import { clip, redact, redactDeep } from "../../lib/redact";
 import { toJson } from "../../lib/sql";
 import { errorMeaning } from "../trading";
@@ -66,6 +69,8 @@ export interface ToolsDeps {
   connectors?: ConnectorsBridge | null;
   /** the trading service; null or absent: no trading tools */
   trading?: TradingBridge | null;
+  /** boot-time platform features: shell off drops shell_run everywhere; absent keeps every feature on */
+  platform?: PlatformInfo;
 }
 
 export interface ToolsOptions {
@@ -89,6 +94,8 @@ export interface ToolsServiceImpl extends ToolsService {
   venueNotes(role: AgentRole): Promise<VenueNoteView[]>;
   /** attaches an in-process simulated venue to the trading desk (the fund demo); null without trading */
   connectSimulator(sim: SimulatedVenue): Promise<unknown>;
+  /** registry tools this platform turns off (shell_run without a crew sandbox), so role tool sets leave them out */
+  platformOff(): ReadonlySet<string>;
 }
 
 export const SHELL_TIMEOUT_MS = 120_000;
@@ -156,10 +163,16 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
   // the capability bridge: the trading desk writes venue skills and lessons into the crew memory
   if (deps.trading?.useMemory && hasSharedSkills(deps.memory)) deps.trading.useMemory(deps.memory);
 
+  // no crew sandbox on this platform: shell commands could reach the no-auth engine API
+  const shellOff = featureOff(deps.platform, "shell");
+  const shellRefusal = shellOff ? `${shellOff} Say in your finish summary which check the owner should run.` : null;
+  const platformOff: ReadonlySet<string> = new Set<string>(shellOff ? ["shell_run"] : []);
+
   const offered = (name: ToolName): boolean => {
     if (UNAVAILABLE_TOOLS.has(name)) return false;
     if (OPERATOR_TOOLS.has(name) && !deps.automation) return false;
     if (name === "shell_run" && !deps.runner) return false;
+    if (platformOff.has(name)) return false;
     return true;
   };
 
@@ -427,6 +440,7 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     },
 
     async shell_run(a, call) {
+      if (shellRefusal) return fail(shellRefusal);
       if (!deps.runner) return fail("shell commands are not available in this mode");
       const root = await call.workspace();
       const cwd = await deps.workspace.resolveInside(root, s(a.cwd) ?? ".");
@@ -582,6 +596,7 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     const name = tool as ToolName;
     const unavailable = UNAVAILABLE_TOOLS.get(name);
     if (unavailable) return fail(unavailable);
+    if (name === "shell_run" && shellRefusal) return fail(shellRefusal);
     if (OPERATOR_TOOLS.has(name) && !deps.automation) return fail("local automation is not available: operator tools need the desktop app");
     if (!specsFor(call.role).some((sp) => sp.name === name)) return fail(`${name} is not available to the ${call.role} role`);
     const v = validateArgs(TOOL_SPECS[name].parameters as JsonSchema, rawArgs);
@@ -693,6 +708,8 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     async connectSimulator(sim) {
       return deps.trading?.connectSimulator ? deps.trading.connectSimulator(sim) : null;
     },
+
+    platformOff: () => platformOff,
   };
   return service;
 }

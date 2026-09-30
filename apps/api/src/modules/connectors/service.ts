@@ -8,6 +8,10 @@
 // and HTTP APIs pass the providers' SSRF guard (server mode: https and public
 // addresses only). A bad remote never fails a request with a 5xx: the
 // connector is saved with status error and the reason.
+// Without a crew sandbox (lib/platform.ts) stdio servers are off: creating or
+// enabling one answers 422 coming_soon, an existing one never starts (it is
+// saved with status error and the reason) and its tools are not offered.
+// Remote MCP servers and HTTP APIs keep working.
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentRole, ConnectorDTO, CreateConnectorBody, UpdateConnectorBody } from "@mengai/shared";
@@ -15,6 +19,7 @@ import { assertSafeUrl, UnsafeUrlError } from "../../core/adapters/llm-openai";
 import type { ModuleContext } from "../../core/module";
 import { createEngineSandbox, enginePorts, MCP_RULES } from "../../lib/engine-guard";
 import { conflict, forbidden, HttpError, notFound } from "../../lib/http";
+import { assertFeature, featureOff, type PlatformInfo } from "../../lib/platform";
 import { clip, keyHint, redact, registerSecret } from "../../lib/redact";
 import { callOperation, fetchOpenApi, genericTools, parseOpenApi, toolsFromOpenApi, type ImportedTool } from "./http";
 import { HttpChannel, mcpCallTool, mcpInitialize, mcpListTools, StdioChannel, type RpcChannel } from "./mcp";
@@ -35,6 +40,8 @@ export interface ConnectorsOptions {
   /** stdio restarts allowed per window (default 3 in 10 minutes) */
   restartLimit?: number;
   restartWindowMs?: number;
+  /** boot-time platform features: mcpStdio off refuses stdio servers; absent keeps every feature on */
+  platform?: PlatformInfo;
 }
 
 export const CONNECTOR_LIMITS = {
@@ -59,6 +66,8 @@ const errText = (e: unknown) => clip(redact(e instanceof Error ? e.message : Str
 export function createConnectorsService(ctx: ModuleContext, opts: ConnectorsOptions = {}): ConnectorsService {
   const repo = createConnectorsRepo(ctx.db);
   const log = ctx.logger.child({ module: "connectors" });
+  /** null when stdio MCP servers may start; otherwise the coming soon reason */
+  const stdioOff = featureOff(opts.platform, "mcpStdio");
   // stdio MCP servers never reach the engine's own port (lib/engine-guard.ts)
   const sandbox = createEngineSandbox({ label: "MCP server", ports: () => enginePorts(ctx.config.allowedHosts), extraRules: MCP_RULES, logger: log });
   const spawn = opts.spawn ?? createStdioSpawner((argv) => sandbox.wrap(argv));
@@ -148,6 +157,7 @@ export function createConnectorsService(ctx: ModuleContext, opts: ConnectorsOpti
   async function open(r: ConnectorRow): Promise<Session> {
     if (r.kind === "mcp_stdio") {
       if (ctx.config.mode !== "local") throw new Error("MCP stdio servers run in the Mac app only");
+      if (stdioOff) throw new Error(stdioOff);
       if (halted.has(r.id)) throw new Error("stopped by the kill switch; test the connector to start it again");
       const now = Date.now();
       const recent = (spawns.get(r.id) ?? []).filter((t) => now - t < limits.window);
@@ -315,6 +325,7 @@ export function createConnectorsService(ctx: ModuleContext, opts: ConnectorsOpti
 
     async create(body: CreateConnectorBody) {
       if (body.kind === "mcp_stdio" && ctx.config.mode !== "local") throw forbidden("MCP stdio servers run in the Mac app only; use an MCP HTTP URL on the server");
+      if (body.kind === "mcp_stdio") assertFeature(opts.platform, "mcpStdio");
       const label = body.label.trim().toLowerCase();
       if (!LABEL_RE.test(label)) throw new HttpError(422, "invalid_body", "label: lowercase letters, digits, - and single _ (at most 24)");
       if (await repo.byLabel(label)) throw conflict(`a connector named ${label} already exists`);
@@ -366,6 +377,7 @@ export function createConnectorsService(ctx: ModuleContext, opts: ConnectorsOpti
 
     async update(id: string, body: UpdateConnectorBody) {
       const r = await requireRow(id);
+      if (r.kind === "mcp_stdio" && body.enabled === true) assertFeature(opts.platform, "mcpStdio");
       const next: ConnectorRow = { ...r };
       let reconnect = false;
       if (body.label !== undefined) {
@@ -446,6 +458,7 @@ export function createConnectorsService(ctx: ModuleContext, opts: ConnectorsOpti
       const out: ConnectorToolDef[] = [];
       for (const r of await all()) {
         if (!r.enabled || r.status !== "connected") continue;
+        if (r.kind === "mcp_stdio" && stdioOff) continue;
         if (scope.role && r.roles && !r.roles.includes(scope.role)) continue;
         for (const t of r.tools) {
           out.push({

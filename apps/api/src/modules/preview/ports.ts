@@ -6,7 +6,7 @@
 // realpath workspace root. Process spawn, HTTP probes, port checks, the
 // static server and the file manager opener are ports, so the tests drive
 // fakes and the service never touches Bun.spawn or Bun.serve directly.
-import type { PreviewDTO } from "@mengai/shared";
+import type { PlatformFeatures, PreviewDTO } from "@mengai/shared";
 
 export interface PreviewService {
   /** current state; when nothing runs, what Start would do (or why nothing is previewable) */
@@ -78,6 +78,8 @@ export interface PreviewOptions {
   serveStatic?: StaticServe;
   open?: FolderOpener;
   platform?: NodeJS.Platform;
+  /** boot-time platform features (lib/platform.ts): scriptPreview off fails every script preview with the coming soon reason; absent keeps every feature on */
+  features?: PlatformFeatures;
   /** resolves a command on PATH (Bun.which by default) */
   which?: (command: string, path: string) => string | null;
   /** where PATH and LANG come from (process.env by default); nothing else is read */

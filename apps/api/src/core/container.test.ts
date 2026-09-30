@@ -17,7 +17,7 @@ import { AUTOMATION_REASON, createContainer, envFlag, runnerKind, type Container
 import { DEMO_GOAL, DEMO_PROJECT_NAME, FUND_DEMO_PROJECT_NAME } from "./demo";
 import { EMBEDDED_MIGRATIONS, loadMigrations, MIGRATIONS_ROOT } from "./migrate";
 import type { ExecRequest, ExecResult, Runner } from "./ports/runner";
-import { memoryKv, memoryVault, silentLogger } from "../testing";
+import { memoryKv, memoryVault, silentLogger, testPlatform } from "../testing";
 
 // Same trick as index.test.ts: the root bunfig preloads happy-dom, whose
 // Request drops Origin and Cookie. Use Bun's native fetch classes here.
@@ -68,6 +68,7 @@ async function localContainer(demo: Parameters<typeof createContainer>[0]["demo"
     // a bare in-memory db: the container applies the embedded migrations itself
     overrides: { db: createDb({ url: ":memory:" }), kv: memoryKv(), vault: memoryVault(), runner },
     demo,
+    os: testPlatform(),
   });
   return { container, runner, workspaces };
 }
@@ -369,10 +370,10 @@ describe("container", () => {
     const db = createDb({ url: ":memory:" });
     const boot = buildConfig(parseEnv(env));
     const overrides = { db, kv: memoryKv(), vault: memoryVault(), runner: fakeRunner() };
-    const first = await createContainer({ boot, logger: silentLogger, overrides, demo: { paceMs: [1, 2] } });
+    const first = await createContainer({ boot, logger: silentLogger, overrides, demo: { paceMs: [1, 2] }, os: testPlatform() });
     expect(first.demo?.seed).toBeTruthy();
     await first.close();
-    const second = await createContainer({ boot: buildConfig(parseEnv(env)), logger: silentLogger, overrides, demo: { paceMs: [1, 2] } });
+    const second = await createContainer({ boot: buildConfig(parseEnv(env)), logger: silentLogger, overrides, demo: { paceMs: [1, 2] }, os: testPlatform() });
     try {
       expect(second.demo).toEqual({ seed: null });
       expect(await second.modules.projects.service.list()).toHaveLength(2);

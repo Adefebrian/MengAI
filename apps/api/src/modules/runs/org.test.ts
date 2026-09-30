@@ -262,6 +262,31 @@ describe("brain: dynamic roles", () => {
     expect(snap2.agents.find((a) => a.role === "qa")!.roleId).toBe(role.id);
   });
 
+  test("a platform without a crew sandbox: shell_run never reaches the role packet or the dynamic role", async () => {
+    const tools = Object.assign(fakeTools(), { platformOff: () => new Set(["shell_run"]) as ReadonlySet<string> });
+    const base = tools.specsFor;
+    tools.specsFor = (role) => base(role).filter((s) => s.name !== "shell_run");
+    const h = await harness({
+      brain: { org: true },
+      judge: judgeFor(),
+      tools,
+      script: (info) =>
+        info.role === "lead"
+          ? info.title === "Plan the work"
+            ? plan([{ title: "Smoke check the page", spec: "Test it like a visitor", role: "qa", role_title: "Launch tester" }])
+            : finish("report")
+          : finish(`done by ${info.roleTitle}`),
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Ship a page" });
+    await h.untilStatus(run.id, "done");
+    expect(h.llm.roleCalls).toHaveLength(1);
+    const packet = String(h.llm.roleCalls[0]!.messages[0]!.content);
+    expect(packet).toContain("Tools of the archetype: ");
+    expect(packet).not.toContain("shell_run");
+    const role = h.events.ofType("role.created")[0]!.data.role;
+    expect(role.tools).toEqual(["finish", "note", "fs_read", "fs_search"]);
+  });
+
   test("JEV says an existing role fits: no new role; a base role title is never asked about", async () => {
     const judge = judgeFor("existing", "qa");
     const h = await harness({

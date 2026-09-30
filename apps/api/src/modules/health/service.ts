@@ -2,14 +2,19 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Health: mode, version and what is configured, from injected callbacks.
 // A failing callback reports "not configured" instead of failing the check.
+// The platform and its features are the boot-time value (lib/platform.ts):
+// the UI labels every feature that is off "Coming soon".
 import type { AutomationStatus, HealthDTO } from "@mengai/shared";
 import type { AppConfig } from "../../core/module";
 import type { Logger } from "../../core/ports/logger";
+import type { PlatformInfo } from "../../lib/platform";
 
 export interface HealthDeps {
   llmConfigured(): Promise<boolean> | boolean;
   jevConfigured(): Promise<boolean> | boolean;
   automationStatus(): Promise<AutomationStatus> | AutomationStatus;
+  /** computed once at boot (core/container.ts) */
+  platform: PlatformInfo;
 }
 
 export interface HealthService {
@@ -45,6 +50,8 @@ export function createHealthService(config: AppConfig, deps: HealthDeps, logger:
           screen: automation.permissions?.screen === true,
         },
         jev: { configured: jev === true },
+        platform: deps.platform.platform,
+        features: { ...deps.platform.features },
       };
     },
   };

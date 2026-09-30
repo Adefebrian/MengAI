@@ -10,7 +10,7 @@
 import type { CreateProjectBody, FileContent, FileNodeDTO, PreviewDTO, ProjectDTO } from "@mengai/shared";
 import { mkdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import type { ModuleContext } from "../../core/module";
 import type { ProjectsService, WorkspaceService } from "../../core/services";
 import { badRequest, forbidden, HttpError, notFound } from "../../lib/http";
@@ -36,10 +36,30 @@ export interface ProjectsServiceImpl extends ProjectsService {
 
 const HOME_DENY = [".ssh", ".aws", ".gnupg", ".config", ".kube", ".docker", ".azure", ".password-store", "Library"];
 const SYSTEM_DENY = ["/System", "/usr", "/bin", "/sbin", "/etc", "/private/etc", "/private/var/db", "/Library", "/Applications", "/cores", "/dev"];
+/** Windows: the profile's app data (credentials, browser profiles) instead of ~/Library */
+const HOME_DENY_WIN = [".ssh", ".aws", ".gnupg", ".config", ".kube", ".docker", ".azure", "AppData"];
+
+/** Windows system folders a workspace may never be inside, from the environment with the usual defaults. */
+export function windowsSystemDeny(env: Record<string, string | undefined> = process.env): string[] {
+  const root = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\\Windows";
+  const drive = env.SystemDrive ?? "C:";
+  return [root, env.ProgramFiles ?? `${drive}\\Program Files`, env["ProgramFiles(x86)"] ?? `${drive}\\Program Files (x86)`, env.ProgramData ?? `${drive}\\ProgramData`];
+}
+
+/** Home and system folders denied as workspaces on this platform. */
+export function denyLists(platform: NodeJS.Platform = process.platform, env: Record<string, string | undefined> = process.env): { home: string[]; system: string[] } {
+  if (platform === "win32") return { home: HOME_DENY_WIN, system: windowsSystemDeny(env) };
+  return { home: HOME_DENY, system: SYSTEM_DENY };
+}
 
 const lastRunKey = (id: string) => `projects:lastRun:${id}`;
 
 function inside(child: string, parent: string): boolean {
+  if (process.platform === "win32") {
+    // Windows paths are case-insensitive
+    child = child.toLowerCase();
+    parent = parent.toLowerCase();
+  }
   return child === parent || child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
 }
 
@@ -87,7 +107,7 @@ export function createProjectsService(ctx: ModuleContext, deps: ProjectsDeps): P
   }
 
   async function validateChosenFolder(path: string): Promise<string> {
-    if (typeof path !== "string" || !path.startsWith("/") || path.includes("\0")) throw invalidWorkspace("workspacePath must be an absolute path");
+    if (typeof path !== "string" || !isAbsolute(path) || path.includes("\0")) throw invalidWorkspace("workspacePath must be an absolute path");
     let real: string;
     try {
       real = await realpath(path);
@@ -97,11 +117,13 @@ export function createProjectsService(ctx: ModuleContext, deps: ProjectsDeps): P
     if (!(await stat(real)).isDirectory()) throw invalidWorkspace("workspacePath is not a folder");
     const home = await realOr(homedir());
     const dataDir = await realOr(ctx.config.dataDir);
-    if (real === "/") throw invalidWorkspace("the filesystem root cannot be a workspace");
+    // "/" on macOS and Linux, a drive root such as C:\ on Windows
+    if (dirname(real) === real) throw invalidWorkspace("the filesystem root cannot be a workspace");
     if (inside(home, real)) throw invalidWorkspace("the home folder (or a folder above it) cannot be a workspace; pick a project folder inside it");
     if (inside(real, dataDir) || inside(dataDir, real)) throw invalidWorkspace("the app data folder cannot be part of a workspace");
-    for (const d of HOME_DENY) if (inside(real, join(home, d))) throw invalidWorkspace(`folders inside ~/${d} cannot be a workspace`);
-    for (const d of SYSTEM_DENY) if (inside(real, d)) throw invalidWorkspace(`system folders cannot be a workspace`);
+    const deny = denyLists();
+    for (const d of deny.home) if (inside(real, join(home, d))) throw invalidWorkspace(`folders inside ~/${d} cannot be a workspace`);
+    for (const d of deny.system) if (inside(real, d)) throw invalidWorkspace(`system folders cannot be a workspace`);
     return real;
   }
 

@@ -22,7 +22,7 @@ import { createPreviewModule } from "./index";
 import { LOG_LINES, LogRing, parseLocalUrl, stripAnsi } from "./output";
 import type { PreviewFetch, PreviewOptions, PreviewProcess, PreviewService, StaticServer } from "./ports";
 import { createStaticHandler, serveStatic } from "./static";
-import { openerEnv, portFree, revealArgv } from "./system";
+import { createBunSpawner, openerEnv, portFree, revealArgv } from "./system";
 
 // the root bunfig preloads happy-dom; Bun.serve and fetch need the native classes
 const native = (await import(String("undici"))) as { Request: typeof Request; Response: typeof Response; Headers: typeof Headers; fetch: typeof fetch };
@@ -628,7 +628,8 @@ describe("reveal", () => {
     await svc.reveal(root);
     expect(opened).toEqual([["/usr/bin/open", root]]);
     expect(revealArgv("linux", root)).toEqual(["xdg-open", root]);
-    expect(revealArgv("win32", root)).toEqual(["explorer.exe", root]);
+    expect(revealArgv("win32", root, undefined)).toEqual(["explorer.exe", root]);
+    expect(revealArgv("win32", "C:\\Users\\me\\MengAI\\site", "C:\\Windows")).toEqual(["C:\\Windows\\explorer.exe", "C:\\Users\\me\\MengAI\\site"]);
     await rejectsHttp(svc.reveal("relative/path"), 404);
     await rejectsHttp(svc.reveal(join(root, "missing")), 404);
     await writeFile(join(root, "file.txt"), "x");
@@ -649,5 +650,35 @@ describe("reveal", () => {
       503,
     );
     await service({ open: async () => 1, platform: "win32" }).svc.reveal(root);
+  });
+});
+
+describe("Windows process trees and PATH", () => {
+  test("Open folder on Windows runs explorer.exe from SystemRoot with the workspace root as its own argv entry", async () => {
+    const root = await tmp();
+    const { svc, opened } = service({ platform: "win32", env: { ...SOURCE_ENV, SystemRoot: "C:\\Windows" } });
+    await svc.reveal(root);
+    expect(opened).toEqual([["C:\\Windows\\explorer.exe", root]]);
+  });
+
+  test("on Windows kill() ends the tree through taskkill (no process group), elsewhere it signals the group", async () => {
+    const killed: number[] = [];
+    const win = createBunSpawner(undefined, { platform: "win32", killTree: (pid) => void killed.push(pid) });
+    const proc = win(["/bin/sleep", "30"], { cwd: tmpdir(), env: { PATH: "/usr/bin:/bin" } });
+    proc.kill("SIGTERM");
+    expect(killed).toEqual([proc.pid]);
+    expect(await proc.exited).toBeNull();
+    const mac = createBunSpawner(undefined, { platform: "darwin", killTree: (pid) => void killed.push(pid) });
+    const other = mac(["/bin/sleep", "30"], { cwd: tmpdir(), env: { PATH: "/usr/bin:/bin" } });
+    other.kill("SIGKILL");
+    expect(await other.exited).toBeNull();
+    expect(killed).toHaveLength(1);
+  });
+
+  test("the Windows preview PATH keeps the engine's absolute entries, ; separated, and adds no Unix folder", () => {
+    const path = previewPath("C:\\Program Files\\nodejs;relative\\bin;C:\\Users\\me\\AppData\\Roaming\\npm", "C:\\Users\\me", (p) => p === "C:\\Users\\me\\.bun\\bin", "win32");
+    expect(path).toBe("C:\\Program Files\\nodejs;C:\\Users\\me\\AppData\\Roaming\\npm;C:\\Users\\me\\.bun\\bin");
+    expect(path).not.toContain("/usr/bin");
+    expect(previewEnv({ port: 4300, home: "C:\\Users\\me", source: { PATH: "C:\\node" }, exists: () => false, platform: "win32" }).PATH).toBe("C:\\node");
   });
 });

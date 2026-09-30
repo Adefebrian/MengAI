@@ -42,7 +42,7 @@ import {
 } from "./demo";
 import type { ChatRequest } from "./ports";
 import type { ExecRequest, ExecResult, Runner } from "./ports/runner";
-import { memoryKv, memoryVault, silentLogger } from "../testing";
+import { memoryKv, memoryVault, silentLogger, testPlatform } from "../testing";
 
 const temps: string[] = [];
 afterAll(async () => {
@@ -82,6 +82,7 @@ describe("demo crew: one run shows every scenario", () => {
       logger: silentLogger,
       overrides: { db: createDb({ url: ":memory:" }), kv: memoryKv(), vault: memoryVault(), runner },
       demo: { paceMs: [1, 3] },
+      os: testPlatform(),
     });
     try {
       const { runId, projectId } = container.demo!.seed!;
@@ -465,6 +466,7 @@ describe("demo fund: one hedge fund day", () => {
       logger: silentLogger,
       overrides: { db: createDb({ url: ":memory:" }), kv: memoryKv(), vault: memoryVault(), runner: fakeRunner() },
       demo: { paceMs: [1, 3] },
+      os: testPlatform(),
     });
     try {
       const fund = container.demo!.seed!.fund!;

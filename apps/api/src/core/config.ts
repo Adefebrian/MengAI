@@ -4,7 +4,7 @@
 // module.ts) is what modules see; BootConfig adds the infra settings only the
 // entrypoints and the container need (URLs, KEK, setup code, log level).
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, win32 } from "node:path";
 import { decodeBase64, parseOrigins, type Env } from "@mengai/config";
 import pkg from "../../package.json";
 import type { AppConfig } from "./module";
@@ -45,8 +45,9 @@ export const OFFICIAL_SITE_ORIGIN = "https://mengai.adefebrian.com";
 export const KEYCHAIN_SERVICE = "id.mengai.app";
 export const SERVER_DEFAULT_PORT = 3001;
 
-/** Default data dir on macOS for the desktop app. */
-export function defaultLocalDataDir(home: string = homedir()): string {
+/** Default data dir for the desktop app: Application Support on macOS, %LOCALAPPDATA% on Windows. */
+export function defaultLocalDataDir(home: string = homedir(), platform: NodeJS.Platform = process.platform, env: Record<string, string | undefined> = process.env): string {
+  if (platform === "win32") return win32.join(env.LOCALAPPDATA && win32.isAbsolute(env.LOCALAPPDATA) ? env.LOCALAPPDATA : win32.join(home, "AppData", "Local"), "MengAI");
   return join(home, "Library", "Application Support", "MengAI");
 }
 
@@ -56,12 +57,12 @@ export function randomToken(bytes = 32): string {
   return Buffer.from(buf).toString("base64url");
 }
 
-export function buildConfig(env: Env, opts: { home?: string; version?: string } = {}): BootConfig {
+export function buildConfig(env: Env, opts: { home?: string; version?: string; platform?: NodeJS.Platform } = {}): BootConfig {
   const mode = env.MENGAI_MODE;
   const home = opts.home ?? homedir();
   const version = opts.version ?? APP_VERSION;
 
-  const dataDir = resolve(env.MENGAI_DATA_DIR ?? env.DATA_DIR ?? (mode === "local" ? defaultLocalDataDir(home) : "/data"));
+  const dataDir = resolve(env.MENGAI_DATA_DIR ?? env.DATA_DIR ?? (mode === "local" ? defaultLocalDataDir(home, opts.platform) : "/data"));
   const workspacesDir = resolve(
     env.MENGAI_WORKSPACES_DIR ?? env.WORKSPACES_DIR ?? (mode === "local" ? join(home, "MengAI") : join(dataDir, "workspaces")),
   );

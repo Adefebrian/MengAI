@@ -101,6 +101,8 @@ export interface CapabilityTools {
   venueNotes?(role: AgentRole): Promise<Array<{ venueId: string; version: number; text: string }>>;
   /** attaches an in-process simulated venue to the trading desk (the fund demo; structural) */
   connectSimulator?(sim: object): Promise<unknown>;
+  /** registry tools the platform turns off (shell_run without a crew sandbox); a dynamic role never lists them */
+  platformOff?(): ReadonlySet<string>;
 }
 
 /** What the engine adds to every tool call (the tools module's CapabilityContext, structurally). */

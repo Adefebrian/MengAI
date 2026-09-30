@@ -14,7 +14,7 @@ import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLo
 import { createPreviewModule, type PreviewService } from "../preview";
 import { createWorkspaceModule } from "../workspace";
 import { createProjectsModule } from "./index";
-import { id8, slugify } from "./service";
+import { denyLists, id8, slugify } from "./service";
 
 const made: string[] = [];
 async function tmp(prefix: string): Promise<string> {
@@ -283,5 +283,17 @@ describe("projects routes", () => {
       }
       expect(opened).toHaveLength(0);
     }
+  });
+});
+
+describe("workspace folder deny lists per platform", () => {
+  test("Windows denies its system folders and AppData; macOS keeps its lists", () => {
+    const win = denyLists("win32", { SystemRoot: "C:\\Windows", ProgramFiles: "C:\\Program Files", ProgramData: "C:\\ProgramData" });
+    expect(win.system).toEqual(["C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)", "C:\\ProgramData"]);
+    expect(win.home).toContain("AppData");
+    expect(win.system.some((p) => p.startsWith("/"))).toBe(false);
+    const mac = denyLists("darwin", {});
+    expect(mac.system).toContain("/System");
+    expect(mac.home).toContain("Library");
   });
 });

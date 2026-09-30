@@ -3,6 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { silentLogger } from "../../testing";
 import type { AppConfig } from "../../core/module";
+import { detectPlatform } from "../../lib/platform";
 import { createHealthModule } from "./index";
 
 const config: AppConfig = {
@@ -24,6 +25,7 @@ describe("health", () => {
         llmConfigured: async () => true,
         jevConfigured: () => false,
         automationStatus: async () => ({ available: true, reason: null, permissions: { accessibility: true, screen: false }, active: false }),
+        platform: detectPlatform({ platform: "darwin", sandboxUnavailable: () => null }),
       },
     );
     const res = await mod.routes!.request("/");
@@ -36,7 +38,19 @@ describe("health", () => {
       configured: true,
       automation: { available: true, accessibility: true, screen: false },
       jev: { configured: false },
+      platform: "darwin",
+      features: { shell: true, liveTrading: true, mcpStdio: true, scriptPreview: true },
     });
+  });
+
+  test.each(["win32", "linux"] as const)("%s reports its platform with every sandbox feature off", async (platform) => {
+    const mod = createHealthModule(
+      { config, logger: silentLogger },
+      { llmConfigured: () => true, jevConfigured: () => true, automationStatus: () => ({ available: false, reason: "x", permissions: { accessibility: false, screen: false }, active: false }), platform: detectPlatform({ platform }) },
+    );
+    const dto = await mod.service.check();
+    expect(dto.platform).toBe(platform);
+    expect(dto.features).toEqual({ shell: false, liveTrading: false, mcpStdio: false, scriptPreview: false });
   });
 
   test("a failing probe reads as not configured, never a 500", async () => {
@@ -50,6 +64,7 @@ describe("health", () => {
         automationStatus: () => {
           throw new Error("helper missing");
         },
+        platform: detectPlatform({ platform: "darwin", sandboxUnavailable: () => null }),
       },
     );
     const dto = await mod.service.check();

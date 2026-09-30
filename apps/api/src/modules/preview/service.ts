@@ -13,6 +13,9 @@
 // under sandbox-exec with the engine port guard (lib/engine-guard.ts): no
 // outbound TCP to the engine's own port, no LaunchServices, no Apple events;
 // everything else (network, their files, their own port) works as before.
+// Without a crew sandbox (lib/platform.ts) script previews never spawn: they
+// answer status failed with the "Coming soon" reason. Static previews and
+// Open folder (explorer.exe on Windows, the root as one argv entry) work.
 import type { PreviewDTO, PreviewStatus } from "@mengai/shared";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -20,6 +23,7 @@ import { basename, isAbsolute } from "node:path";
 import type { ModuleContext } from "../../core/module";
 import { createEngineSandbox, enginePorts as hostPorts, PREVIEW_RULES } from "../../lib/engine-guard";
 import { HttpError, notFound, unavailable } from "../../lib/http";
+import { comingSoonText } from "../../lib/platform";
 import { redact } from "../../lib/redact";
 import { detectPreview, type Detection, type PackageTool } from "./detect";
 import { previewEnv, previewPath } from "./env";
@@ -107,11 +111,13 @@ export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = 
   const limits: PreviewLimits = { ...PREVIEW_LIMITS, ...opts.limits };
   const log = ctx.logger.child({ module: "preview" });
   const guard = createEngineSandbox({ label: "live preview", ports: () => hostPorts(ctx.config.allowedHosts), extraRules: PREVIEW_RULES, logger: log });
-  const spawn: PreviewSpawner = opts.spawn ?? createBunSpawner((argv) => guard.wrap(argv));
+  const spawn: PreviewSpawner = opts.spawn ?? createBunSpawner((argv) => guard.wrap(argv), { platform: opts.platform });
   const probeFetch: PreviewFetch = opts.fetch ?? defaultFetch;
   const isFree: PortFree = opts.portFree ?? portFree;
   const serve: StaticServe = opts.serveStatic ?? serveStatic;
   const platform = opts.platform ?? process.platform;
+  /** null when dev scripts may run; otherwise the coming soon reason */
+  const scriptOff = opts.features && opts.features.scriptPreview !== true ? comingSoonText(platform, "scriptPreview") : null;
   const open: FolderOpener = opts.open ?? createOpener();
   const source = opts.env ?? process.env;
   const home = opts.home ?? homedir();
@@ -313,14 +319,14 @@ export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = 
 
   async function runScript(e: Entry, root: string, d: Extract<Detection, { kind: "script" }>): Promise<void> {
     const signal = e.cancel.signal;
-    const path = previewPath(source.PATH, home);
+    const path = previewPath(source.PATH, home, undefined, platform);
     const bin = which(d.tool, path);
     if (!bin) return fail(e, MISSING_TOOL[d.tool]);
     try {
       if (d.install) {
         e.status = "installing";
         e.log.note(`$ ${d.install.command}`);
-        const code = await runToExit(e, [bin, ...d.install.argv.slice(1)], root, previewEnv({ port: limits.ports[0], home, source }));
+        const code = await runToExit(e, [bin, ...d.install.argv.slice(1)], root, previewEnv({ port: limits.ports[0], home, source, platform }));
         if (signal.aborted) return;
         if (code !== 0) {
           return fail(e, code === null ? `${d.install.command} did not finish in ${Math.round(limits.installTimeoutMs / 1000)} s.` : `${d.install.command} failed with exit code ${code}. The log shows its last lines.`);
@@ -335,7 +341,7 @@ export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = 
       if (port === null) return fail(e, noPort());
       e.port = port;
       e.log.note(`$ ${d.command}`);
-      const proc = spawn([bin, ...d.argv.slice(1)], { cwd: root, env: previewEnv({ port, home, source }) });
+      const proc = spawn([bin, ...d.argv.slice(1)], { cwd: root, env: previewEnv({ port, home, source, platform }) });
       e.proc = proc;
       void readInto(proc.stdout, "stdout", e.log);
       void readInto(proc.stderr, "stderr", e.log);
@@ -391,6 +397,7 @@ export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = 
       if (e) return dto(e);
       const d = await detectPreview(root);
       if (d.kind === "none") return { ...idle(projectId), error: d.reason };
+      if (d.kind === "script" && scriptOff) return { ...idle(projectId), status: "failed", kind: d.kind, command: d.command, error: scriptOff };
       return { ...idle(projectId), kind: d.kind, command: d.command };
     },
 
@@ -408,6 +415,13 @@ export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = 
         entries.set(projectId, e);
         if (d.kind === "none") {
           fail(e, d.reason);
+          return dto(e);
+        }
+        if (d.kind === "script" && scriptOff) {
+          // nothing spawns: a dev script could reach the no-auth engine API without the crew sandbox
+          e.kind = d.kind;
+          e.command = d.command;
+          fail(e, scriptOff);
           return dto(e);
         }
         e.kind = d.kind;
@@ -451,7 +465,7 @@ export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = 
       if (!s?.isDirectory()) throw notFound("workspace folder");
       let code: number | null;
       try {
-        code = await open(revealArgv(platform, root));
+        code = await open(revealArgv(platform, root, source.SystemRoot ?? source.SYSTEMROOT));
       } catch (err) {
         log.log("warn", "open folder failed", { error: errText(err) });
         throw unavailable("Could not open the folder in the file manager");

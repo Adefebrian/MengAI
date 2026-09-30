@@ -11,8 +11,15 @@
 // with the engine port guard (lib/engine-guard.ts): it can never connect to
 // the engine's own port (the no-auth local API) and cannot start apps
 // through LaunchServices; network, files and Apple events work as before.
+//
+// Windows has no process groups: kill() ends the tree with taskkill /T /F
+// and no Unix system folder lands on PATH. Stdio servers stay off there
+// until a Windows sandbox exists (lib/platform.ts); these branches keep the
+// kill paths correct for when they turn on.
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { win32 } from "node:path";
+import { killTreeWindows } from "../../lib/platform";
 import type { SpawnedProcess, Spawner } from "./ports";
 
 const ENV_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/;
@@ -116,10 +123,29 @@ export function secretValues(secret: string | null | undefined): string[] {
   }
 }
 
+/** Windows PATH and base env: the system folders under SystemRoot and the home toolchains, ";" separated. */
+function windowsEnv(home: string, systemRoot: string | undefined, exists: (p: string) => boolean): Record<string, string> {
+  const root = systemRoot && win32.isAbsolute(systemRoot) ? systemRoot : "C:\\Windows";
+  const system = [win32.join(root, "System32"), root, win32.join(root, "System32", "Wbem")];
+  const path = [...system, ...HOME_BINS.map((b) => win32.join(home, b)).filter((p) => exists(p))];
+  return { PATH: [...new Set(path)].join(";"), SystemRoot: root, USERPROFILE: home };
+}
+
 /** The child environment: built from scratch, nothing inherited but PATH-like basics. */
-export function scrubbedEnv(opts: { tmpdir: string; extra: Record<string, string>; home?: string; exists?: (p: string) => boolean }): Record<string, string> {
+export function scrubbedEnv(opts: {
+  tmpdir: string;
+  extra: Record<string, string>;
+  home?: string;
+  exists?: (p: string) => boolean;
+  platform?: NodeJS.Platform;
+  /** Windows: the SystemRoot folder (default process.env.SystemRoot) */
+  systemRoot?: string;
+}): Record<string, string> {
   const home = opts.home ?? homedir();
   const exists = opts.exists ?? existsSync;
+  if ((opts.platform ?? process.platform) === "win32") {
+    return { ...opts.extra, ...windowsEnv(home, opts.systemRoot ?? process.env.SystemRoot ?? process.env.SYSTEMROOT, exists), HOME: home, TMPDIR: opts.tmpdir, TEMP: opts.tmpdir, TMP: opts.tmpdir, LANG: "en_US.UTF-8", TERM: "dumb" };
+  }
   const path = [...SYSTEM_PATH, ...HOME_BINS.map((b) => `${home}/${b}`).filter((p) => exists(p))];
   return {
     ...opts.extra,
@@ -131,22 +157,40 @@ export function scrubbedEnv(opts: { tmpdir: string; extra: Record<string, string
   };
 }
 
+export interface GroupOptions {
+  /** default process.platform */
+  platform?: NodeJS.Platform;
+  /** Windows: ends a process and its children (default taskkill /PID <pid> /T /F) */
+  killTree?: (pid: number) => void;
+}
+
 /**
  * Bun.spawn in its own process group; kill() signals the whole group. wrap
  * turns the argv into the sandboxed one (sandbox-exec execs the server, so
  * the pid and the group stay the same; it resolves the program on env.PATH).
+ * On Windows kill() ends the process tree instead.
  */
-export function createStdioSpawner(wrap: (argv: string[]) => string[] = (argv) => argv): Spawner {
-  return (argv, opts) => spawnGroup(argv, wrap(argv), opts);
+export function createStdioSpawner(wrap: (argv: string[]) => string[] = (argv) => argv, group: GroupOptions = {}): Spawner {
+  const platform = group.platform ?? process.platform;
+  const killTree = group.killTree ?? killTreeWindows;
+  return (argv, opts) => spawnGroup(argv, wrap(argv), opts, platform, killTree);
 }
 
 /** Unguarded: only for callers that apply their own sandbox. */
 export const bunSpawner: Spawner = createStdioSpawner();
 
-function spawnGroup(original: string[], argv: string[], opts: { env: Record<string, string>; cwd: string }): SpawnedProcess {
+function spawnGroup(
+  original: string[],
+  argv: string[],
+  opts: { env: Record<string, string>; cwd: string },
+  platform: NodeJS.Platform,
+  killTree: (pid: number) => void,
+): SpawnedProcess {
+  const windows = platform === "win32";
   let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
   try {
-    proc = Bun.spawn(argv, { cwd: opts.cwd, env: opts.env, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: true });
+    // setsid on macOS and Linux; Windows has no process groups (taskkill /T walks the tree)
+    proc = Bun.spawn(argv, { cwd: opts.cwd, env: opts.env, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: !windows });
   } catch (e) {
     throw new CommandError(`could not start ${original[0]}: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -164,10 +208,13 @@ function spawnGroup(original: string[], argv: string[], opts: { env: Record<stri
       () => null,
     ),
     kill() {
-      try {
-        process.kill(-pid, "SIGKILL");
-      } catch {
-        // the group is gone
+      if (windows) killTree(pid);
+      else {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch {
+          // the group is gone
+        }
       }
       try {
         proc.kill("SIGKILL");

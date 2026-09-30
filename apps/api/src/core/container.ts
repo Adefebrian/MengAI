@@ -16,6 +16,11 @@
 // and the trading venue; trading (paper broker, live gate) feeds the tools
 // bridge; companies (studio, fund templates) feed the runs engine. The kill
 // switch also kills every MCP server process and cancels open orders.
+//
+// Platform features (lib/platform.ts) are computed once here, before any
+// module exists: macOS with a working sandbox runs everything; Windows and
+// Linux refuse crew shell commands, live trading, stdio MCP servers and dev
+// script previews with a "Coming soon" reason, and health reports which.
 import { mkdir } from "node:fs/promises";
 import type { AutomationStatus } from "@mengai/shared";
 import type { Hono } from "hono";
@@ -39,6 +44,7 @@ import { createToolsModule } from "../modules/tools";
 import { createTradingModule } from "../modules/trading";
 import { createUsageModule } from "../modules/usage";
 import { createWorkspaceModule } from "../modules/workspace";
+import { detectPlatform, type PlatformInfo } from "../lib/platform";
 import { redact } from "../lib/redact";
 import { createDb } from "./adapters/db-bunsql";
 import { createFsBlobStore } from "./adapters/blob-fs";
@@ -47,6 +53,7 @@ import { createMemoryKv } from "./adapters/kv-memory";
 import { connectRedisKv, type RedisKv } from "./adapters/kv-redis";
 import { createPlainRunner } from "./adapters/runner-plain";
 import { createSeatbeltRunner } from "./adapters/runner-seatbelt";
+import { createWindowsRunner } from "./adapters/runner-windows";
 import { createKeychainVault } from "./adapters/vault-keychain";
 import { createEnvelopeVault } from "./adapters/vault-envelope";
 import { createApp } from "./app";
@@ -80,6 +87,8 @@ export interface ContainerOptions {
   connectors?: ConnectorsOptions;
   /** tests inject the dev server spawner, probe fetch and folder opener for live preview */
   preview?: PreviewOptions;
+  /** the platform and its sandbox features; default detectPlatform() (tests run it as win32 and linux) */
+  os?: PlatformInfo;
 }
 
 export interface Container {
@@ -109,6 +118,8 @@ export interface Container {
   };
   killswitch: KillSwitchImpl;
   runner: Runner;
+  /** the platform and the sandbox features computed at boot */
+  os: PlatformInfo;
   /** demo mode: what the first boot seeded (null when projects existed); null outside demo mode */
   demo: { seed: DemoSeed | null } | null;
   close(): Promise<void>;
@@ -140,15 +151,20 @@ const automationUnavailable: AutomationService = {
   },
 };
 
-export type RunnerKind = "seatbelt" | "plain";
+export type RunnerKind = "seatbelt" | "plain" | "windows";
 
-/** macOS jails agent commands with Seatbelt; Linux (the server image) uses the plain runner. */
+/** macOS jails agent commands with Seatbelt; Windows refuses them (no sandbox yet); Linux (the server image) uses the plain runner. */
 export function runnerKind(platform: NodeJS.Platform = process.platform): RunnerKind {
-  return platform === "darwin" ? "seatbelt" : "plain";
+  if (platform === "darwin") return "seatbelt";
+  if (platform === "win32") return "windows";
+  return "plain";
 }
 
-function createRunner(dataDir: string): Runner {
-  return runnerKind() === "seatbelt" ? createSeatbeltRunner({ dataDir }) : createPlainRunner();
+function createRunner(dataDir: string, platform: NodeJS.Platform): Runner {
+  const kind = runnerKind(platform);
+  if (kind === "seatbelt") return createSeatbeltRunner({ dataDir });
+  if (kind === "windows") return createWindowsRunner({ platform });
+  return createPlainRunner();
 }
 
 /**
@@ -176,6 +192,9 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
   const logger = opts.logger ?? createAppLogger(boot.logLevel, { mode: config.mode });
   const clock = opts.overrides?.clock ?? systemClock;
   const demoOpts: DemoOptions | null = opts.demo ? (opts.demo === true ? {} : opts.demo) : null;
+  // once, before any module: every module that enforces a feature gets this same value
+  const os = opts.os ?? detectPlatform();
+  if (os.reason) logger.log("warn", "sandbox features are off on this platform (shown as coming soon)", { platform: os.platform, reason: os.reason });
 
   // ------------------------------------------------------------- ports
   if (!opts.overrides?.db && boot.databaseUrl.startsWith("sqlite://")) {
@@ -224,7 +243,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       vault = await createEnvelopeVault({ db, kek: boot.vaultKek, clock });
     }
 
-    const runner = opts.overrides?.runner ?? createRunner(config.dataDir);
+    const runner = opts.overrides?.runner ?? createRunner(config.dataDir, os.platform);
     const automation: AutomationService | null = null;
 
     // ----------------------------------------------------------- modules
@@ -240,7 +259,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
     const jev = createJevModule(ctx, { judge: providers.service.judge });
     const workspace = createWorkspaceModule(ctx, { runner });
     // live preview (local only): the kill switch and shutdown stop every preview
-    const preview = createPreviewModule(ctx, { killswitch }, opts.preview);
+    const preview = createPreviewModule(ctx, { killswitch }, { platform: os.platform, ...opts.preview, features: os.features });
     const projects = createProjectsModule(ctx, { workspace: workspace.service, preview: preview.service });
     const context = createContextModule(ctx);
     const llm: LlmRouter = demoOpts
@@ -259,8 +278,8 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       settings: settings.service,
       projects: projects.service,
     });
-    const connectors = createConnectorsModule(ctx, { killswitch }, opts.connectors);
-    const trading = createTradingModule(ctx, { venue: connectors.service, killswitch });
+    const connectors = createConnectorsModule(ctx, { killswitch }, { ...opts.connectors, platform: os });
+    const trading = createTradingModule(ctx, { venue: connectors.service, killswitch, platform: os });
     const companies = createCompaniesModule();
     const tools = createToolsModule(ctx, {
       workspace: workspace.service,
@@ -273,6 +292,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       projects: projects.service,
       connectors: connectors.service,
       trading: trading.service,
+      platform: os,
     });
     const runs = createRunsModule(ctx, {
       projects: projects.service,
@@ -297,6 +317,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
       llmConfigured: opts.health?.llmConfigured ?? (() => providers.service.llm.configured()),
       jevConfigured: opts.health?.jevConfigured ?? (() => providers.service.judge.configured()),
       automationStatus: opts.health?.automationStatus ?? (() => AUTOMATION_OFF),
+      platform: os,
     });
 
     // every module, in creation order; closed in reverse
@@ -362,6 +383,7 @@ export async function createContainer(opts: ContainerOptions): Promise<Container
         modules: { events, settings, auth, usage, providers, jev, workspace, preview, projects, context, memory, assets, security, tools, connectors, trading, companies, runs, evals, health },
         killswitch,
         runner,
+        os,
         demo,
         close,
       };

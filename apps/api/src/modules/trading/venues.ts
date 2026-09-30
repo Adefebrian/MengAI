@@ -17,10 +17,14 @@
 // notes() renders them for every cat whose role may use the venue, one note
 // per venue, byte-stable per skill version so the prompt prefix caches.
 // Tool errors on a venue become crew lessons; fills record wins and losses.
+// Without a crew sandbox (lib/platform.ts) a venue cannot be created or
+// switched to live, and one whose preset starts a local MCP server cannot be
+// created or enabled; custom HTTP venues and paper venues keep working.
 import { TRADING_VENUE_PRESETS, type AgentRole, type ConnectorDTO, type CreateConnectorBody, type CreateTradingVenueBody, type TradingSettings, type TradingVenueDTO, type TradingVenuePreset, type UpdateConnectorBody } from "@mengai/shared";
 import type { ModuleContext } from "../../core/module";
 import type { Logger } from "../../core/ports/logger";
 import { conflict, HttpError, notFound } from "../../lib/http";
+import { assertFeature, type PlatformInfo } from "../../lib/platform";
 import { clip, redact } from "../../lib/redact";
 import { errorMeaning, learnVenue, skillName, skillPrefix, SKILL_TOPICS, venueNote, venueSkills } from "./learn";
 import type { TradingVenue, UpdateTradingVenueBody, VenueMemory, VenueNote, VenueSimulator, VenueTool } from "./ports";
@@ -135,6 +139,8 @@ export interface DeskDeps {
   venue: TradingVenue | null;
   settings(): Promise<TradingSettings>;
   log: Logger;
+  /** boot-time platform features; absent keeps every feature on */
+  platform?: PlatformInfo;
 }
 
 export type Desk = ReturnType<typeof createDesk>;
@@ -413,6 +419,8 @@ export function createDesk(d: DeskDeps) {
     async create(body: CreateTradingVenueBody): Promise<TradingVenueDTO> {
       const preset = presetOf(body.preset);
       const mode = body.mode === "live" ? "live" : "paper";
+      if (preset.connector === "mcp_stdio") assertFeature(d.platform, "mcpStdio");
+      if (mode === "live") assertFeature(d.platform, "liveTrading");
       const testnet = body.testnet === true;
       if (mode === "paper" && !preset.supportsPaper) throw invalid(`mode: ${preset.label} has no paper mode`);
       if (testnet && !preset.supportsTestnet) throw invalid(`testnet: ${preset.label} has no testnet`);
@@ -480,6 +488,8 @@ export function createDesk(d: DeskDeps) {
     async update(id: string, body: UpdateTradingVenueBody): Promise<TradingVenueDTO> {
       const row = await requireRow(id);
       if (body.preset !== undefined && body.preset !== row.preset) throw invalid("preset: a venue keeps its preset; add a new venue instead");
+      if (body.mode === "live") assertFeature(d.platform, "liveTrading");
+      if (body.enabled === true && !row.enabled && !isSim(row) && presetOf(row.preset).connector === "mcp_stdio") assertFeature(d.platform, "mcpStdio");
       const next: VenueRow = { ...row, updatedAt: ctx.clock.now() };
       if (body.label !== undefined) {
         const label = clip(body.label.trim(), VENUE_LIMITS.labelChars);
@@ -613,7 +623,8 @@ export function createDesk(d: DeskDeps) {
         label: clip(sim.title || label, VENUE_LIMITS.labelChars),
         skillKey: label,
         target: "",
-        mode: opts.mode === "live" ? "live" : "paper",
+        // no live mode without the crew sandbox, even for a simulated venue
+        mode: opts.mode === "live" && d.platform?.features.liveTrading !== false ? "live" : "paper",
         testnet: false,
         enabled: true,
         status: "connected",
