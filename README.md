@@ -12,6 +12,8 @@ the work on a delivery style tracker from goal to shipped.
 Everything runs on your own Mac with your own model keys. The website is
 only the interface: it has no accounts and stores nothing.
 
+<img width="1453" height="1006" alt="Screenshot 2026-09-30 at 13 10 10" src="https://github.com/user-attachments/assets/ba74f0b1-4734-4299-977f-d2e8292e5c95" />
+
 **Download the beta for Mac:** https://github.com/Adefebrian/MengAI/releases/tag/v0.1.0-beta
 
 ## What it does
