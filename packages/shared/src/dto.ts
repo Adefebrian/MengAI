@@ -585,6 +585,8 @@ export interface AgentMindDTO {
   lessons: Array<{ id: string; text: string; reason: string }>;
   /** saved procedures that match its current or last task */
   skills: Array<{ id: string; name: string; description: string; reason: string }>;
+  /** written skills this cat read on its last step (built-in JAL-AIDev pack first, then the owner's) */
+  crewSkills: Array<{ id: string; name: string; source: "builtin" | "owner"; tokens: number }>;
   /** runtime JEV decisions about this cat: its role, its hire, its strategies, letting it go */
   decisions: DecisionDTO[];
   /** strategy versions of its role and of the cat itself, newest first */
