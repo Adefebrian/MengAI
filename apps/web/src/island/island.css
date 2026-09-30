@@ -1,0 +1,476 @@
+/* Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
+   SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
+/*
+ * The Mac island (/island): one black shape on the MacBook notch, and its
+ * development preview. The island is black so it merges with the hardware
+ * notch (Brian's call for this one surface); everything on it is light and
+ * flat: plain fills, no glow, no shadow, hairlines only where a control
+ * needs a boundary, 44 px targets for every button. The shape's size and
+ * corners come from Motion (Island.tsx); nothing in here animates layout.
+ * Under reduced motion nothing moves at all.
+ */
+
+/* ---------------------------------------------------------------------
+ * Island tokens: one black, one near-white ink, and steps mixed between
+ * them. Declared once here, referenced by name below.
+ * ------------------------------------------------------------------- */
+:root {
+  --island-bg: #000;
+  --island-ink: #f4f4f1;
+  --island-ink-muted: #a6a6a1;
+  --island-line: color-mix(in oklab, var(--island-ink) 18%, var(--island-bg));
+  --island-line-strong: color-mix(in oklab, var(--island-ink) 34%, var(--island-bg));
+  --island-hover: color-mix(in oklab, var(--island-ink) 12%, var(--island-bg));
+  --island-pressed: color-mix(in oklab, var(--island-ink) 18%, var(--island-bg));
+  --island-fill-hover: color-mix(in oklab, var(--island-bg) 12%, var(--island-ink));
+  --island-fill-pressed: color-mix(in oklab, var(--island-bg) 20%, var(--island-ink));
+  --island-disabled: color-mix(in oklab, var(--island-ink) 40%, var(--island-bg));
+  --island-disabled-fill: color-mix(in oklab, var(--island-ink) 14%, var(--island-bg));
+  --island-success: #86cf9c;
+  --island-danger: #f2a08c;
+}
+
+/* Inside the Tauri island window the page is transparent: only the shape shows. */
+html[data-surface="island"],
+html[data-surface="island"] body {
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  color-scheme: dark;
+}
+html[data-surface="island"] #root {
+  height: 100%;
+}
+
+/* ---------------------------------------------------------------------
+ * The shape
+ * ------------------------------------------------------------------- */
+.island-stage {
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  inline-size: 100%;
+  min-width: 0;
+}
+html[data-surface="island"] .island-stage {
+  block-size: 100%;
+}
+
+.island {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  overflow: clip;
+  background: var(--island-bg);
+  color: var(--island-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  letter-spacing: var(--tracking-body);
+  font-variant-numeric: var(--font-numeric);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+.island:is([data-view="idle"], [data-view="collapsed"], [data-view="peek"], [data-view="shipped"]) {
+  cursor: pointer;
+}
+.island p {
+  margin: 0;
+}
+
+/* The band: the notch row. Ears of one width either side of the notch, so
+   the window stays centred on it; without a notch, the pill's own row. */
+.island-band {
+  box-sizing: border-box;
+  display: grid;
+  flex: none;
+  align-items: center;
+  inline-size: 100%;
+  min-width: 0;
+}
+.island-band[data-pill] {
+  display: flex;
+  gap: var(--space-8px);
+  padding-inline: var(--space-12px);
+}
+/* A grown pill rounds its top corners wider (--radius-28): the cat keeps clear of the curve. */
+.island:not([data-view="idle"], [data-view="collapsed"]) .island-band[data-pill] {
+  padding-inline: var(--space-16px);
+}
+.island-ear {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6px);
+  min-width: 0;
+  block-size: 100%;
+}
+.island-band[data-notch] > .island-ear[data-side="start"] {
+  justify-content: flex-start;
+  padding-inline: var(--space-12px) var(--space-8px);
+}
+.island-band[data-notch] > .island-ear[data-side="end"] {
+  justify-content: flex-end;
+  padding-inline: var(--space-8px) var(--space-12px);
+}
+.island-notch {
+  display: block;
+  min-width: 0;
+  block-size: 100%;
+}
+.island-ear-text {
+  display: block;
+  flex: none;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+  color: var(--island-ink);
+  font-variant-numeric: var(--font-numeric);
+}
+.island-ring {
+  display: block;
+  flex: none;
+  inline-size: var(--space-16px);
+  block-size: var(--space-16px);
+  border-radius: var(--radius-pill);
+  /* The track: a round 2 px line drawn inside the ring's own box, under the arc. */
+  outline: 2px solid var(--island-line-strong);
+  outline-offset: -2px;
+}
+.island-ring > svg {
+  display: block;
+}
+.island-ring-value {
+  stroke: var(--island-ink);
+}
+
+/* The body: everything under the band, at its final width so a morph never reflows it. */
+.island-body {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-8px);
+  min-width: 0;
+  max-inline-size: 100%;
+  padding: var(--space-8px) var(--space-16px) var(--space-16px);
+}
+.island-body > * {
+  min-width: 0;
+}
+
+.island-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-block-size: var(--control-h);
+}
+.island-head-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.island-title {
+  font-weight: var(--weight-medium);
+  color: var(--island-ink);
+  overflow-wrap: anywhere;
+}
+.island-meta {
+  color: var(--island-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The crew at work: rows, one cat each (JEV peek_crew_container: rows). */
+.island-crew {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.island-crew-row {
+  display: grid;
+  grid-template-columns: var(--space-24px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-8px);
+  min-block-size: var(--space-32px);
+  padding-block: var(--space-4px);
+}
+.island-crew-text {
+  min-width: 0;
+  color: var(--island-ink-muted);
+  overflow-wrap: anywhere;
+}
+.island-crew-name {
+  font-weight: var(--weight-medium);
+  color: var(--island-ink);
+}
+
+/* An ask: who asks, what, how much, then the answer. */
+.island-ask-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12px);
+  min-block-size: var(--line-0);
+}
+.island-ask-head[data-queue] {
+  min-block-size: var(--control-h);
+}
+.island-ask-lead {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+.island-ask-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--island-ink);
+}
+.island-ask-icon[data-tone="danger"] {
+  color: var(--island-danger);
+}
+.island-ask-who {
+  min-width: 0;
+  font-weight: var(--weight-medium);
+  color: var(--island-ink-muted);
+  overflow-wrap: anywhere;
+}
+.island-queue {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4px);
+}
+.island-queue-count {
+  padding-inline-end: var(--space-4px);
+  color: var(--island-ink-muted);
+}
+.island-ask-title {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
+  color: var(--island-ink);
+  overflow-wrap: anywhere;
+}
+.island-ask-detail {
+  color: var(--island-ink);
+  overflow-wrap: anywhere;
+}
+.island-ask-reason {
+  color: var(--island-ink-muted);
+  overflow-wrap: anywhere;
+}
+.island-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-8px);
+  margin-block-start: var(--space-4px);
+}
+.island-actions[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.island-actions[data-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.island-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+  min-block-size: var(--control-h);
+  margin-block-start: var(--space-4px);
+  color: var(--island-ink);
+}
+.island-result[data-tone="success"] {
+  color: var(--island-success);
+}
+.island-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8px);
+  color: var(--island-danger);
+}
+.island-error > .icon {
+  margin-block-start: var(--space-2px);
+}
+
+/* ---------------------------------------------------------------------
+ * Buttons on black, all eight states. The global button base gives the
+ * 44 px height, the nowrap label and the loading spinner.
+ * ------------------------------------------------------------------- */
+.island .island-btn {
+  box-sizing: border-box;
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--space-12px);
+  gap: var(--space-8px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-pill);
+  color: var(--island-ink);
+  background: transparent;
+  border: var(--border-weight) solid transparent;
+}
+.island .island-btn[data-variant="primary"] {
+  color: var(--island-bg);
+  background: var(--island-ink);
+  border-color: var(--island-ink);
+}
+.island .island-btn[data-variant="secondary"] {
+  border-color: var(--island-line-strong);
+}
+.island .island-btn[data-variant="icon"] {
+  inline-size: var(--control-h);
+  padding: 0;
+}
+@media (hover: hover) {
+  .island .island-btn:enabled:hover {
+    background: var(--island-hover);
+    border-color: var(--island-line-strong);
+  }
+  .island .island-btn[data-variant="ghost"]:enabled:hover,
+  .island .island-btn[data-variant="icon"]:enabled:hover {
+    border-color: transparent;
+  }
+  .island .island-btn[data-variant="primary"]:enabled:hover {
+    background: var(--island-fill-hover);
+    border-color: var(--island-fill-hover);
+  }
+}
+.island .island-btn:enabled:active {
+  background: var(--island-pressed);
+  border-color: var(--island-line-strong);
+  transform: scale(0.98);
+}
+.island .island-btn[data-variant="primary"]:enabled:active {
+  background: var(--island-fill-pressed);
+  border-color: var(--island-fill-pressed);
+}
+.island .island-btn:focus-visible {
+  outline: 2px solid var(--island-ink);
+  outline-offset: 2px;
+}
+.island .island-btn:disabled {
+  color: var(--island-disabled);
+  background: transparent;
+  border-color: var(--island-line);
+  cursor: default;
+  transform: none;
+}
+.island .island-btn[data-variant="primary"]:disabled {
+  background: var(--island-disabled-fill);
+  border-color: var(--island-disabled-fill);
+}
+.island .island-btn[data-variant="icon"]:disabled,
+.island .island-btn[data-variant="ghost"]:disabled {
+  border-color: transparent;
+}
+.island .island-btn[aria-busy="true"] {
+  color: transparent;
+}
+.island .island-btn[aria-busy="true"]::after {
+  border-color: var(--island-ink);
+  border-top-color: transparent;
+}
+.island .island-btn[data-variant="primary"][aria-busy="true"]::after {
+  border-color: var(--island-bg);
+  border-top-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island .island-btn {
+    transition: none;
+  }
+  .island .island-btn:enabled:active {
+    transform: none;
+  }
+}
+.island[data-motion="still"] .island-btn {
+  transition: none;
+}
+.island[data-motion="still"] .island-btn:enabled:active {
+  transform: none;
+}
+
+/* ---------------------------------------------------------------------
+ * The development preview (a browser without the Tauri shell)
+ * ------------------------------------------------------------------- */
+.island-preview {
+  box-sizing: border-box;
+  min-block-size: 100dvh;
+  padding: 0 var(--space-24px);
+  background: var(--color-page);
+  color: var(--color-ink);
+}
+.island-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24px);
+  padding-block: var(--kit-gap-section);
+  max-inline-size: 960px;
+  margin-inline: auto;
+  min-width: 0;
+}
+.island-preview-head h1 {
+  margin: 0;
+  font-size: var(--text-4);
+  line-height: var(--line-4);
+  letter-spacing: var(--tracking-heading);
+  font-weight: var(--weight-semibold);
+}
+.island-preview-head p {
+  max-inline-size: 68ch;
+  margin: var(--space-8px) 0 0;
+  color: var(--color-ink-muted);
+}
+.island-preview-screen {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-block-size: 360px;
+  border: var(--border-weight) solid var(--color-border);
+  border-radius: var(--radius-16);
+  background: var(--color-layer-1);
+}
+.island-preview-menubar {
+  flex: none;
+  block-size: var(--space-24px);
+  background: var(--color-layer-2);
+}
+/* On a narrow preview the desktop-sized island scrolls inside its stage instead of spilling out. */
+.island-preview-screen .island-stage {
+  justify-content: safe center;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.island-preview-screen:not([data-notch]) .island-stage {
+  padding-block-start: var(--space-8px);
+}
+.island-preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-24px);
+  min-width: 0;
+}
+.island-preview-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+/* The picked state: a tonal fill and weight, never a bar. */
+.island-preview-group > button[aria-pressed="true"] {
+  background: var(--color-layer-2);
+  border-color: var(--color-border-strong);
+  font-weight: var(--weight-semibold);
+}

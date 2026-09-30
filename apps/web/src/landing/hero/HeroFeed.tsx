@@ -83,7 +83,8 @@ export function HeroFeed({ feed, count, reduced, ready = true }: { feed: FeedNot
   const one = count === 1;
   return (
     <ol className="lp-feed" aria-label="Company feed" data-count={count}>
-      <AnimatePresence initial={false} mode={one ? "wait" : "popLayout"}>
+      {/* popLayout injects a style element, which the engine's style-src 'self' refuses; sync keeps it CSP clean */}
+      <AnimatePresence initial={false} mode={one ? "wait" : "sync"}>
         {shown.map((n) => (
           <motion.li
             key={n.id}

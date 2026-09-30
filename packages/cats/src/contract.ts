@@ -5,7 +5,8 @@
 // motion stills). Keep this file stable: both sides build in parallel.
 import type { Activity, AgentRole, AgentStatus, CatLook, Mood } from "@mengai/shared";
 
-export type CatSize = 48 | 64 | 96 | 160;
+/** 24 and 32 are the mini cats (the Mac island); 48 and up carry the full detail. */
+export type CatSize = 24 | 32 | 48 | 64 | 96 | 160;
 
 export interface CatProps {
   look: CatLook;

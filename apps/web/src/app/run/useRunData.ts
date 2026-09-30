@@ -15,6 +15,7 @@ import { playDemo, type DemoPlayer } from "../../demo/player";
 import { createRunStore, emptyRunState, replay, useRunState, type EventSourceLike, type RunState } from "../../store/runStore";
 import { useApp } from "../context";
 import { isFinished } from "../status";
+import { askAnswer } from "./answer";
 
 export interface RunData {
   state: RunState;
@@ -38,20 +39,7 @@ export interface RunData {
   patchTask: (taskId: string, status: "queued" | "cancelled") => Promise<void>;
 }
 
-/**
- * The owner's answer to a cat's ask, as the note the engine hands to the
- * waiting cat. Only the routes the engine serves are used.
- */
-export function askAnswer(a: ApprovalDTO, decision: "approve" | "deny", scope: "once" | "session"): { text: string; agentId?: string } {
-  const what = a.title.trim().replace(/[.\s]+$/, "");
-  const text =
-    decision === "deny"
-      ? `No, do not do this: ${what}.`
-      : scope === "session"
-        ? `Yes, go ahead: ${what}. You may do this again for the rest of this run without asking.`
-        : `Yes, go ahead this once: ${what}.`;
-  return a.agentId ? { text, agentId: a.agentId } : { text };
-}
+export { askAnswer } from "./answer";
 
 function withRun(state: RunState, run: Partial<RunDTO>): RunState {
   return state.run ? { ...state, run: { ...state.run, ...run } } : state;

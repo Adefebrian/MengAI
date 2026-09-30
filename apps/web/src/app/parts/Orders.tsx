@@ -16,31 +16,14 @@ import { AnimatePresence, motion } from "motion/react";
 import { useId, useState } from "react";
 import { errorMessage } from "../../api/client";
 import { fmtAgo, fmtPrice, fmtQty, fmtSignedUsd } from "../format";
+import { orderTitle, orderType, sentence, waitsOnYou } from "./orderText";
 import { T, useMotionLevel } from "../motion";
 import { usePlatform } from "../context";
 import { soonRowReason } from "../platform";
 import { ORDER_STATUS } from "../status";
 import { Soon } from "../ui";
 
-export function orderTitle(o: OrderDTO): string {
-  const side = o.side === "buy" ? "Buy" : "Sell";
-  return `${side} ${fmtQty(o.qty)} ${o.symbol}`;
-}
-
-function orderType(o: OrderDTO): string {
-  return o.type === "limit" && o.limitPrice !== null ? `limit at ${fmtPrice(o.limitPrice)}` : "at market";
-}
-
-/** A rationale reads as a sentence: its first letter capitalised. */
-export function sentence(text: string): string {
-  const t = text.trim();
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
-}
-
-/** Orders a person must answer: live and proposed. Paper orders never wait on you. */
-export function waitsOnYou(o: OrderDTO): boolean {
-  return o.status === "proposed" && o.mode === "live";
-}
+export { orderTitle, sentence, waitsOnYou } from "./orderText";
 
 /** Newest first, the ones waiting on you on top. */
 export function sortOrders(list: OrderDTO[]): OrderDTO[] {

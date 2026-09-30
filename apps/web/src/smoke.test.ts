@@ -6,7 +6,7 @@
 // CHROME_PATH are available, every test in this file is skipped so
 // `bun test` still passes in an environment with no browser installed
 // (e.g. this template's own CI verification, or a bare dev container).
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { Browser } from "puppeteer-core";
@@ -72,6 +72,24 @@ describe.skipIf(!chromePath)("smoke: built SPA renders", () => {
     for (const name of ["Oyen", "Gembul", "Klepon", "Tempe", "Onde", "Cilok"]) expect(office).toContain(name);
     const now = await page.$eval(".status-now", (el) => el.textContent ?? "");
     expect(now.length).toBeGreaterThan(0);
+    await page.close();
+  });
+
+  test("boots the Mac island on its own small entry, never the app or the landing", async () => {
+    const dist = new URL("../dist/", import.meta.url);
+    const appChunk = readdirSync(dist).find((f) => f.endsWith(".js") && /export\{[^}]*\bbootApp\b/.test(readFileSync(new URL(f, dist), "utf8")));
+    expect(appChunk).toBeTruthy();
+    const page = await browser.newPage();
+    const scripts: string[] = [];
+    page.on("request", (r) => {
+      if (r.resourceType() === "script") scripts.push(new URL(r.url()).pathname);
+    });
+    await page.goto(`http://localhost:${server.port}/island?state=expanded`, { waitUntil: "networkidle0" });
+    await page.waitForSelector('.island[data-view="ask"]');
+    const approve = await page.$$eval(".island button", (list) => list.map((b) => b.textContent?.trim()));
+    expect(approve).toContain("Approve");
+    expect(await page.$(".shell")).toBeNull();
+    expect(scripts).not.toContain(`/${appChunk}`);
     await page.close();
   });
 });
