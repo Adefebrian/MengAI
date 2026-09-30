@@ -12,9 +12,10 @@
 //   1 embedded: no MENGAI_MIGRATIONS_DIR, so the SQL compiled into the binary is used
 //   2 shell:    MENGAI_MIGRATIONS_DIR = Contents/Resources/migrations, stopped by closing stdin
 //   3 restart:  the data dir of 1 again, nothing left to apply
-// Each one: ready line within 30 s with contract-valid tokens, GET /api/health 200,
-// GET / serves the bundled web app, schema_migrations holds every bundled version,
-// clean exit within 5 s.
+// Each one: ready line within 30 s (valid port; controlToken valid when present, local
+// mode has no auth), GET /api/health 200, GET / and GET /app (what the window loads)
+// serve the bundled web app, schema_migrations holds every bundled version, clean exit
+// within 5 s.
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { mkdtemp, readdir, rm, rmdir } from "node:fs/promises";
@@ -128,17 +129,19 @@ export async function checkSidecar(c: SidecarCheck): Promise<SidecarResult> {
       "ready line",
     ).catch((e: Error) => fail(e.message));
     const readyMs = Math.round(performance.now() - started);
-    const ready = JSON.parse(line) as { event: string; port: number; launchToken: string; controlToken: string };
+    const ready = JSON.parse(line) as { event: string; port: number; controlToken?: string | null };
     if (ready.event !== "ready" || !Number.isInteger(ready.port) || ready.port < 1 || ready.port > 65535) fail("ready line has no valid port");
-    if (!TOKEN.test(ready.launchToken) || !TOKEN.test(ready.controlToken)) fail("ready line tokens break the contract");
+    if (ready.controlToken != null && !TOKEN.test(ready.controlToken)) fail("ready line controlToken breaks the contract");
 
     const base = `http://127.0.0.1:${ready.port}`;
     const health = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(HTTP_MS) });
     const healthBody = (await health.text()).slice(0, 300);
     if (health.status !== 200) fail(`GET /api/health answered ${health.status}: ${healthBody}`);
-    const index = await fetch(`${base}/`, { signal: AbortSignal.timeout(HTTP_MS) });
-    const indexBody = await index.text();
-    if (index.status !== 200 || !/<html/i.test(indexBody)) fail(`GET / did not serve the bundled web app (status ${index.status})`);
+    for (const path of ["/", "/app"]) {
+      const page = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(HTTP_MS) });
+      const body = await page.text();
+      if (page.status !== 200 || !/<html/i.test(body)) fail(`GET ${path} did not serve the bundled web app (status ${page.status})`);
+    }
 
     if (c.stop === "sigterm") proc.kill("SIGTERM");
     else proc.stdin.end();
@@ -247,14 +250,14 @@ export async function smokeOpen(app: string, productName: string, identifier: st
   try {
     const opened = await capture(["open", "-g", "-n", "--env", `MENGAI_WORKSPACES_DIR=${workspaces}`, app]);
     if (opened.code !== 0) throw new Error(`open failed: ${opened.out.trim()}`);
-    const pair = await waitFor("shell and sidecar processes", 30_000, async () => {
+    const found = await waitFor("shell and sidecar processes", 30_000, async () => {
       const ps = await processes();
       const shell = ps.find((p) => p.command.startsWith(shellBin));
       const sidecar = shell && ps.find((p) => p.command.startsWith(sidecarBin) && p.ppid === shell.pid);
       return shell && sidecar ? { shell: shell.pid, sidecar: sidecar.pid } : null;
     });
-    shellPid = pair.shell;
-    sidecarPid = pair.sidecar;
+    shellPid = found.shell;
+    sidecarPid = found.sidecar;
     const port = await waitFor("sidecar listening on loopback", 30_000, async () => {
       const { out } = await capture(["lsof", "-nP", "-a", "-p", String(sidecarPid), "-iTCP", "-sTCP:LISTEN", "-Fn"]);
       const m = /^n127\.0\.0\.1:(\d+)$/m.exec(out);

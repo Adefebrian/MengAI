@@ -4,11 +4,13 @@
 //! MENGAI_DATA_DIR, MENGAI_WEB_DIR, MENGAI_HANDS_BIN, MENGAI_MIGRATIONS_DIR
 //! (the bundled folder holding sqlite/*.sql; the sidecar embeds the same SQL
 //! and uses this folder as an explicit override), MENGAI_PORT and, when the
-//! owner set one in settings.json, MENGAI_SITE_URL;
-//! exactly one stdout line
-//! `{"event":"ready","port":n,"launchToken":..,"controlToken":..,"pairUrl":..}`
-//! (`pairUrl` optional, see pair.rs); exits on SIGTERM or stdin close. The
-//! shell sends SIGTERM on quit and kills the process group after 3 s.
+//! owner listed any in settings.json, MENGAI_SITE_ORIGINS (comma list of
+//! exact https origins); exactly one stdout line
+//! `{"event":"ready","port":n,"controlToken":..}` (`controlToken` optional
+//! now that local mode has no auth; other fields are ignored); exits on
+//! SIGTERM or stdin close, stopping its children (live previews included).
+//! The shell sends SIGTERM on quit, force stops after 3 s, and then sweeps
+//! any descendant that outlived it (procs.rs).
 use std::ffi::{OsStr, OsString};
 use std::io::{self, BufRead, BufReader, Read};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -22,7 +24,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 use crate::applog::{AppLog, MAX_LINE};
-use crate::pair;
+use crate::procs::{self, Proc};
 use crate::settings::Settings;
 use crate::signals;
 
@@ -40,8 +42,13 @@ const ENV_OWNED: &[&str] = &[
     "MENGAI_HANDS_BIN",
     "MENGAI_MIGRATIONS_DIR",
     "MENGAI_PORT",
-    "MENGAI_SITE_URL",
+    "MENGAI_SITE_ORIGINS",
 ];
+/// Never passed through from the parent env: the old single site origin (the site list is
+/// settings.json only), a loopback UI dev origin (the window is the UI, and a loopback origin
+/// would let a crew preview on that port drive the engine), and the dev flag that keeps the
+/// engine serving after stdin closes (the shell relies on stdin close as its exit signal).
+const ENV_DROPPED: &[&str] = &["MENGAI_SITE_URL", "MENGAI_UI_ORIGIN", "MENGAI_DEV_OPEN"];
 
 pub struct Paths {
     pub data_dir: PathBuf,
@@ -51,27 +58,23 @@ pub struct Paths {
     pub migrations_dir: PathBuf,
 }
 
-/// What the ready line hands the shell. The launch token only goes into the window URL.
+/// What the ready line hands the shell.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ready {
     pub port: u16,
-    pub launch_token: String,
-    pub control_token: String,
-    /// Raw browser pairing link; validated by pair::check, never fatal (the window works without it).
-    pub pair_url: Option<String>,
+    /// Kill switch credential when the engine still issues one; the header is skipped without it
+    /// and a refused kill switch fails closed (JEV sec.shell_hardening missing_control_token 0.9).
+    pub control_token: Option<String>,
 }
 
+/// Loose on purpose: a ready line with a wrong type is a broken ready line (fatal), never an
+/// unrecognized line that would be logged verbatim and time out.
 #[derive(Deserialize)]
 struct RawLine {
-    event: Option<String>,
-    port: Option<u64>,
-    #[serde(rename = "launchToken")]
-    launch_token: Option<String>,
+    event: Option<serde_json::Value>,
+    port: Option<serde_json::Value>,
     #[serde(rename = "controlToken")]
-    control_token: Option<String>,
-    /// Any JSON type: a non-string is treated as a missing link, not as a broken ready line.
-    #[serde(rename = "pairUrl")]
-    pair_url: Option<serde_json::Value>,
+    control_token: Option<serde_json::Value>,
 }
 
 /// None: not the ready line (log it). Some(Err): a ready line that breaks the contract (fatal).
@@ -81,26 +84,22 @@ pub fn parse_ready(line: &str) -> Option<Result<Ready, String>> {
         return None;
     }
     let raw: RawLine = serde_json::from_str(trimmed).ok()?;
-    if raw.event.as_deref() != Some("ready") {
+    if raw.event.as_ref().and_then(|v| v.as_str()) != Some("ready") {
         return None;
     }
-    let port = match raw.port {
+    let port = match raw.port.as_ref().and_then(|v| v.as_u64()) {
         Some(p) if (1..=u16::MAX as u64).contains(&p) => p as u16,
         _ => return Some(Err("ready line has no valid port".into())),
     };
-    let launch_token = match raw.launch_token {
-        Some(t) if token_ok(&t) => t,
-        _ => return Some(Err("ready line has a missing or malformed launchToken".into())),
-    };
     let control_token = match raw.control_token {
-        Some(t) if token_ok(&t) => t,
-        _ => return Some(Err("ready line has a missing or malformed controlToken".into())),
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(t)) if token_ok(&t) => Some(t),
+        Some(_) => return Some(Err("ready line has a malformed controlToken".into())),
     };
-    let pair_url = raw.pair_url.as_ref().and_then(|v| v.as_str()).map(str::to_owned);
-    Some(Ok(Ready { port, launch_token, control_token, pair_url }))
+    Some(Ok(Ready { port, control_token }))
 }
 
-/// Tokens end up in a URL fragment and an HTTP header: URL-safe characters only.
+/// The control token goes into an HTTP header: URL-safe characters only.
 pub fn token_ok(t: &str) -> bool {
     (16..=512).contains(&t.len())
         && t.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~'))
@@ -117,7 +116,9 @@ where
         .into_iter()
         .filter(|(k, _)| {
             let Some(k) = k.as_ref().to_str() else { return false };
-            ENV_ALLOWLIST.contains(&k) || k.starts_with("LC_") || (k.starts_with("MENGAI_") && !ENV_OWNED.contains(&k))
+            ENV_ALLOWLIST.contains(&k)
+                || k.starts_with("LC_")
+                || (k.starts_with("MENGAI_") && !ENV_OWNED.contains(&k) && !ENV_DROPPED.contains(&k))
         })
         .map(|(k, v)| (k.as_ref().to_owned(), v.as_ref().to_owned()))
         .collect();
@@ -127,8 +128,8 @@ where
     env.push(("MENGAI_HANDS_BIN".into(), paths.hands_bin.clone().into_os_string()));
     env.push(("MENGAI_MIGRATIONS_DIR".into(), paths.migrations_dir.clone().into_os_string()));
     env.push(("MENGAI_PORT".into(), settings.port.to_string().into()));
-    if let Some(site) = &settings.site_url {
-        env.push(("MENGAI_SITE_URL".into(), site.into()));
+    if !settings.site_origins.is_empty() {
+        env.push(("MENGAI_SITE_ORIGINS".into(), settings.site_origins.join(",").into()));
     }
     env
 }
@@ -193,7 +194,7 @@ pub struct Sidecar {
     pub pid: u32,
     stdin: Mutex<Option<ChildStdin>>,
     exit: Arc<ExitSignal>,
-    ready: OnceLock<(u16, String)>,
+    ready: OnceLock<(u16, Option<String>)>,
     stop_done: Mutex<bool>,
 }
 
@@ -257,7 +258,7 @@ impl Sidecar {
     }
 
     /// (port, control token) once the ready line has been accepted.
-    pub fn control(&self) -> Option<(u16, String)> {
+    pub fn control(&self) -> Option<(u16, Option<String>)> {
         self.ready.get().cloned()
     }
 
@@ -281,19 +282,28 @@ impl Sidecar {
         true
     }
 
-    /// Graceful: SIGTERM, wait up to 3 s, then SIGKILL the process group (stragglers such as the hands helper).
-    /// Forced: SIGKILL the group now. Idempotent; a second caller waits for the first to finish.
+    /// Graceful: SIGTERM (the engine stops its previews and other children), wait up to 3 s,
+    /// then SIGKILL the process group (stragglers such as the hands helper).
+    /// Forced: SIGKILL the group now. Either way, descendants that live in their own process
+    /// groups and outlived the engine are killed last. Idempotent; a second caller waits for the first.
     pub fn stop(&self, force: bool, log: &AppLog) {
         let Ok(mut done) = self.stop_done.lock() else { return };
         if *done {
             return;
         }
+        let mut tracked = self.descendants(log);
         if !force && !self.has_exited() {
             if let Err(e) = signals::terminate(self.pid) {
                 log.warn("sidecar", &format!("SIGTERM failed: {e}"));
             }
             if !self.wait_exit(TERM_GRACE) {
                 log.warn("sidecar", "did not exit within 3 s of SIGTERM, killing its process group");
+                // Children started during the grace period are only visible while the engine lives.
+                for p in self.descendants(log) {
+                    if !tracked.contains(&p) {
+                        tracked.push(p);
+                    }
+                }
             }
         }
         if let Err(e) = signals::kill_group(self.pid) {
@@ -304,11 +314,66 @@ impl Sidecar {
         if let Err(e) = signals::kill_group(self.pid) {
             log.warn("sidecar", &format!("second process group kill failed: {e}"));
         }
+        self.sweep(&tracked, log);
         // Closing stdin is the sidecar's second exit signal; drop it last.
         if let Ok(mut stdin) = self.stdin.lock() {
             stdin.take();
         }
         *done = true;
+    }
+}
+
+impl Sidecar {
+    /// The engine's descendants right now; empty (and logged) when ps is unavailable or the engine is gone.
+    fn descendants(&self, log: &AppLog) -> Vec<Proc> {
+        if self.has_exited() {
+            return Vec::new();
+        }
+        match procs::snapshot() {
+            Ok(table) => procs::descendants(&table, self.pid),
+            Err(e) => {
+                log.warn(
+                    "sidecar",
+                    &format!("could not list the engine's processes ({e}); detached previews may outlive it"),
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// SIGKILLs every tracked descendant still alive (same pid and start time) and the groups they lead.
+    fn sweep(&self, tracked: &[Proc], log: &AppLog) {
+        if tracked.is_empty() {
+            return;
+        }
+        let now = match procs::snapshot() {
+            Ok(table) => table,
+            Err(e) => {
+                log.error("sidecar", &format!("could not check for processes that outlived the engine ({e})"));
+                return;
+            }
+        };
+        let survivors = procs::still_alive(tracked, &now);
+        if survivors.is_empty() {
+            return;
+        }
+        let me = std::process::id();
+        let my_group = now.iter().find(|p| p.pid == me).map(|p| p.pgid);
+        let (groups, pids) = procs::kill_plan(&survivors, me, my_group, self.pid);
+        for pgid in &groups {
+            if let Err(e) = signals::kill_group(*pgid) {
+                log.warn("sidecar", &format!("could not kill leftover process group {pgid}: {e}"));
+            }
+        }
+        for pid in &pids {
+            if let Err(e) = signals::kill_pid(*pid) {
+                log.warn("sidecar", &format!("could not kill leftover process {pid}: {e}"));
+            }
+        }
+        log.warn(
+            "sidecar",
+            &format!("killed {} process(es) in {} group(s) that outlived the engine", pids.len(), groups.len()),
+        );
     }
 }
 
@@ -325,14 +390,9 @@ fn drain_stdout<R: Read>(stdout: R, log: Arc<AppLog>, events: Sender<Event>) {
                     match parse_ready(&line) {
                         Some(Ok(ready)) => {
                             handshake_done = true;
-                            // The tokens are registered before any later line can be logged.
-                            log.add_secret(&ready.launch_token);
-                            log.add_secret(&ready.control_token);
-                            if let Some(link) = &ready.pair_url {
-                                if let Some(token) = pair::token_in(link) {
-                                    log.add_secret(token);
-                                }
-                                log.add_secret(link);
+                            // The token is registered before any later line can be logged.
+                            if let Some(token) = &ready.control_token {
+                                log.add_secret(token);
                             }
                             log.info("sidecar", &format!("ready on 127.0.0.1:{}", ready.port));
                             let _ = events.send(Event::Ready(ready));
@@ -370,25 +430,19 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    const LT: &str = "launch_0123456789abcdef";
     const CT: &str = "control_0123456789abcdef";
 
     #[test]
     fn parses_the_contract_ready_line() {
-        let line = format!("{{\"event\":\"ready\",\"port\":51234,\"launchToken\":\"{LT}\",\"controlToken\":\"{CT}\"}}");
-        let ready = parse_ready(&line).unwrap().unwrap();
-        assert_eq!(ready, Ready { port: 51234, launch_token: LT.into(), control_token: CT.into(), pair_url: None });
-    }
-
-    #[test]
-    fn carries_the_optional_pair_url_without_judging_it() {
-        let base = format!("\"event\":\"ready\",\"port\":4190,\"launchToken\":\"{LT}\",\"controlToken\":\"{CT}\"");
-        let with = format!("{{{base},\"pairUrl\":\"https://s.example/app#pair=abc\"}}");
-        assert_eq!(parse_ready(&with).unwrap().unwrap().pair_url.as_deref(), Some("https://s.example/app#pair=abc"));
-        // A wrong type or null is a missing link (explained on click), never a broken ready line.
-        for odd in ["null", "5", "{}"] {
-            let line = format!("{{{base},\"pairUrl\":{odd}}}");
-            assert_eq!(parse_ready(&line).unwrap().unwrap().pair_url, None);
+        let line = format!("{{\"event\":\"ready\",\"port\":4190,\"controlToken\":\"{CT}\"}}");
+        assert_eq!(parse_ready(&line).unwrap().unwrap(), Ready { port: 4190, control_token: Some(CT.into()) });
+        // No auth in local mode: the token may be absent or null, and old fields are ignored.
+        for line in [
+            "{\"event\":\"ready\",\"port\":4190}".to_string(),
+            "{\"event\":\"ready\",\"port\":4190,\"controlToken\":null}".to_string(),
+            "{\"event\":\"ready\",\"port\":4190,\"launchToken\":\"x\",\"pairUrl\":5}".to_string(),
+        ] {
+            assert_eq!(parse_ready(&line).unwrap().unwrap(), Ready { port: 4190, control_token: None }, "{line}");
         }
     }
 
@@ -396,18 +450,19 @@ mod tests {
     fn ignores_other_lines_and_rejects_broken_ready() {
         assert!(parse_ready("listening soon").is_none());
         assert!(parse_ready("{\"level\":\"info\",\"msg\":\"boot\"}").is_none());
+        assert!(parse_ready("{\"event\":5}").is_none());
         assert!(parse_ready("{not json").is_none());
-        let bad_port =
-            format!("{{\"event\":\"ready\",\"port\":70000,\"launchToken\":\"{LT}\",\"controlToken\":\"{CT}\"}}");
-        assert!(parse_ready(&bad_port).unwrap().is_err());
-        let injected =
-            format!("{{\"event\":\"ready\",\"port\":1,\"launchToken\":\"{LT}&x=<y>\",\"controlToken\":\"{CT}\"}}");
-        assert!(parse_ready(&injected).unwrap().is_err());
-        let crlf =
-            format!("{{\"event\":\"ready\",\"port\":1,\"launchToken\":\"{LT}\",\"controlToken\":\"{CT}\\r\\nx: y\"}}");
-        assert!(parse_ready(&crlf).unwrap().is_err());
-        let short = "{\"event\":\"ready\",\"port\":1,\"launchToken\":\"short\",\"controlToken\":\"short\"}";
-        assert!(parse_ready(short).unwrap().is_err());
+        for bad in [
+            format!("{{\"event\":\"ready\",\"port\":70000,\"controlToken\":\"{CT}\"}}"),
+            format!("{{\"event\":\"ready\",\"port\":\"4190\",\"controlToken\":\"{CT}\"}}"),
+            format!("{{\"event\":\"ready\",\"controlToken\":\"{CT}\"}}"),
+            format!("{{\"event\":\"ready\",\"port\":1,\"controlToken\":\"{CT}&x=<y>\"}}"),
+            format!("{{\"event\":\"ready\",\"port\":1,\"controlToken\":\"{CT}\\r\\nx: y\"}}"),
+            "{\"event\":\"ready\",\"port\":1,\"controlToken\":\"short\"}".to_string(),
+            "{\"event\":\"ready\",\"port\":1,\"controlToken\":12345678901234567890}".to_string(),
+        ] {
+            assert!(parse_ready(&bad).unwrap().is_err(), "{bad} must be a broken ready line");
+        }
     }
 
     fn test_paths() -> Paths {
@@ -417,15 +472,22 @@ mod tests {
     #[test]
     fn env_is_allowlisted_and_owned_vars_win() {
         let paths = test_paths();
-        let settings = Settings { site_url: Some("https://site.example".into()), port: 4190 };
+        let settings = Settings {
+            site_origins: vec!["https://site.example".into(), "https://app.example:8443".into()],
+            port: 4190,
+        };
         let parent = vec![
             ("HOME", "/Users/x"),
             ("PATH", "/usr/bin"),
             ("LC_ALL", "en_US.UTF-8"),
             ("AWS_SECRET_ACCESS_KEY", "nope"),
             ("OPENAI_API_KEY", "nope"),
+            ("ALLOWED_ORIGINS", "http://127.0.0.1:5000"),
             ("MENGAI_PORT", "4312"),
+            ("MENGAI_SITE_ORIGINS", "https://evil.example"),
             ("MENGAI_SITE_URL", "https://evil.example"),
+            ("MENGAI_UI_ORIGIN", "http://127.0.0.1:5173"),
+            ("MENGAI_DEV_OPEN", "1"),
             ("MENGAI_DEMO", "1"),
             ("MENGAI_DATA_DIR", "/evil"),
             ("MENGAI_MIGRATIONS_DIR", "/evil-sql"),
@@ -435,24 +497,26 @@ mod tests {
         assert_eq!(get("HOME").as_deref(), Some("/Users/x"));
         assert_eq!(get("LC_ALL").as_deref(), Some("en_US.UTF-8"));
         assert_eq!(get("MENGAI_PORT").as_deref(), Some("4190"));
-        assert_eq!(get("MENGAI_SITE_URL").as_deref(), Some("https://site.example"));
+        assert_eq!(get("MENGAI_SITE_ORIGINS").as_deref(), Some("https://site.example,https://app.example:8443"));
         assert_eq!(get("MENGAI_DEMO").as_deref(), Some("1"));
         assert_eq!(get("MENGAI_MODE").as_deref(), Some("local"));
         assert_eq!(get("MENGAI_DATA_DIR").as_deref(), Some("/d"));
         assert_eq!(get("MENGAI_WEB_DIR").as_deref(), Some("/w"));
         assert_eq!(get("MENGAI_HANDS_BIN").as_deref(), Some("/h"));
         assert_eq!(get("MENGAI_MIGRATIONS_DIR").as_deref(), Some("/m"));
-        assert!(get("AWS_SECRET_ACCESS_KEY").is_none());
-        assert!(get("OPENAI_API_KEY").is_none());
+        for dropped in ENV_DROPPED.iter().chain(&["AWS_SECRET_ACCESS_KEY", "OPENAI_API_KEY", "ALLOWED_ORIGINS"]) {
+            assert!(get(dropped).is_none(), "{dropped} must not reach the sidecar");
+        }
         for owned in ENV_OWNED {
             assert_eq!(env.iter().filter(|(k, _)| k == owned).count(), 1, "{owned} set exactly once");
         }
     }
 
     #[test]
-    fn unset_site_url_is_not_inherited() {
-        let env = build_env(vec![("MENGAI_SITE_URL", "https://evil.example")], &test_paths(), &Settings::default());
-        assert!(env.iter().all(|(k, _)| k != "MENGAI_SITE_URL"));
+    fn unset_site_origins_are_not_inherited() {
+        let parent = vec![("MENGAI_SITE_ORIGINS", "https://evil.example"), ("MENGAI_SITE_URL", "https://evil.example")];
+        let env = build_env(parent, &test_paths(), &Settings::default());
+        assert!(env.iter().all(|(k, _)| k != "MENGAI_SITE_ORIGINS" && k != "MENGAI_SITE_URL"));
         assert!(env.iter().any(|(k, v)| k == "MENGAI_PORT" && v == "4190"));
     }
 
@@ -478,8 +542,8 @@ mod tests {
         assert_eq!(read_line_bounded(&mut r, 64, &mut buf).unwrap(), None);
     }
 
-    fn fake_sidecar(script: &str) -> (Arc<Sidecar>, std::sync::mpsc::Receiver<Event>, Arc<AppLog>) {
-        let dir = std::env::temp_dir().join(format!("mengai-desktop-test-{}", std::process::id()));
+    fn fake_sidecar(name: &str, script: &str) -> (Arc<Sidecar>, std::sync::mpsc::Receiver<Event>, Arc<AppLog>) {
+        let dir = std::env::temp_dir().join(format!("mengai-desktop-test-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let paths = Paths {
             data_dir: dir.clone(),
@@ -495,19 +559,41 @@ mod tests {
         (sc, rx, log)
     }
 
+    fn ready_line(port: u16) -> String {
+        format!("{{\"event\":\"ready\",\"port\":{port},\"controlToken\":\"{CT}\"}}")
+    }
+
+    /// Polls for up to 2 s until `probe` (a signal-0 check) reports ESRCH.
+    fn gone(what: &str, probe: impl Fn() -> libc::c_int) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if probe() == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                eprintln!("{what} still exists 2 s after stop()");
+                return false;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn pgid_of(pid: u32) -> Option<u32> {
+        procs::snapshot().unwrap().into_iter().find(|p| p.pid == pid).map(|p| p.pgid)
+    }
+
     #[test]
     fn handshake_then_graceful_stop() {
-        let script = format!(
-            "trap 'exit 0' TERM; echo boot; echo '{{\"event\":\"ready\",\"port\":40001,\"launchToken\":\"{LT}\",\"controlToken\":\"{CT}\"}}'; while true; do sleep 0.05; done"
-        );
-        let (sc, rx, log) = fake_sidecar(&script);
+        let script =
+            format!("trap 'exit 0' TERM; echo boot; echo '{}'; while true; do sleep 0.05; done", ready_line(40001));
+        let (sc, rx, log) = fake_sidecar("graceful", &script);
         let ready = match rx.recv_timeout(Duration::from_secs(5)).expect("event") {
             Event::Ready(r) => r,
             _ => panic!("expected ready"),
         };
         assert_eq!(ready.port, 40001);
         sc.set_ready(&ready);
-        assert_eq!(sc.control(), Some((40001, CT.to_string())));
+        assert_eq!(sc.control(), Some((40001, Some(CT.to_string()))));
         let started = Instant::now();
         sc.stop(false, &log);
         assert!(sc.has_exited());
@@ -517,35 +603,65 @@ mod tests {
 
     #[test]
     fn stubborn_sidecar_is_killed_with_its_group() {
-        let script = format!(
-            "trap '' TERM; sleep 30 & echo '{{\"event\":\"ready\",\"port\":40002,\"launchToken\":\"{LT}\",\"controlToken\":\"{CT}\"}}'; while true; do sleep 0.05; done"
-        );
-        let (sc, rx, log) = fake_sidecar(&script);
-        assert!(matches!(rx.recv_timeout(Duration::from_secs(5)).expect("event"), Event::Ready(_)));
+        let script = format!("trap '' TERM; sleep 30 & echo '{}'; while true; do sleep 0.05; done", ready_line(40002));
+        let (sc, rx, log) = fake_sidecar("stubborn", &script);
+        wait_ready(&rx);
         let started = Instant::now();
         sc.stop(false, &log);
         assert!(started.elapsed() >= TERM_GRACE);
         assert!(sc.has_exited());
-        // The background `sleep 30` shared the group. SIGKILL delivery and reaping are
-        // asynchronous, so poll for the empty group (ESRCH) for up to 1 s.
-        let deadline = Instant::now() + Duration::from_secs(1);
-        let gone = loop {
-            // SAFETY: signal 0 only probes for existence; the pgid is the child we spawned (> 1).
-            let rc = unsafe { libc::killpg(sc.pid as libc::pid_t, 0) };
-            if rc == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
-                break true;
-            }
-            if Instant::now() >= deadline {
-                break false;
-            }
-            thread::sleep(Duration::from_millis(10));
-        };
-        assert!(gone, "process group {} still has members 1 s after stop()", sc.pid);
+        // SAFETY: signal 0 only probes for existence; the pgid is the child we spawned (> 1).
+        assert!(gone("sidecar process group", || unsafe { libc::killpg(sc.pid as libc::pid_t, 0) }));
+    }
+
+    /// A live preview runs detached (own process group), so the group kill cannot reach it.
+    fn detached_preview_script(on_term: &str) -> String {
+        format!(
+            "trap '{on_term}' TERM; set -m; sleep 30 & echo \"preview=$!\"; set +m; echo '{}'; while true; do sleep 0.05; done",
+            ready_line(40003)
+        )
+    }
+
+    fn wait_ready(rx: &std::sync::mpsc::Receiver<Event>) {
+        assert!(matches!(rx.recv_timeout(Duration::from_secs(5)).expect("event"), Event::Ready(_)));
+    }
+
+    fn detached_child(sc: &Sidecar) -> u32 {
+        let table = procs::snapshot().unwrap();
+        let kids = procs::descendants(&table, sc.pid);
+        kids.iter()
+            .find(|p| p.pgid != sc.pid && p.pgid == p.pid)
+            .map(|p| p.pid)
+            .expect("a detached child in its own group")
+    }
+
+    #[test]
+    fn detached_children_are_swept_after_a_forced_stop() {
+        let (sc, rx, log) = fake_sidecar("sweep-forced", &detached_preview_script(""));
+        wait_ready(&rx);
+        let child = detached_child(&sc);
+        assert_eq!(pgid_of(child), Some(child), "the preview leads its own group");
+        sc.stop(false, &log);
+        assert!(sc.has_exited());
+        // SAFETY: signal 0 only probes for existence of a pid we started (> 1).
+        assert!(gone("detached preview", || unsafe { libc::kill(child as libc::pid_t, 0) }));
+    }
+
+    #[test]
+    fn detached_children_left_by_a_clean_exit_are_swept() {
+        let (sc, rx, log) = fake_sidecar("sweep-clean", &detached_preview_script("exit 0"));
+        wait_ready(&rx);
+        let child = detached_child(&sc);
+        let started = Instant::now();
+        sc.stop(false, &log);
+        assert!(started.elapsed() < TERM_GRACE, "a clean exit does not wait for the grace period");
+        // SAFETY: signal 0 only probes for existence of a pid we started (> 1).
+        assert!(gone("detached preview", || unsafe { libc::kill(child as libc::pid_t, 0) }));
     }
 
     #[test]
     fn early_exit_is_reported() {
-        let (_sc, rx, _log) = fake_sidecar("echo 'crash' >&2; exit 3");
+        let (_sc, rx, _log) = fake_sidecar("early", "echo 'crash' >&2; exit 3");
         match rx.recv_timeout(Duration::from_secs(5)).expect("event") {
             Event::Exited(code) => assert_eq!(code, Some(3)),
             _ => panic!("expected exit"),

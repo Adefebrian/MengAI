@@ -1,39 +1,33 @@
 # @mengai/desktop
 
-The MengAI macOS app: a Tauri 2 shell around the compiled Bun API sidecar.
-The shell owns the window, the tray, the global kill shortcut and the
-process lifecycle. All product logic lives in the sidecar (apps/api) and the
-web app (apps/web); the shell never renders its own UI.
+The MengAI macOS app: a Tauri 2 shell around the compiled Bun engine
+(sidecar). The shell owns the window, the tray, the global kill shortcut and
+the process lifecycle. All product logic lives in the engine (apps/api) and
+the web app (apps/web); the shell never renders its own UI.
 
-## Local-first: the website stores nothing
+## Use it
 
-MengAI has no user system. The public website only serves the UI (landing
-and app). The engine, the crew, every model key and every trading venue
-live on the owner's own Mac, in this app's sidecar on `127.0.0.1:4190`.
+1. Install: open `MengAI_<version>_aarch64.dmg` and drag MengAI to
+   Applications.
+2. Open MengAI. The engine starts on this Mac at `127.0.0.1:4190` and the
+   window shows the app.
+3. Add a key for the model provider you use. It is stored in the macOS
+   keychain on this Mac and only ever sent to that provider.
+4. Give the crew a goal. Watch it work, open the live preview of what it
+   built, or open its folder in Finder.
 
-1. MengAI starts the engine. Its ready line carries a one-time pairing link,
-   `https://<site>/app#pair=<token>`, where `<site>` is `siteUrl` from
-   [settings.json](#settings) (the engine default when unset).
-2. The owner picks **Open in browser** (tray or the MengAI app menu). The
-   shell checks the link and hands it to the default browser.
-3. The web app on the website posts the token straight to the local engine,
-   `POST http://127.0.0.1:4190/api/auth/pair`, and gets a bearer session
-   token back. The browser keeps it in localStorage for that runtime URL; no
-   cookie crosses origins, so this path has no CSRF surface.
-4. The engine records that exact calling origin (no wildcards) in its
-   persisted allowed-origins list and from then on answers CORS, including
-   the Private Network Access preflight, for registered origins only.
-5. Keys typed in the browser go from the page to the local engine and into
-   the macOS keychain. The website never sees them.
+The website works too once the app is running: it is a copy of the same UI
+that talks to the engine on this Mac. Add the website's origin to
+`siteOrigins` in [settings.json](#settings) and open MengAI again. Nothing is
+stored on the website; UI preferences stay in that browser's localStorage.
 
-The in-app window keeps working exactly as before: it loads
-`http://127.0.0.1:<port>/#launch=<launchToken>` from the engine itself and
-needs neither the website nor the pairing link.
-
-The pairing token is issued once per engine launch and is spent by the first
-browser that pairs. Picking **Open in browser** again reopens the same link:
-the browser that already paired keeps its session, and pairing a second
-browser needs a relaunch of MengAI.
+There is no login, token or pairing step. Trust comes from where the engine
+listens and from strict request checks in the engine: the Host must be
+`127.0.0.1:<port>` or `localhost:<port>`, a request with an `Origin` must
+match the allowlist exactly (the engine's own origins, the UI dev origin and
+`siteOrigins`), and every mutating request must be JSON. The crew's own
+preview apps run on other loopback ports and are never allowed to drive the
+engine.
 
 ## How it starts
 
@@ -42,8 +36,11 @@ browser needs a relaunch of MengAI.
    `bundle.externalBin`) in its own process group with a cleared
    environment. It passes only HOME, USER, LOGNAME, TMPDIR, PATH, LANG,
    SHELL, TZ, `LC_*`, any other `MENGAI_*` passthrough (for example
-   `MENGAI_DEMO`), and the contract variables, which the shell owns (a value
-   exported in the parent env is dropped):
+   `MENGAI_DEMO`; `MENGAI_SITE_URL`, `MENGAI_UI_ORIGIN` and `MENGAI_DEV_OPEN`
+   are always dropped, since the window is the UI and stdin close must stop
+   the engine), and the
+   contract variables, which the shell owns (a value exported in the parent
+   env is dropped):
    - `MENGAI_MODE=local`
    - `MENGAI_DATA_DIR` = `~/Library/Application Support/id.mengai.app` (mode 0700)
    - `MENGAI_WEB_DIR` = `MengAI.app/Contents/Resources/web`
@@ -55,36 +52,41 @@ browser needs a relaunch of MengAI.
      an explicit override, so a shipped app and its SQL always match. The
      shell refuses to start, with a dialog, if that folder has no `.sql` file.
    - `MENGAI_PORT` = `port` from settings.json (default 4190)
-   - `MENGAI_SITE_URL` = `siteUrl` from settings.json, only when set
+   - `MENGAI_SITE_ORIGINS` = `siteOrigins` from settings.json as a comma
+     list, only when it is not empty
 2. The shell reads stdout until the ready line
-   `{"event":"ready","port":n,"launchToken":"..","controlToken":"..","pairUrl":".."}`
-   (30 s deadline). Tokens must be 16 to 512 URL-safe characters. `pairUrl`
-   is optional and never fatal: a missing or refused link only makes
-   **Open in browser** explain why, the window still opens.
+   `{"event":"ready","port":n,"controlToken":".."}` (30 s deadline).
+   `controlToken` is optional; when present it must be 16 to 512 URL-safe
+   characters. Any other field is ignored. A ready line with a wrong type or
+   an invalid port is fatal.
 3. It grants the page one IPC permission, `allow-pick-folder`, for the exact
    origin `http://127.0.0.1:<port>` only, then opens the main window at
-   `http://127.0.0.1:<port>/#launch=<launchToken>`. Navigation off that origin
-   is refused; http(s) and mailto links open in the default browser.
-4. The control token stays in shell memory for the kill switch. The launch,
-   control and pairing tokens are masked in the app log, and so is anything
-   after `pair=` or `launch=` in any sidecar line.
-5. Both **Open in browser** items are enabled once the ready line is in.
+   `http://127.0.0.1:<port>/app`.
+4. The control token, when there is one, stays in shell memory for the kill
+   switch and is masked in the app log.
+
+## Window and live preview
+
+The window is pinned to the engine origin. The crew's live previews run on
+other loopback ports (`http://127.0.0.1:<preview port>/`), so the window lets
+http `127.0.0.1` and `localhost` URLs on any port except the engine's load in
+place, for the preview frame inside the app. If a page other than the engine
+ever takes over the whole window (a link, or a preview navigating the top
+frame), the shell opens that URL in the default browser and brings the window
+back to `/app`. Preview origins get no IPC permission (the Tauri IPC key lives
+in the main frame only, and the grant is for the exact engine origin), and the
+engine rejects their `Origin`. Every other navigation is refused; http(s) and
+mailto links open in the default browser, and so do new windows. **Open
+folder** is handled by the engine, which reveals the project in Finder.
 
 ## Menus
 
 | Item | Where | What it does |
 |---|---|---|
 | Show MengAI | tray | shows the window |
-| Open in browser | tray, MengAI app menu | opens the checked pairing link in the default browser (tauri-plugin-opener, from Rust only; the page gets no opener permission) |
 | Show settings file | tray, MengAI app menu | writes the default settings.json if it is missing, then reveals it in Finder |
 | Kill switch | tray | see below |
-| Quit MengAI | tray, Cmd+Q | stops the engine and quits |
-
-Before opening, the shell checks the pairing link (`src/pair.rs`): https, or
-http only on 127.0.0.1, localhost or [::1]; no user name or password; a
-`#pair=<token>` fragment with a URL-safe token of 16 to 512 characters; and,
-when settings.json names a site, exactly that origin. A link that fails any
-check is never opened; the click shows a dialog with the reason.
+| Quit MengAI | tray, Cmd+Q | stops the engine, its live previews and everything else it started, then quits |
 
 ## Settings
 
@@ -93,33 +95,62 @@ template below (mode 0600) on first launch. Changes apply on the next launch.
 
 ```json
 {
-  "siteUrl": null,
+  "siteOrigins": [],
   "port": 4190
 }
 ```
 
 | Key | Meaning |
 |---|---|
-| `siteUrl` | Origin of the website that serves the MengAI app, for example `https://mengai.example`. Passed to the engine as `MENGAI_SITE_URL` so pairing links point there. `null` or `""` keeps the engine default. Must be https (http only for 127.0.0.1, localhost or [::1], for a local web dev server) with no path, query, fragment or credentials; it is stored as its bare origin. |
-| `port` | Loopback port of the engine, 1024 to 65535, passed as `MENGAI_PORT`. The website app connects to `http://127.0.0.1:4190` by default, so change it only together with the web app's runtime URL. |
+| `siteOrigins` | Exact origins of websites that serve the MengAI UI and may call this engine, for example `["https://mengai.example"]`. Passed to the engine as `MENGAI_SITE_ORIGINS` (comma list). Each entry must be https with a public host: no path, query, fragment, credentials or wildcard, and no loopback host (`localhost`, `*.localhost`, `127.x`, `[::1]`, `0.0.0.0`). Entries are stored as their bare origin and deduplicated; at most 16. Empty means only the engine's own origins. |
+| `port` | Loopback port of the engine, 1024 to 65535, passed as `MENGAI_PORT`. The website UI connects to `http://127.0.0.1:4190` by default, so change it only together with the web app's runtime URL. |
 
-Unknown keys, wrong types, a file over 16 KB or an unsafe `siteUrl` stop
-startup with a dialog naming the file (fail closed: a wrong site would be
-handed a pairing token that controls this Mac's engine). Deleting the file
-restores the defaults.
+An older file with `"siteUrl"` is migrated on launch: an https origin moves
+into `siteOrigins`, an http loopback dev origin is dropped with a warning in
+the log (the engine already allows its own UI dev origin), and the file is
+rewritten in the new shape (temp file and rename, mode 0600). A file with both
+keys is refused.
+
+Unknown keys, wrong types, a file over 16 KB or an unsafe origin stop startup
+with a dialog naming the file (fail closed: an origin in this list can drive
+the crew on this Mac). Deleting the file restores the defaults.
 
 Every sidecar stdout and stderr line after that goes to
 `~/Library/Logs/id.mengai.app/mengai.log` (0600, control characters
-stripped, 8 KB per line, one rotation at 5 MB, known key shapes masked).
+stripped, 8 KB per line, one rotation at 5 MB, known key shapes and bearer
+tokens masked).
+
+## Quit and live previews
+
+The engine starts live previews, runner commands and connectors detached, in
+their own process groups, and stops them itself when it gets SIGTERM or its
+stdin closes. Quit (tray, Cmd+Q) makes sure nothing is left behind:
+
+1. The shell lists the engine's descendants with `/bin/ps` (pid, parent,
+   process group, start time; 2 s deadline).
+2. SIGTERM to the engine, then up to 3 s for it to stop its previews and exit.
+3. If it is still running: list its descendants again, SIGKILL its process
+   group (the hands helper lives there), wait up to 1 s, SIGKILL the group
+   once more.
+4. Every listed descendant that is still alive with the same pid and start
+   time (so a reused pid is never hit) is SIGKILLed, together with the
+   process group it leads. Never pid 1, the shell itself or the shell's own
+   group. The count is logged.
+
+The same sweep runs on every forced stop (kill switch failure, fatal
+startup error). Closing the window only hides it; the crew keeps working and
+the tray brings it back. If the shell itself dies, the engine sees stdin
+close, stops its children and exits.
 
 ## Kill switch
 
 Tray item "Kill switch" and the global shortcut Cmd+Shift+Escape send
-`POST /api/killswitch` with header `x-mengai-control: <controlToken>` and
-body `{"by":"tray"}` or `{"by":"shortcut"}`, with a 3 s connect, write and
-read deadline. A non-2xx answer or no answer fails closed: the shell kills
-the sidecar's whole process group (the hands helper lives in it), shows an
-error dialog and quits.
+`POST /api/killswitch` with `Host: 127.0.0.1:<port>`,
+`Content-Type: application/json`, header `x-mengai-control: <controlToken>`
+when the engine sent one, and body `{"by":"tray"}` or `{"by":"shortcut"}`,
+with a 3 s connect, write and read deadline. A non-2xx answer or no answer
+fails closed: the shell force stops the engine and everything it started (see
+above), shows an error dialog and quits.
 
 ## Failure behavior (loud, never silent)
 
@@ -127,21 +158,16 @@ error dialog and quits.
 |---|---|
 | tray, app menu, data folder, resource folder or supervisor thread unavailable | error dialog, quit |
 | settings.json unreadable or invalid | error dialog naming the file, quit (the sidecar is never spawned) |
+| old settings.json cannot be rewritten after migration | logged; the migrated values are used |
 | settings port already in use on 127.0.0.1 (for example by root `bun run dev`) | error dialog, quit (the sidecar is never spawned) |
-| pairing link missing or refused | logged; the window works; **Open in browser** shows the reason |
-| default browser cannot be opened | warning dialog |
 | bundled sqlite migrations missing | error dialog, quit (the sidecar is never spawned) |
 | sidecar cannot spawn | error dialog, quit |
-| no ready line within 30 s | SIGTERM, 3 s, kill group, error dialog, quit |
+| no ready line within 30 s | SIGTERM, 3 s, kill group and sweep, error dialog, quit |
 | malformed ready line | same as above |
-| sidecar exits before or after ready | kill group, error dialog, quit |
-| kill switch not confirmed | kill group now, error dialog, quit |
+| sidecar exits before or after ready | kill group and sweep, error dialog, quit |
+| kill switch not confirmed | kill group and sweep now, error dialog, quit |
+| `/bin/ps` unavailable during a stop | logged; the group kill still runs |
 | global shortcut already taken | logged as an error; tray item and the in-app header button still work |
-
-Quit (tray, Cmd+Q) sends SIGTERM to the sidecar, waits up to 3 s, then
-SIGKILLs its process group. Closing the window only hides it; the crew keeps
-working and the tray brings it back. If the shell itself dies, the sidecar
-sees stdin close and exits.
 
 ## Develop
 
@@ -246,9 +272,10 @@ The sidecar part runs `Contents/MacOS/mengai-api` the way the shell does
 and `MENGAI_WORKSPACES_DIR`), three times: embedded migrations stopped with
 SIGTERM, the bundled `Contents/Resources/migrations` folder stopped by closing
 stdin, and a restart on the first data dir. Each run needs the ready line
-within 30 s with contract-valid tokens, `GET /api/health` 200, `GET /` serving
-the bundled web app, every bundled migration in `schema_migrations`, and exit
-code 0 within 5 s. Temp folders are removed.
+within 30 s with a valid port (and a contract-valid `controlToken` when
+present), `GET /api/health` 200, `GET /` and `GET /app` serving the bundled
+web app, every bundled migration in `schema_migrations`, and exit code 0
+within 5 s. Temp folders are removed.
 
 `--open` launches the app in the background, waits for the shell and its
 `mengai-api` child, finds the sidecar port with `lsof`, checks
@@ -378,5 +405,6 @@ capability.
 Tauri 2 and its shell, dialog, opener and global-shortcut plugins, serde,
 serde_json, and libc (kill and killpg only, already in the lockfile through
 Tauri). The HTTP client for the kill switch, the log writer, the settings
-reader and the pairing link check are small in-house modules (URL parsing
-is `tauri::Url`). `bun test` fails if a new direct crate appears.
+reader and the process tree sweep (`/bin/ps`, no FFI) are small in-house
+modules (URL parsing is `tauri::Url`). `bun test` fails if a new direct crate
+appears.

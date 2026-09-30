@@ -1,6 +1,9 @@
-//! Kill switch client: one HTTP/1.1 POST to the sidecar on 127.0.0.1 with the
-//! per-launch control token. Loopback only, explicit connect, write and read
-//! deadlines, no dependency (JEV be.new_tech build_inhouse 0.71).
+//! Kill switch client: one HTTP/1.1 POST to the sidecar on 127.0.0.1, with the
+//! per-launch control token when the engine issued one (local mode has no
+//! auth, so it may not). Host is the exact loopback address the engine
+//! accepts, the body is JSON, and there is no Origin header. Loopback only,
+//! explicit connect, write and read deadlines, no dependency (JEV be.new_tech
+//! build_inhouse 0.71). Anything but a 2xx is a failure the caller fails closed on.
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::time::Duration;
@@ -33,10 +36,11 @@ pub struct KillOutcome {
     pub body: String,
 }
 
-pub fn killswitch_request(port: u16, token: &str, by: Trigger) -> Vec<u8> {
+pub fn killswitch_request(port: u16, token: Option<&str>, by: Trigger) -> Vec<u8> {
     let body = format!("{{\"by\":\"{}\"}}", by.as_str());
+    let auth = token.map(|t| format!("{CONTROL_TOKEN_HEADER}: {t}\r\n")).unwrap_or_default();
     format!(
-        "POST {KILLSWITCH_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nAccept: application/json\r\n{CONTROL_TOKEN_HEADER}: {token}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST {KILLSWITCH_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nAccept: application/json\r\n{auth}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     )
     .into_bytes()
@@ -60,8 +64,8 @@ fn body_of(response: &[u8]) -> String {
 }
 
 /// POSTs the kill switch. Ok only on a 2xx; any error or other status is a failure the caller must fail closed on.
-pub fn post_killswitch(port: u16, token: &str, by: Trigger, deadline: Duration) -> Result<KillOutcome, String> {
-    if token.bytes().any(|b| b == b'\r' || b == b'\n') {
+pub fn post_killswitch(port: u16, token: Option<&str>, by: Trigger, deadline: Duration) -> Result<KillOutcome, String> {
+    if token.is_some_and(|t| t.bytes().any(|b| b == b'\r' || b == b'\n')) {
         return Err("control token contains a line break".into());
     }
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
@@ -88,12 +92,18 @@ mod tests {
 
     #[test]
     fn builds_the_contract_request() {
-        let req = String::from_utf8(killswitch_request(4312, "ctl_abc", Trigger::Shortcut)).unwrap();
+        let req = String::from_utf8(killswitch_request(4312, Some("ctl_abc"), Trigger::Shortcut)).unwrap();
         assert!(req.starts_with("POST /api/killswitch HTTP/1.1\r\n"));
         assert!(req.contains("\r\nHost: 127.0.0.1:4312\r\n"));
+        assert!(req.contains("\r\nContent-Type: application/json\r\n"));
         assert!(req.contains("\r\nx-mengai-control: ctl_abc\r\n"));
         assert!(req.contains("\r\nContent-Length: 17\r\n"));
         assert!(req.ends_with("\r\n\r\n{\"by\":\"shortcut\"}"));
+        assert!(!req.to_ascii_lowercase().contains("\r\norigin:"));
+        let bare = String::from_utf8(killswitch_request(4190, None, Trigger::Tray)).unwrap();
+        assert!(!bare.contains(CONTROL_TOKEN_HEADER));
+        assert!(bare.contains("\r\nContent-Type: application/json\r\n"));
+        assert!(bare.ends_with("\r\n\r\n{\"by\":\"tray\"}"));
     }
 
     #[test]
@@ -121,7 +131,7 @@ mod tests {
         let (port, handle) = serve_once(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"stoppedRuns\":2,\"killedProcesses\":1}",
         );
-        let out = post_killswitch(port, "ctl_token_value", Trigger::Tray, DEADLINE).expect("2xx");
+        let out = post_killswitch(port, Some("ctl_token_value"), Trigger::Tray, DEADLINE).expect("2xx");
         assert_eq!(out.status, 200);
         assert!(out.body.contains("stoppedRuns"));
         assert!(handle.join().unwrap().contains("x-mengai-control: ctl_token_value"));
@@ -130,10 +140,10 @@ mod tests {
     #[test]
     fn non_2xx_and_unreachable_are_failures() {
         let (port, handle) = serve_once("HTTP/1.1 403 Forbidden\r\n\r\n");
-        assert!(post_killswitch(port, "t", Trigger::Tray, DEADLINE).is_err());
+        assert!(post_killswitch(port, None, Trigger::Tray, DEADLINE).is_err());
         handle.join().unwrap();
         let free = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        assert!(post_killswitch(free, "t", Trigger::Tray, Duration::from_millis(300)).is_err());
-        assert!(post_killswitch(free, "bad\r\ntoken", Trigger::Tray, DEADLINE).is_err());
+        assert!(post_killswitch(free, None, Trigger::Tray, Duration::from_millis(300)).is_err());
+        assert!(post_killswitch(free, Some("bad\r\ntoken"), Trigger::Tray, DEADLINE).is_err());
     }
 }

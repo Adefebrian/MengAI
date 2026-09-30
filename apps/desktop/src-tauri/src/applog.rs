@@ -1,8 +1,8 @@
 //! Append-only app log at ~/Library/Logs/id.mengai.app/mengai.log.
 //!
 //! Sidecar stdout and stderr land here line by line. Every line is scrubbed:
-//! control characters removed, length capped, the per-launch tokens and
-//! common API key shapes replaced with [redacted]. One rotation (.1) at 5 MB.
+//! control characters removed, length capped, the per-launch control token
+//! and common API key shapes replaced with [redacted]. One rotation (.1) at 5 MB.
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,25 +12,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const MAX_BYTES: u64 = 5 * 1024 * 1024;
 pub const MAX_LINE: usize = 8 * 1024;
 const REDACTED: &str = "[redacted]";
-/// Prefixes of well-known provider key formats, plus the launch and pairing link
-/// fragments (a sidecar line can carry one before the ready line registers it);
-/// the token after them is masked.
-const KEY_PREFIXES: &[&str] = &[
-    "sk-",
-    "sk_",
-    "AIza",
-    "ghp_",
-    "gho_",
-    "github_pat_",
-    "xoxb-",
-    "xoxp-",
-    "hf_",
-    "r8_",
-    "fal_",
-    "Bearer ",
-    "pair=",
-    "launch=",
-];
+/// Prefixes of well-known provider key formats and bearer headers; the token after them is masked.
+const KEY_PREFIXES: &[&str] =
+    &["sk-", "sk_", "AIza", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "hf_", "r8_", "fal_", "Bearer "];
 const MIN_SECRET_LEN: usize = 16;
 
 pub struct AppLog {
@@ -47,7 +31,7 @@ impl AppLog {
         Self { path, file: Mutex::new(file), secrets: RwLock::new(Vec::new()) }
     }
 
-    /// Registers an exact value that must never be written (launch and control tokens).
+    /// Registers an exact value that must never be written (the control token).
     pub fn add_secret(&self, value: &str) {
         if value.len() >= 8 {
             if let Ok(mut s) = self.secrets.write() {
@@ -150,14 +134,13 @@ mod tests {
 
     #[test]
     fn redacts_known_tokens_and_key_shapes() {
-        let secrets = vec!["launch-token-abcdef123".to_owned()];
-        let out = redact("t=launch-token-abcdef123 key sk-proj-ABCDEFGHIJKLMNOPQRST short sk-abc", &secrets);
+        let secrets = vec!["control-token-abcdef123".to_owned()];
+        let out = redact("t=control-token-abcdef123 key sk-proj-ABCDEFGHIJKLMNOPQRST short sk-abc", &secrets);
         assert_eq!(out, "t=[redacted] key sk-[redacted] short sk-abc");
         assert_eq!(redact("Authorization: Bearer abcdefghijklmnopqrstuvwxyz", &[]), "Authorization: Bearer [redacted]");
-        assert_eq!(
-            redact("Pair: https://s.example/app#pair=abcdefghijklmnop0123&x=1 or /#launch=abcdefghijklmnop0123", &[]),
-            "Pair: https://s.example/app#pair=[redacted]&x=1 or /#launch=[redacted]"
-        );
+        // Preview URLs and project paths stay readable in the log.
+        let line = "preview ready on http://127.0.0.1:5173/ for /Users/x/MengAI/projects/site";
+        assert_eq!(redact(line, &secrets), line);
     }
 
     #[test]

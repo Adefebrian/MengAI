@@ -195,40 +195,72 @@ describe("shared contract", () => {
   test("the shell passes the contract env vars and owns each one", async () => {
     const sidecar = await read("src/sidecar.rs");
     const owned = /const ENV_OWNED: &\[&str\] =\s*&\[([^\]]*)\]/.exec(sidecar)?.[1] ?? "";
-    for (const name of ["MENGAI_MODE", "MENGAI_DATA_DIR", "MENGAI_WEB_DIR", "MENGAI_HANDS_BIN", "MENGAI_MIGRATIONS_DIR", "MENGAI_PORT", "MENGAI_SITE_URL"]) {
+    for (const name of ["MENGAI_MODE", "MENGAI_DATA_DIR", "MENGAI_WEB_DIR", "MENGAI_HANDS_BIN", "MENGAI_MIGRATIONS_DIR", "MENGAI_PORT", "MENGAI_SITE_ORIGINS"]) {
       expect(sidecar).toContain(`env.push(("${name}".into()`);
       expect(owned).toContain(`"${name}"`);
     }
     expect(sidecar).toContain('("MENGAI_MIGRATIONS_DIR".into(), paths.migrations_dir.clone().into_os_string())');
     expect(sidecar).toContain('("MENGAI_MODE".into(), "local".into())');
     expect(sidecar).toContain('("MENGAI_PORT".into(), settings.port.to_string().into())');
+    // The old single site origin is never passed through from the parent env.
+    expect(sidecar).toContain('const ENV_DROPPED: &[&str] = &["MENGAI_SITE_URL", "MENGAI_UI_ORIGIN", "MENGAI_DEV_OPEN"];');
+    // The engine reads the same names.
+    const env = await Bun.file(join(repoRoot, "packages", "config", "src", "env.ts")).text();
+    for (const name of ["MENGAI_SITE_ORIGINS", "MENGAI_UI_ORIGIN", "MENGAI_PORT"]) expect(env).toContain(`${name}:`);
   });
 
-  test("settings.json feeds MENGAI_SITE_URL and the fixed runtime port the website app talks to", async () => {
+  test("settings.json feeds MENGAI_SITE_ORIGINS and the fixed runtime port the website talks to", async () => {
     const settings = await read("src/settings.rs");
     expect(settings).toContain('pub const FILE_NAME: &str = "settings.json";');
     expect(settings).toContain("pub const DEFAULT_PORT: u16 = 4190;");
     const template = /pub const TEMPLATE: &str = "((?:[^"\\]|\\.)*)";/.exec(settings)?.[1];
     expect(template).toBeDefined();
-    expect(JSON.parse(JSON.parse(`"${template}"`))).toEqual({ siteUrl: null, port: 4190 });
+    expect(JSON.parse(JSON.parse(`"${template}"`))).toEqual({ siteOrigins: [], port: 4190 });
+    // https only, no loopback host (preview apps run on loopback ports), the old siteUrl migrated.
+    expect(settings).toContain('if url.scheme() != "https"');
+    expect(settings).toContain("if is_loopback_host(host)");
+    expect(settings).toContain('#[serde(rename = "siteUrl", default)]');
+    const sidecar = await read("src/sidecar.rs");
+    expect(sidecar).toContain('("MENGAI_SITE_ORIGINS".into(), settings.site_origins.join(",").into())');
     // The root dev runtime and the Mac app answer on the same local address.
     const root = await Bun.file(join(repoRoot, "package.json")).json();
     expect(root.scripts.dev).toContain("MENGAI_PORT=4190");
   });
 
-  test("Open in browser opens only the checked pairing link from the ready line", async () => {
+  test("no pairing and no launch token: the window loads /app on the exact engine origin", async () => {
+    expect(existsSync(join(tauriDir, "src", "pair.rs"))).toBe(false);
     const api = await Bun.file(join(repoRoot, "packages", "shared", "src", "api.ts")).text();
-    expect(api).toContain('"POST /api/auth/pair"');
-    const sidecar = await read("src/sidecar.rs");
-    expect(sidecar).toContain('#[serde(rename = "pairUrl")]');
+    expect(api).not.toContain('"POST /api/auth/pair"');
     const main = await read("src/main.rs");
-    expect(main).toContain('"Open in browser"');
-    expect(main).toContain("pair::check(ready.pair_url.as_deref(), settings.site_url.as_deref())");
-    const opens = [...main.matchAll(/\.open_url\(([^,]+),/g)].map((m) => m[1]!.trim());
-    expect(opens).toEqual(["link.as_str()"]);
-    const pair = await read("src/pair.rs");
-    expect(pair).toContain("if !token_ok(token)");
-    expect(pair).toContain("if origin != site");
+    expect(main).not.toContain("mod pair;");
+    expect(main).not.toContain("Open in browser");
+    expect(main).not.toContain("launch_token");
+    expect(main).not.toContain(".open_url(");
+    for (const item of ['"Show MengAI"', '"Show settings file"', '"Kill switch"', '"Quit MengAI"']) expect(main).toContain(item);
+    expect(main).toContain("window::open_main(&app, ready.port)");
+    const win = await read("src/window.rs");
+    expect(win).toContain('pub const APP_PATH: &str = "/app";');
+    expect(win).toContain("WebviewUrl::External(home.clone())");
+    expect(win).not.toContain("#launch=");
+    // Shipped code only: the unit tests feed an old ready line on purpose.
+    const sidecar = (await read("src/sidecar.rs")).split("#[cfg(test)]")[0]!;
+    expect(sidecar).not.toContain("launchToken");
+    expect(sidecar).not.toContain("pairUrl");
+    const log = await read("src/applog.rs");
+    expect(log).not.toContain('"pair="');
+    expect(log).not.toContain('"launch="');
+  });
+
+  test("quitting stops the engine, then force stops it and sweeps the previews it detached", async () => {
+    const main = await read("src/main.rs");
+    expect(main).toContain("RunEvent::Exit => shutdown(app)");
+    expect(main).toContain("sc.stop(false, &shell.log);");
+    const sidecar = await read("src/sidecar.rs");
+    expect(sidecar).toContain("pub const TERM_GRACE: Duration = Duration::from_secs(3);");
+    expect(sidecar).toContain("self.sweep(&tracked, log);");
+    const procs = await read("src/procs.rs");
+    expect(procs).toContain('pub const PS: &str = "/bin/ps";');
+    expect(procs).toContain('"pid=,ppid=,pgid=,lstart="');
   });
 });
 

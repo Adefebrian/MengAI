@@ -1,6 +1,7 @@
 //! kill(2) and killpg(2) for the sidecar. The std library can only SIGKILL a
 //! single child; the shutdown contract needs SIGTERM first and a process
-//! group kill after 3 s (the group also holds the hands helper).
+//! group kill after 3 s (the group also holds the hands helper), plus SIGKILL
+//! for detached descendants the sweep in procs.rs finds still alive.
 use std::io;
 
 fn guard(pid: u32) -> io::Result<libc::pid_t> {
@@ -33,6 +34,13 @@ pub fn terminate(pid: u32) -> io::Result<()> {
     check(unsafe { libc::kill(pid, libc::SIGTERM) })
 }
 
+/// SIGKILL to one process (a sidecar descendant that outlived the sidecar).
+pub fn kill_pid(pid: u32) -> io::Result<()> {
+    let pid = guard(pid)?;
+    // SAFETY: plain syscall with a validated positive pid; no memory is shared.
+    check(unsafe { libc::kill(pid, libc::SIGKILL) })
+}
+
 /// SIGKILL to every process in the sidecar's group (pgid == sidecar pid via process_group(0)).
 pub fn kill_group(pgid: u32) -> io::Result<()> {
     let pgid = guard(pgid)?;
@@ -50,6 +58,8 @@ mod tests {
         assert!(terminate(1).is_err());
         assert!(kill_group(0).is_err());
         assert!(kill_group(1).is_err());
+        assert!(kill_pid(0).is_err());
+        assert!(kill_pid(1).is_err());
     }
 
     #[test]
