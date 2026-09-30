@@ -98,7 +98,8 @@ function toDto(r: ProviderRow): ProviderDTO {
     baseUrl: r.baseUrl,
     hasKey: r.keyRef !== null,
     keyHint: r.keyHint,
-    models: r.models,
+    // JEV has no models to pick; older rows stored the wire version as one
+    models: r.protocol === "jev" ? [] : r.models,
     caps: r.caps,
     lastTestAt: r.lastTestAt,
     lastTestOk: r.lastTestOk,
@@ -391,7 +392,7 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
           signal,
         });
         if (!r.verified) throw new Error(r.error);
-        return { models: [{ id: r.model }] };
+        return { models: [] };
       }
       case "fal_queue":
         // JEV be.fal_connection_test: ok_with_note (no documented key check endpoint)
@@ -419,7 +420,17 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
     async create(body: CreateProviderBody): Promise<ProviderDTO> {
       const preset = findPreset(body.preset);
       if (!preset) throw new HttpError(422, "unknown_preset", `unknown preset ${body.preset}`);
-      const baseUrl = normalizeBaseUrl(body.baseUrl || preset.baseUrl);
+      const jev = preset.protocol === "jev";
+      if (jev) {
+        // one JEV key per runtime: adding it again replaces the key on the same row
+        const existing = (await repo.list()).find((r) => r.protocol === "jev");
+        if (existing) {
+          if (!body.apiKey?.trim()) throw new HttpError(422, "key_required", `${preset.label} needs an API key`);
+          return service.update(existing.id, { apiKey: body.apiKey });
+        }
+      }
+      // JEV only talks to its official endpoint, whatever the body says
+      const baseUrl = normalizeBaseUrl(jev ? preset.baseUrl : body.baseUrl || preset.baseUrl);
       if (!baseUrl) throw new HttpError(422, "base_url_required", `${preset.label} needs a base URL`);
       await guardOrThrow(baseUrl, preset);
       const apiKey = body.apiKey?.trim() || null;
@@ -439,7 +450,7 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
         baseUrl,
         keyRef,
         keyHint: apiKey ? keyHint(apiKey) || null : null,
-        models: dedupeModels(body.models ?? preset.suggestedModels.map((m) => ({ id: m }))),
+        models: jev ? [] : dedupeModels(body.models ?? preset.suggestedModels.map((m) => ({ id: m }))),
         caps: [...preset.caps],
         lastTestAt: null,
         lastTestOk: null,
@@ -462,6 +473,9 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
       const preset = presetOf(row);
       const next: ProviderRow = { ...row };
       if (body.label !== undefined) next.label = body.label.trim() || row.label;
+      if (row.protocol === "jev" && body.baseUrl !== undefined && normalizeBaseUrl(body.baseUrl) !== row.baseUrl) {
+        throw new HttpError(422, "jev_official_only", "JEV uses its official endpoint; only the API key can change");
+      }
       if (body.baseUrl !== undefined) {
         const url = normalizeBaseUrl(body.baseUrl);
         if (!url) throw new HttpError(422, "base_url_required", "base URL must not be empty");
@@ -478,7 +492,7 @@ export function createProvidersService(ctx: ModuleContext, deps: ProvidersDeps):
         next.lastTestOk = null;
         next.lastTestError = null;
       }
-      if (body.models !== undefined) next.models = dedupeModels(body.models);
+      if (body.models !== undefined && row.protocol !== "jev") next.models = dedupeModels(body.models);
       const key = body.apiKey?.trim() ?? "";
       const dropKey = !key && (moved || body.apiKey !== undefined);
       // an explicit empty key on an unchanged URL cannot drop a required key

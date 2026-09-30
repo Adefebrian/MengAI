@@ -628,7 +628,7 @@ describe("judge-jev", () => {
   test("missing key, network failure and timeout never throw", async () => {
     const none = await createJevJudge({ target: async () => null, mode: "local" }).decide({ decisionId: "x", state: {}, questions });
     expect(none.verified).toBe(false);
-    if (!none.verified) expect(none.error).toContain("not configured");
+    if (!none.verified) expect(none.error).toContain("not connected");
     expect(await createJevJudge({ target: async () => null, mode: "local" }).configured()).toBe(false);
 
     mockFetch(() => {

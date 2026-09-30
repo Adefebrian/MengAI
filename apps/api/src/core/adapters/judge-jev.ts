@@ -103,7 +103,7 @@ export function createJevJudge(cfg: JevJudgeConfig): Judge {
       } catch {
         target = null;
       }
-      if (!target) return unverified("JEV is not configured: add a provider with the jev preset and its API key", started);
+      if (!target) return unverified("JEV is not connected: paste your JEV API key on the Providers page", started);
       const url = joinUrl(target.baseUrl, "/systemone");
       try {
         await assertSafeUrl(url, { mode: cfg.mode, lookup: cfg.lookup });

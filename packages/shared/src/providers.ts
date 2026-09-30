@@ -317,13 +317,14 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
   {
     id: "jev",
-    label: "JEV judge (TypeSafe)",
+    label: "JEV judge",
     protocol: "jev",
     baseUrl: "https://api.typesafe.ai/v1",
     auth: "bearer",
     keyRequired: true,
     caps: ["judge"],
-    suggestedModels: ["jev-latest"],
+    // key only: the official endpoint is fixed and JEV picks its own version, so there is no model to set
+    suggestedModels: [],
     cacheUsage: "none",
     docsUrl: "https://typesafe.ai/",
   },

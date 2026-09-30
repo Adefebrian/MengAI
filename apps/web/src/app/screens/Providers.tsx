@@ -336,7 +336,7 @@ function JevCard({ preset, row, onSaved, onRemoved }: { preset: ProviderPreset; 
             spellCheck={false}
             placeholder="Paste the key once"
             error={keyError}
-            hint="Goes to the vault on your machine. Only the last 4 characters come back."
+            hint="Your official JEV key. No model or URL to set: it goes to the vault on your machine and only the last 4 characters come back."
           />
           <div className="app-form-actions">
             <button type="submit" aria-busy={save.busy || undefined}>

@@ -269,8 +269,22 @@ describe("connection test", () => {
     const p = await add(env, { preset: "jev", apiKey: JEV_KEY });
     mockFetch(() => json({ verified: true, model: "jev-1.13.0", answers: { ok: { type: "noul", noul: 0.99 } } }));
     const r = (await (await env.req("POST", `/api/providers/${p.id}/test`)).json()) as any;
-    expect(r).toMatchObject({ ok: true, models: [{ id: "jev-1.13.0" }] });
+    expect(r).toMatchObject({ ok: true, models: [] });
     expect(calls[0]!.url).toBe("https://api.typesafe.ai/v1/systemone");
+  });
+
+  test("jev is key only: official endpoint, no models, adding again replaces the key", async () => {
+    const p = await add(env, { preset: "jev", apiKey: JEV_KEY, baseUrl: "https://elsewhere.example/v1", models: [{ id: "x" }] });
+    expect(p).toMatchObject({ baseUrl: "https://api.typesafe.ai/v1", models: [], hasKey: true });
+    const rotated = "jev-live-ROTATEDabcdefghijklmnoZ9";
+    const again = await add(env, { preset: "jev", apiKey: rotated });
+    expect(again.id).toBe(p.id);
+    expect(again.keyHint).toBe(rotated.slice(-4));
+    const list = (await (await env.req("GET", "/api/providers")).json()) as ProviderDTO[];
+    expect(list.filter((x) => x.preset === "jev")).toHaveLength(1);
+    const moved = await env.req("PATCH", `/api/providers/${p.id}`, { baseUrl: "https://elsewhere.example/v1" });
+    expect(moved.status).toBe(422);
+    expect(((await moved.json()) as any).error.code).toBe("jev_official_only");
   });
 });
 
