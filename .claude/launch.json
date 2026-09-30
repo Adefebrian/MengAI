@@ -11,7 +11,7 @@
       "name": "mengai-dev",
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "dev"],
-      "port": 4190
+      "port": 4280
     }
   ]
 }

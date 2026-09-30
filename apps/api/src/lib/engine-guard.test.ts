@@ -32,18 +32,18 @@ function capture(): WarnSink & { lines: Array<{ level: string; msg: string; fiel
 
 describe("rules", () => {
   test("engine ports come from the Host allowlist, validated", () => {
-    expect(enginePorts(["127.0.0.1:4190", "localhost:4190"])).toEqual([4190]);
+    expect(enginePorts(["127.0.0.1:4280", "localhost:4280"])).toEqual([4280]);
     expect(enginePorts(["127.0.0.1", "localhost:0", "x:70000", "127.0.0.1:abc", "[::1]:5000"])).toEqual([5000]);
     expect(enginePorts([])).toEqual([]);
   });
 
   test("deny rules cover every address on the port and nothing but integers reaches the profile", () => {
-    expect(engineDenyRules([4190, 4190])).toEqual(['(deny network-outbound (remote tcp "*:4190"))']);
-    expect(engineDenyRules([0, -1, 1.5, 65536, Number.NaN, '4190")(allow default' as unknown as number])).toEqual([]);
-    const profile = engineGuardProfile([4190], PREVIEW_RULES);
-    expect(profile.split("\n")).toEqual(["(version 1)", "(allow default)", '(deny network-outbound (remote tcp "*:4190"))', "(deny lsopen)", "(deny appleevent-send)"]);
-    expect(engineGuardProfile([4190], MCP_RULES)).toContain("(deny lsopen)");
-    expect(engineGuardProfile([4190], MCP_RULES)).not.toContain("appleevent");
+    expect(engineDenyRules([4280, 4280])).toEqual(['(deny network-outbound (remote tcp "*:4280"))']);
+    expect(engineDenyRules([0, -1, 1.5, 65536, Number.NaN, '4280")(allow default' as unknown as number])).toEqual([]);
+    const profile = engineGuardProfile([4280], PREVIEW_RULES);
+    expect(profile.split("\n")).toEqual(["(version 1)", "(allow default)", '(deny network-outbound (remote tcp "*:4280"))', "(deny lsopen)", "(deny appleevent-send)"]);
+    expect(engineGuardProfile([4280], MCP_RULES)).toContain("(deny lsopen)");
+    expect(engineGuardProfile([4280], MCP_RULES)).not.toContain("appleevent");
     // never the localhost filter: it misses [::ffff:127.0.0.1]
     expect(profile).not.toContain("localhost");
   });
@@ -57,13 +57,13 @@ describe("wrap", () => {
 
   test("without sandbox-exec: argv unchanged and the gap is logged once", () => {
     const log = capture();
-    const sb = createEngineSandbox({ label: "live preview", ports: () => [4190], platform: "linux", logger: log });
+    const sb = createEngineSandbox({ label: "live preview", ports: () => [4280], platform: "linux", logger: log });
     expect(sb.wrap(["bun", "run", "dev"])).toEqual(["bun", "run", "dev"]);
     expect(sb.wrap(["bun", "run", "dev"])).toEqual(["bun", "run", "dev"]);
     expect(log.lines).toHaveLength(1);
     expect(log.lines[0]).toMatchObject({ level: "warn", msg: "live preview processes run without the engine port guard", fields: { platform: "linux" } });
     const missing = capture();
-    const mac = createEngineSandbox({ label: "MCP server", ports: () => [4190], platform: "darwin", sandboxExec: "/nonexistent/sandbox-exec", logger: missing });
+    const mac = createEngineSandbox({ label: "MCP server", ports: () => [4280], platform: "darwin", sandboxExec: "/nonexistent/sandbox-exec", logger: missing });
     expect(mac.wrap(["npx", "server"])).toEqual(["npx", "server"]);
     mac.wrap(["npx", "server"]);
     expect(missing.lines).toHaveLength(1);
@@ -71,9 +71,9 @@ describe("wrap", () => {
   });
 
   test.skipIf(sandboxUnavailable() !== null)("with sandbox-exec: the profile and argv follow, ports read at every spawn", () => {
-    let ports = [4190];
+    let ports = [4280];
     const sb = createEngineSandbox({ label: "t", ports: () => ports, extraRules: MCP_RULES });
-    expect(sb.wrap(["npx", "-y", "server"])).toEqual([SANDBOX_EXEC, "-p", engineGuardProfile([4190], MCP_RULES), "--", "npx", "-y", "server"]);
+    expect(sb.wrap(["npx", "-y", "server"])).toEqual([SANDBOX_EXEC, "-p", engineGuardProfile([4280], MCP_RULES), "--", "npx", "-y", "server"]);
     ports = [5555];
     expect(sb.wrap(["x"])[2]).toContain('"*:5555"');
   });

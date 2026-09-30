@@ -5,7 +5,7 @@
 //! One instance per Mac: a second launch hands off to the running one, which
 //! shows its window, and exits before it starts anything (instance.rs). The
 //! shell spawns the compiled Bun API sidecar on the configured port, or on the
-//! first free port of 4190..4199 when that one is held by another program
+//! first free port of 4280..4289 when that one is held by another program
 //! (ports.rs), waits for its ready line, opens the main window on
 //! http://127.0.0.1:<port>/app (local mode has no auth, so no token rides
 //! along), and owns the kill switch (tray item and Cmd+Shift+Escape). The
@@ -297,7 +297,7 @@ fn load_settings(app: &AppHandle, log: &AppLog, data_dir: &Path) -> Result<Setti
             log.warn("settings", dropped);
         }
         match settings::rewrite(&path, &loaded.settings) {
-            Ok(()) => log.info("settings", "moved the old \"siteUrl\" into \"siteOrigins\""),
+            Ok(()) => log.info("settings", "rewrote the settings file in the current shape (old siteUrl or the old blocked port 4190)"),
             Err(e) => log.warn(
                 "settings",
                 &format!("could not rewrite {} in the new shape ({e}); using the migrated values", path.display()),

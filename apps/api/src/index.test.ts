@@ -188,7 +188,7 @@ describe("config", () => {
     const server = buildConfig(parseEnv({ MENGAI_MODE: "server", VAULT_KEK: KEK, DATABASE_URL: "postgres://h/db", MENGAI_SITE_ORIGINS: "https://mengai.example" }));
     expect(server.siteOrigins).toEqual([]);
     expect(server.app.allowedOrigins).toEqual([]);
-    expect(localOrigins(4190)).toEqual(["http://127.0.0.1:4190", "http://localhost:4190"]);
+    expect(localOrigins(4280)).toEqual(["http://127.0.0.1:4280", "http://localhost:4280"]);
   });
 });
 

@@ -4,13 +4,13 @@
 //! (`~/Library/Application Support/id.mengai.app/settings.json`).
 //!
 //! ```json
-//! { "siteOrigins": ["https://mengai.example"], "port": 4190 }
+//! { "siteOrigins": ["https://mengai.example"], "port": 4280 }
 //! ```
 //!
 //! `siteOrigins` becomes MENGAI_SITE_ORIGINS (a comma list) for the sidecar:
 //! the exact https origins of websites that serve the MengAI UI and may call
 //! this engine. Empty keeps only the engine's own origins. `port` becomes
-//! MENGAI_PORT (default 4190, the address the website UI talks to).
+//! MENGAI_PORT (default 4280, the address the website UI talks to).
 //!
 //! A missing file means defaults and a template is written. A file that
 //! exists but does not parse or validate stops startup with a dialog (JEV
@@ -28,12 +28,19 @@ use serde::Deserialize;
 use tauri::Url;
 
 pub const FILE_NAME: &str = "settings.json";
-pub const DEFAULT_PORT: u16 = 4190;
+pub const DEFAULT_PORT: u16 = 4280;
+/// The first default. Browsers refuse it (ManageSieve is on their unsafe port list), so the
+/// window stayed blank; a file that still names it moves to DEFAULT_PORT and is rewritten.
+pub const LEGACY_DEFAULT_PORT: u64 = 4190;
+/// Ports from 1024 up that WebKit, Chrome and Firefox refuse to load.
+const BROWSER_BLOCKED_PORTS: [u64; 19] = [
+    1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080,
+];
 const MIN_PORT: u64 = 1024;
 const MAX_FILE: u64 = 16 * 1024;
 const MAX_URL: usize = 2048;
 pub const MAX_ORIGINS: usize = 16;
-pub const TEMPLATE: &str = "{\n  \"siteOrigins\": [],\n  \"port\": 4190\n}\n";
+pub const TEMPLATE: &str = "{\n  \"siteOrigins\": [],\n  \"port\": 4280\n}\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
@@ -112,9 +119,13 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
         },
         (None, None) => (Vec::new(), if has_legacy { migrated(None) } else { None }),
     };
-    let port = match raw.port {
-        None => DEFAULT_PORT,
-        Some(p) if (MIN_PORT..=u16::MAX as u64).contains(&p) => p as u16,
+    let (port, migration) = match raw.port {
+        None => (DEFAULT_PORT, migration),
+        Some(LEGACY_DEFAULT_PORT) => (DEFAULT_PORT, migration.or_else(|| migrated(None))),
+        Some(p) if BROWSER_BLOCKED_PORTS.contains(&p) => {
+            return Err(format!("\"port\" is {p}, which browsers refuse to load; pick another, for example {DEFAULT_PORT}"));
+        }
+        Some(p) if (MIN_PORT..=u16::MAX as u64).contains(&p) => (p as u16, migration),
         Some(p) => return Err(format!("\"port\" is {p}, it must be between {MIN_PORT} and 65535")),
     };
     Ok(Parsed { settings: Settings { site_origins, port }, migration })
@@ -281,9 +292,19 @@ mod tests {
     #[test]
     fn template_parses_to_the_defaults() {
         assert_eq!(parse(TEMPLATE).unwrap(), Parsed { settings: Settings::default(), migration: None });
-        assert_eq!(settings("{}"), Settings { site_origins: vec![], port: 4190 });
+        assert_eq!(settings("{}"), Settings { site_origins: vec![], port: 4280 });
         assert_eq!(settings("{\"siteOrigins\":null}"), Settings::default());
         assert_eq!(render(&Settings::default()), TEMPLATE);
+    }
+
+    #[test]
+    fn the_old_blocked_default_port_moves_to_the_new_default() {
+        let p = parse("{\"siteOrigins\":[],\"port\":4190}").unwrap();
+        assert_eq!(p.settings.port, DEFAULT_PORT);
+        assert!(p.migration.is_some(), "the file is rewritten with the new port");
+        let err = parse("{\"port\":6000}").unwrap_err();
+        assert!(err.contains("browsers refuse"), "{err}");
+        assert_eq!(settings("{\"port\":4281}").port, 4281);
     }
 
     #[test]
@@ -335,10 +356,10 @@ mod tests {
 
     #[test]
     fn old_site_url_is_migrated() {
-        let p = parse("{\"siteUrl\":\"https://MengAI.example/\",\"port\":4191}").unwrap();
-        assert_eq!(p.settings, Settings { site_origins: vec!["https://mengai.example".into()], port: 4191 });
+        let p = parse("{\"siteUrl\":\"https://MengAI.example/\",\"port\":4281}").unwrap();
+        assert_eq!(p.settings, Settings { site_origins: vec!["https://mengai.example".into()], port: 4281 });
         assert_eq!(p.migration, Some(Migration { dropped: None }));
-        let p = parse("{\"siteUrl\":null,\"port\":4190}").unwrap();
+        let p = parse("{\"siteUrl\":null,\"port\":4280}").unwrap();
         assert_eq!(p.settings, Settings::default());
         assert_eq!(p.migration, Some(Migration { dropped: None }));
         // A loopback dev origin was valid for siteUrl; it is dropped with a reason, not fatal.
@@ -361,7 +382,7 @@ mod tests {
         assert!(parse("{\"siteorigins\": []}").is_err(), "unknown keys are refused");
         assert!(parse("{\"port\": 80}").is_err());
         assert!(parse("{\"port\": 70000}").is_err());
-        assert!(parse("{\"port\": \"4190\"}").is_err());
+        assert!(parse("{\"port\": \"4280\"}").is_err());
         assert!(parse("[1]").is_err());
     }
 
@@ -379,7 +400,7 @@ mod tests {
         };
         assert_eq!(mode(&path), 0o600);
         assert_eq!(load(&path).unwrap(), Loaded { settings: Settings::default(), missing: false, migration: None });
-        fs::write(&path, "{\"siteUrl\":\"https://site.example\",\"port\":4192}").unwrap();
+        fs::write(&path, "{\"siteUrl\":\"https://site.example\",\"port\":4282}").unwrap();
         write_template(&path).unwrap(); // never overwrites the owner's file
         let old = load(&path).unwrap();
         assert_eq!(old.settings.site_origins, vec!["https://site.example".to_string()]);

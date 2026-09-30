@@ -5,7 +5,7 @@
 //   /landing     page A, ?d=D1 (default D1), ?reduce=1 previews reduced motion
 //   /motion      page B with the motion module, ?d=D9 (default D9)
 //   /fonts/*     the vendored woff2 files, long-cached (fonts.css points here)
-// Port from argv or PORT, default 4190.
+// Port from argv or PORT, default 4290.
 //   KIT_PREVIEW_DEPS=<dir with lenis and gsap> bun packages/ui/src/kit/preview/serve.ts [port]
 import { join } from "node:path";
 import { buildPreview } from "./build";
@@ -13,7 +13,7 @@ import { buildPreview } from "./build";
 const here = import.meta.dir;
 const src = join(here, "..", "..");
 const motionCss = join(here, "..", "..", "..", "..", "..", "..", "modules", "motion", "src", "motion.css");
-const port = Number(process.argv[2] ?? process.env.PORT ?? 4190);
+const port = Number(process.argv[2] ?? process.env.PORT ?? 4290);
 
 const { motion } = await buildPreview();
 

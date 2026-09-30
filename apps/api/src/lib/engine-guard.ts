@@ -47,7 +47,7 @@ export interface WarnSink {
 
 const isPort = (p: unknown): p is number => typeof p === "number" && Number.isInteger(p) && p > 0 && p < 65536;
 
-/** The engine's TCP ports from Host allowlist entries like "127.0.0.1:4190" (no port, no entry). */
+/** The engine's TCP ports from Host allowlist entries like "127.0.0.1:4280" (no port, no entry). */
 export function enginePorts(allowedHosts: readonly string[]): number[] {
   const out = new Set<number>();
   for (const host of allowedHosts) {

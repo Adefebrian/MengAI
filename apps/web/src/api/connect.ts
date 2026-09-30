@@ -6,15 +6,15 @@
 // caller (React's development double effect, the 2 s poll, a retry
 // pressed mid flight) shares the look in flight.
 //
-// When no candidate answers, the look also probes 127.0.0.1:4191..4199 in
-// parallel (the Mac app moves there when 4190 is taken) and takes the lowest
+// When no candidate answers, the look also probes 127.0.0.1:4281..4289 in
+// parallel (the Mac app moves there when 4280 is taken) and takes the lowest
 // port whose health reads as a local MengAI engine. A port that only answers
 // an opaque request proves nothing there, so it does not count (JEV
 // sec.runtime_discovery range_closed ignore 0.76). The range is probed on the
 // first look that finds nothing and then at most every 10 s while nothing
 // answers, so the 2 s poll stays cheap. A found port is saved as the runtime
 // address when none is saved or the saved one is itself a range address, and
-// a saved range address is forgotten once 4190 or this page's own engine
+// a saved range address is forgotten once 4280 or this page's own engine
 // answers again; an address the owner typed outside the range is never
 // overwritten (JEV sec.runtime_discovery remember_policy unset_or_discovered 0.99).
 import type { HealthDTO } from "@mengai/shared";
@@ -32,7 +32,7 @@ export interface ConnectOptions {
   fetch?: FetchLike;
   /** Addresses to look at first. Given without `range`, no range is probed. */
   candidates?: string[];
-  /** Range addresses to probe when no candidate answers. Defaults to 4191..4199 minus the candidates. */
+  /** Range addresses to probe when no candidate answers. Defaults to 4281..4289 minus the candidates. */
   range?: string[];
   /** Clock for the range throttle (tests). */
   now?: () => number;

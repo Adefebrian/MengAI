@@ -39,7 +39,7 @@ app.use(
       frameSrc: ["http://127.0.0.1:*", "http://localhost:*"],
       fontSrc: ["'self'"],
       // The app talks to the MengAI runtime on the visitor's own machine
-      // (src/api/runtime.ts: loopback addresses only, 127.0.0.1:4190 by
+      // (src/api/runtime.ts: loopback addresses only, 127.0.0.1:4280 by
       // default). Without these sources the browser blocks every call and
       // the app loads but never finds the crew. The website itself keeps no
       // data and has no API of its own.

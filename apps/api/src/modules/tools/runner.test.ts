@@ -152,9 +152,9 @@ describe("seatbelt", () => {
 
   test("profile denies the engine port last, after any network allow, on every address", () => {
     for (const network of [true, false]) {
-      const p = buildSeatbeltProfile({ writable: ["/w"], network, dataDir: "/data", home: "/Users/o", denyTcpPorts: [4190, 0, 70000] });
+      const p = buildSeatbeltProfile({ writable: ["/w"], network, dataDir: "/data", home: "/Users/o", denyTcpPorts: [4280, 0, 70000] });
       const lines = p.profile.split("\n");
-      expect(lines.at(-1)).toBe('(deny network-outbound (remote tcp "*:4190"))');
+      expect(lines.at(-1)).toBe('(deny network-outbound (remote tcp "*:4280"))');
       expect(lines.filter((l) => l.includes("remote tcp"))).toHaveLength(1);
       if (network) expect(lines.indexOf("(allow network*)")).toBeLessThan(lines.length - 1);
     }

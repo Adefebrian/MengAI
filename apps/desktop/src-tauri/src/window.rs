@@ -140,11 +140,11 @@ mod tests {
 
     #[test]
     fn pins_navigation_to_the_exact_origin() {
-        let port = 4190;
-        assert!(is_sidecar_url(&url("http://127.0.0.1:4190/app/runs/1"), port));
-        assert!(!is_sidecar_url(&url("http://127.0.0.1:4191/"), port));
-        assert!(!is_sidecar_url(&url("http://localhost:4190/"), port));
-        assert!(!is_sidecar_url(&url("https://127.0.0.1:4190/"), port));
+        let port = 4280;
+        assert!(is_sidecar_url(&url("http://127.0.0.1:4280/app/runs/1"), port));
+        assert!(!is_sidecar_url(&url("http://127.0.0.1:4281/"), port));
+        assert!(!is_sidecar_url(&url("http://localhost:4280/"), port));
+        assert!(!is_sidecar_url(&url("https://127.0.0.1:4280/"), port));
         assert!(is_external_link(&url("https://example.com")));
         assert!(!is_external_link(&url("file:///etc/passwd")));
         assert!(!is_external_link(&url("javascript:alert(1)")));
@@ -152,12 +152,12 @@ mod tests {
 
     #[test]
     fn preview_frames_load_in_place_everything_else_leaves() {
-        let port = 4190;
-        assert_eq!(navigation(&url("http://127.0.0.1:4190/app"), port), Nav::Allow);
+        let port = 4280;
+        assert_eq!(navigation(&url("http://127.0.0.1:4280/app"), port), Nav::Allow);
         assert_eq!(navigation(&url("http://127.0.0.1:5173/"), port), Nav::Allow);
         assert_eq!(navigation(&url("http://localhost:3000/index.html"), port), Nav::Allow);
         // Not a preview: the engine under another name, TLS, other loopback names, no port, credentials.
-        assert_eq!(navigation(&url("http://localhost:4190/app"), port), Nav::External);
+        assert_eq!(navigation(&url("http://localhost:4280/app"), port), Nav::External);
         assert_eq!(navigation(&url("https://127.0.0.1:5173/"), port), Nav::External);
         assert_eq!(navigation(&url("http://127.0.0.2:5173/"), port), Nav::External);
         assert_eq!(navigation(&url("http://[::1]:5173/"), port), Nav::External);
@@ -171,15 +171,15 @@ mod tests {
 
     #[test]
     fn a_preview_that_takes_over_the_window_is_bounced() {
-        let port = 4190;
-        assert!(!must_bounce(&url("http://127.0.0.1:4190/app/projects/p1"), port));
+        let port = 4280;
+        assert!(!must_bounce(&url("http://127.0.0.1:4280/app/projects/p1"), port));
         assert!(must_bounce(&url("http://127.0.0.1:5173/"), port));
-        assert!(must_bounce(&url("http://localhost:4190/app"), port));
+        assert!(must_bounce(&url("http://localhost:4280/app"), port));
     }
 
     #[test]
     fn app_url_matches_the_contract() {
-        assert_eq!(app_url(4190), "http://127.0.0.1:4190/app");
+        assert_eq!(app_url(4280), "http://127.0.0.1:4280/app");
         assert!(is_sidecar_url(&url(&app_url(4312)), 4312));
     }
 }

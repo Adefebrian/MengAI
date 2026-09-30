@@ -216,10 +216,10 @@ describe("shared contract", () => {
   test("settings.json feeds MENGAI_SITE_ORIGINS and the fixed runtime port the website talks to", async () => {
     const settings = await read("src/settings.rs");
     expect(settings).toContain('pub const FILE_NAME: &str = "settings.json";');
-    expect(settings).toContain("pub const DEFAULT_PORT: u16 = 4190;");
+    expect(settings).toContain("pub const DEFAULT_PORT: u16 = 4280;");
     const template = /pub const TEMPLATE: &str = "((?:[^"\\]|\\.)*)";/.exec(settings)?.[1];
     expect(template).toBeDefined();
-    expect(JSON.parse(JSON.parse(`"${template}"`))).toEqual({ siteOrigins: [], port: 4190 });
+    expect(JSON.parse(JSON.parse(`"${template}"`))).toEqual({ siteOrigins: [], port: 4280 });
     // https only, no loopback host (preview apps run on loopback ports), the old siteUrl migrated.
     expect(settings).toContain('if url.scheme() != "https"');
     expect(settings).toContain("if is_loopback_host(host)");
@@ -228,7 +228,7 @@ describe("shared contract", () => {
     expect(sidecar).toContain('("MENGAI_SITE_ORIGINS".into(), settings.site_origins.join(",").into())');
     // The root dev runtime and the Mac app answer on the same local address.
     const root = await Bun.file(join(repoRoot, "package.json")).json();
-    expect(root.scripts.dev).toContain("MENGAI_PORT=4190");
+    expect(root.scripts.dev).toContain("MENGAI_PORT=4280");
   });
 
   test("one instance per Mac: the handoff runs before any plugin or setup, then the data dir lock, then the port choice", async () => {
@@ -246,9 +246,9 @@ describe("shared contract", () => {
     expect(spawn).toBeGreaterThan(port);
     // The fallback range matches the one the web app probes.
     const ports = await read("src/ports.rs");
-    expect(ports).toContain("pub const FALLBACK_RANGE: RangeInclusive<u16> = 4190..=4199;");
+    expect(ports).toContain("pub const FALLBACK_RANGE: RangeInclusive<u16> = 4280..=4289;");
     const runtime = await Bun.file(join(repoRoot, "apps", "web", "src", "api", "runtime.ts")).text();
-    expect(runtime).toContain("export const RUNTIME_PORTS = { first: 4190, last: 4199 } as const;");
+    expect(runtime).toContain("export const RUNTIME_PORTS = { first: 4280, last: 4289 } as const;");
   });
 
   test("no pairing and no launch token: the window loads /app on the exact engine origin", async () => {

@@ -436,15 +436,15 @@ mod tests {
 
     #[test]
     fn parses_the_contract_ready_line() {
-        let line = format!("{{\"event\":\"ready\",\"port\":4190,\"controlToken\":\"{CT}\"}}");
-        assert_eq!(parse_ready(&line).unwrap().unwrap(), Ready { port: 4190, control_token: Some(CT.into()) });
+        let line = format!("{{\"event\":\"ready\",\"port\":4280,\"controlToken\":\"{CT}\"}}");
+        assert_eq!(parse_ready(&line).unwrap().unwrap(), Ready { port: 4280, control_token: Some(CT.into()) });
         // No auth in local mode: the token may be absent or null, and old fields are ignored.
         for line in [
-            "{\"event\":\"ready\",\"port\":4190}".to_string(),
-            "{\"event\":\"ready\",\"port\":4190,\"controlToken\":null}".to_string(),
-            "{\"event\":\"ready\",\"port\":4190,\"launchToken\":\"x\",\"pairUrl\":5}".to_string(),
+            "{\"event\":\"ready\",\"port\":4280}".to_string(),
+            "{\"event\":\"ready\",\"port\":4280,\"controlToken\":null}".to_string(),
+            "{\"event\":\"ready\",\"port\":4280,\"launchToken\":\"x\",\"pairUrl\":5}".to_string(),
         ] {
-            assert_eq!(parse_ready(&line).unwrap().unwrap(), Ready { port: 4190, control_token: None }, "{line}");
+            assert_eq!(parse_ready(&line).unwrap().unwrap(), Ready { port: 4280, control_token: None }, "{line}");
         }
     }
 
@@ -456,7 +456,7 @@ mod tests {
         assert!(parse_ready("{not json").is_none());
         for bad in [
             format!("{{\"event\":\"ready\",\"port\":70000,\"controlToken\":\"{CT}\"}}"),
-            format!("{{\"event\":\"ready\",\"port\":\"4190\",\"controlToken\":\"{CT}\"}}"),
+            format!("{{\"event\":\"ready\",\"port\":\"4280\",\"controlToken\":\"{CT}\"}}"),
             format!("{{\"event\":\"ready\",\"controlToken\":\"{CT}\"}}"),
             format!("{{\"event\":\"ready\",\"port\":1,\"controlToken\":\"{CT}&x=<y>\"}}"),
             format!("{{\"event\":\"ready\",\"port\":1,\"controlToken\":\"{CT}\\r\\nx: y\"}}"),
@@ -476,7 +476,7 @@ mod tests {
         let paths = test_paths();
         let settings = Settings {
             site_origins: vec!["https://site.example".into(), "https://app.example:8443".into()],
-            port: 4190,
+            port: 4280,
         };
         let parent = vec![
             ("HOME", "/Users/x"),
@@ -498,7 +498,7 @@ mod tests {
         let get = |k: &str| env.iter().rev().find(|(ek, _)| ek == k).map(|(_, v)| v.to_string_lossy().into_owned());
         assert_eq!(get("HOME").as_deref(), Some("/Users/x"));
         assert_eq!(get("LC_ALL").as_deref(), Some("en_US.UTF-8"));
-        assert_eq!(get("MENGAI_PORT").as_deref(), Some("4190"));
+        assert_eq!(get("MENGAI_PORT").as_deref(), Some("4280"));
         assert_eq!(get("MENGAI_SITE_ORIGINS").as_deref(), Some("https://site.example,https://app.example:8443"));
         assert_eq!(get("MENGAI_DEMO").as_deref(), Some("1"));
         assert_eq!(get("MENGAI_MODE").as_deref(), Some("local"));
@@ -519,7 +519,7 @@ mod tests {
         let parent = vec![("MENGAI_SITE_ORIGINS", "https://evil.example"), ("MENGAI_SITE_URL", "https://evil.example")];
         let env = build_env(parent, &test_paths(), &Settings::default());
         assert!(env.iter().all(|(k, _)| k != "MENGAI_SITE_ORIGINS" && k != "MENGAI_SITE_URL"));
-        assert!(env.iter().any(|(k, v)| k == "MENGAI_PORT" && v == "4190"));
+        assert!(env.iter().any(|(k, v)| k == "MENGAI_PORT" && v == "4280"));
     }
 
     #[test]

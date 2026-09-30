@@ -12,8 +12,8 @@
 //
 // Where it looks: the saved runtime address when there is one, then the
 // page's own origin when the page is served from this machine, then
-// http://127.0.0.1:4190. When none of those answers, it probes
-// http://127.0.0.1:4191..4199, where the Mac app starts its engine when 4190
+// http://127.0.0.1:4280. When none of those answers, it probes
+// http://127.0.0.1:4281..4289, where the Mac app starts its engine when 4280
 // is held by something else (for example `bun run dev`), at most every 10 s
 // while nothing answers; a port found there is remembered as the saved
 // address (see connect.ts). Only loopback addresses are accepted, so neither
@@ -22,9 +22,9 @@
 import type { HealthDTO } from "@mengai/shared";
 import type { FetchLike } from "./client";
 
-export const DEFAULT_RUNTIME_URL = "http://127.0.0.1:4190";
+export const DEFAULT_RUNTIME_URL = "http://127.0.0.1:4280";
 /** Ports the Mac app may start its engine on. Must match FALLBACK_RANGE in apps/desktop/src-tauri/src/ports.rs. */
-export const RUNTIME_PORTS = { first: 4190, last: 4199 } as const;
+export const RUNTIME_PORTS = { first: 4280, last: 4289 } as const;
 /** How often the range is probed again while nothing answers. */
 export const RANGE_RECHECK_MS = 10_000;
 export const REPO_URL = "https://github.com/Adefebrian/MengAI";
@@ -39,6 +39,9 @@ function page(): PageLocation {
   if (typeof window === "undefined") return { origin: "http://localhost", hostname: "localhost" };
   return window.location;
 }
+
+/** Ports browsers refuse to load (their unsafe port list). The first engine default, 4190, is one of them. */
+const BLOCKED_PORTS = new Set([1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
 
 export function isLoopbackHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/\.$/, "");
@@ -58,6 +61,8 @@ export function normalizeRuntimeUrl(input: string): string | null {
   if (url.protocol !== "http:" && url.protocol !== "https:") return null;
   if (url.username || url.password) return null;
   if (!isLoopbackHost(url.hostname)) return null;
+  // a saved address on a blocked port (the old 4190 default) could never answer: drop it
+  if (url.port && BLOCKED_PORTS.has(Number(url.port))) return null;
   return url.origin;
 }
 
@@ -97,7 +102,7 @@ export function originOf(base: string, loc: PageLocation = page()): string {
   return base || loc.origin;
 }
 
-/** Where to look for the runtime first, in order: the saved address, this page's own origin on this machine, 127.0.0.1:4190. */
+/** Where to look for the runtime first, in order: the saved address, this page's own origin on this machine, 127.0.0.1:4280. */
 export function runtimeCandidates(loc: PageLocation = page(), setting: string | null = readRuntimeSetting()): string[] {
   const list: string[] = [];
   const add = (origin: string) => {
@@ -114,14 +119,14 @@ function rangeOrigin(port: number): string {
   return `http://127.0.0.1:${port}`;
 }
 
-/** True for http://127.0.0.1:4190..4199, the addresses the page finds (and may forget) on its own. */
+/** True for http://127.0.0.1:4280..4289, the addresses the page finds (and may forget) on its own. */
 export function isRangeAddress(origin: string): boolean {
   const m = /^http:\/\/127\.0\.0\.1:(\d{4})$/.exec(origin);
   const port = m ? Number(m[1]) : NaN;
   return port >= RUNTIME_PORTS.first && port <= RUNTIME_PORTS.last;
 }
 
-/** The rest of the range to probe when no candidate answers: 4191..4199 minus any origin already tried. */
+/** The rest of the range to probe when no candidate answers: 4281..4289 minus any origin already tried. */
 export function runtimeRange(tried: string[], loc: PageLocation = page()): string[] {
   const seen = new Set(tried.map((b) => originOf(b, loc)));
   const list: string[] = [];

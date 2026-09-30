@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! Which loopback port the engine starts on.
 //!
-//! The configured port (settings.json `port`, default 4190) wins when it is
-//! free. When it is busy and lies inside 4190..4199, the engine starts on the
+//! The configured port (settings.json `port`, default 4280) wins when it is
+//! free. When it is busy and lies inside 4280..4289, the engine starts on the
 //! first free port of that range instead; the web app probes the same range.
 //! An explicit port outside the range is honoured as is: busy means a dialog,
 //! never a silent move. This runs only after the single-instance handoff and
@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use crate::control::parse_status;
 
 /// Ports the engine may fall back to. Must match RUNTIME_PORTS in apps/web/src/api/runtime.ts.
-pub const FALLBACK_RANGE: RangeInclusive<u16> = 4190..=4199;
+pub const FALLBACK_RANGE: RangeInclusive<u16> = 4280..=4289;
 pub const HEALTH_PATH: &str = "/api/health";
 pub const HEALTH_DEADLINE: Duration = Duration::from_secs(1);
 const MAX_RESPONSE: usize = 64 * 1024;
@@ -143,28 +143,28 @@ mod tests {
 
     #[test]
     fn a_free_configured_port_is_used_as_is() {
-        assert_eq!(choose(4190, |_| true), Ok(Pick { port: 4190, busy: None }));
+        assert_eq!(choose(4280, |_| true), Ok(Pick { port: 4280, busy: None }));
         assert_eq!(choose(5000, |_| true), Ok(Pick { port: 5000, busy: None }));
     }
 
     #[test]
     fn busy_4190_falls_back_to_4191() {
-        assert_eq!(choose(4190, |p| p != 4190), Ok(Pick { port: 4191, busy: Some(4190) }));
+        assert_eq!(choose(4280, |p| p != 4280), Ok(Pick { port: 4281, busy: Some(4280) }));
         // The first free port of the range, skipping every busy one.
-        assert_eq!(choose(4190, |p| p >= 4194), Ok(Pick { port: 4194, busy: Some(4190) }));
+        assert_eq!(choose(4280, |p| p >= 4284), Ok(Pick { port: 4284, busy: Some(4280) }));
         // A configured port inside the range falls back to the range start when that is free.
-        assert_eq!(choose(4195, |p| p != 4195), Ok(Pick { port: 4190, busy: Some(4195) }));
+        assert_eq!(choose(4285, |p| p != 4285), Ok(Pick { port: 4280, busy: Some(4285) }));
     }
 
     #[test]
     fn all_ten_busy_is_an_error_naming_the_range() {
         let seen = RefCell::new(Vec::new());
-        let out = choose(4190, |p| {
+        let out = choose(4280, |p| {
             seen.borrow_mut().push(p);
             false
         });
-        assert_eq!(out, Err(NoPort::RangeBusy { first: 4190, last: 4199 }));
-        assert_eq!(*seen.borrow(), (4190..=4199).collect::<Vec<u16>>(), "each port probed once, in order");
+        assert_eq!(out, Err(NoPort::RangeBusy { first: 4280, last: 4289 }));
+        assert_eq!(*seen.borrow(), (4280..=4289).collect::<Vec<u16>>(), "each port probed once, in order");
     }
 
     #[test]
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn real_listeners_are_skipped() {
-        // Two held ports as the start of a range of their own (4190..4199 may be in use on this Mac);
+        // Two held ports as the start of a range of their own (4280..4289 may be in use on this Mac);
         // the third slot stands for a free port, so no other parallel test can race for it.
         let a = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let b = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();

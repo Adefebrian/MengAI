@@ -53,7 +53,7 @@ async function files(root: string, map: Record<string, string>): Promise<string>
 
 const pkg = (scripts: Record<string, string>, extra: Record<string, unknown> = {}) => JSON.stringify({ name: "x", scripts, ...extra });
 
-function context(mode: "local" | "server" = "local", allowedHosts: string[] = ["127.0.0.1:4190", "localhost:4190"]): ModuleContext {
+function context(mode: "local" | "server" = "local", allowedHosts: string[] = ["127.0.0.1:4280", "localhost:4280"]): ModuleContext {
   const config: AppConfig = {
     mode,
     version: "test",
@@ -283,14 +283,14 @@ describe("env", () => {
 // ----------------------------------------------------------------- output
 describe("output", () => {
   test("local URLs from dev server lines; LAN, low and engine ports ignored", () => {
-    const blocked = new Set([4190]);
+    const blocked = new Set([4280]);
     expect(parseLocalUrl("  \u001b[32m➜\u001b[39m  \u001b[1mLocal\u001b[22m:   \u001b[36mhttp://localhost:\u001b[1m5173\u001b[22m/\u001b[39m", blocked)).toBe("http://localhost:5173/");
     expect(parseLocalUrl("- Local:        http://localhost:3000", blocked)).toBe("http://localhost:3000/");
     expect(parseLocalUrl("ready - started server on 0.0.0.0:3000, url: http://127.0.0.1:3000.", blocked)).toBe("http://127.0.0.1:3000/");
     expect(parseLocalUrl("Local: http://localhost:5173/app/", blocked)).toBe("http://localhost:5173/app/");
     expect(parseLocalUrl("Network: http://192.168.1.20:5173/", blocked)).toBeNull();
     expect(parseLocalUrl("see http://localhost:80/ or http://evil.test:5173/", blocked)).toBeNull();
-    expect(parseLocalUrl("Local: http://127.0.0.1:4190/api/killswitch", blocked)).toBeNull();
+    expect(parseLocalUrl("Local: http://127.0.0.1:4280/api/killswitch", blocked)).toBeNull();
     expect(parseLocalUrl("Local: http://localhost.evil.test:5173/", blocked)).toBeNull();
     expect(stripAnsi("\u001b]8;;http://x\u0007link\u001b]8;;\u0007")).toBe("link");
   });
@@ -360,13 +360,13 @@ describe("script previews with a fake spawner", () => {
   test("a URL on the engine's own port is ignored", async () => {
     const root = await files(await tmp(), { "package.json": pkg({ dev: "x" }) });
     const { svc, sp, ff } = service();
-    ff.up.add("http://127.0.0.1:4190/");
+    ff.up.add("http://127.0.0.1:4280/");
     ff.up.add("http://127.0.0.1:4300/");
     await svc.start("p1", root);
     await Bun.sleep(1);
-    sp.procs[0]!.print("Local: http://127.0.0.1:4190/\n");
+    sp.procs[0]!.print("Local: http://127.0.0.1:4280/\n");
     expect((await until(svc, "p1", root, (d) => d.status === "ready")).url).toBe("http://127.0.0.1:4300/");
-    expect(ff.seen).not.toContain("http://127.0.0.1:4190/");
+    expect(ff.seen).not.toContain("http://127.0.0.1:4280/");
     await svc.close();
   });
 

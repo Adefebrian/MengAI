@@ -80,7 +80,7 @@ function AddressCard({ onSaved }: { onSaved: () => void }) {
     const norm = normalizeRuntimeUrl(value);
     if (!norm) {
       setOk(null);
-      setError("Use an address on this machine, like 127.0.0.1:4190 or localhost:4190.");
+      setError("Use an address on this machine, like 127.0.0.1:4280 or localhost:4280.");
       return;
     }
     setError(null);
@@ -102,7 +102,7 @@ function AddressCard({ onSaved }: { onSaved: () => void }) {
           autoComplete="off"
           inputMode="url"
           error={error}
-          hint="The Mac app and bun run dev answer on 127.0.0.1:4190, or the next free port up to 4199. This page finds it by itself."
+          hint="The Mac app and bun run dev answer on 127.0.0.1:4280, or the next free port up to 4289. This page finds it by itself."
         />
         <div className="app-form-actions">
           <button type="submit">Save and look again</button>

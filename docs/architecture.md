@@ -16,7 +16,7 @@ Brand: MengAI (scope @mengai). "Meng" is how Indonesians call a cat.
 | KV (rate limit, response cache, locks) | in-memory LRU | Redis via Bun RedisClient |
 | Blobs (assets, screenshots) | local dir `<appdata>/blobs` | S3 via Bun.s3 (s3.datacenter.jalgroup.id) |
 | Vault (API keys) | OS keychain via Bun.secrets (service = bundle id) | envelope AES-256-GCM, KEK from env `VAULT_KEK`, DEK per secret, ciphertext in `vault_items` |
-| Auth | none: the engine runs on the owner's Mac, bound to 127.0.0.1:4190; Host check, exact Origin allowlist (own origins plus MENGAI_SITE_ORIGINS), writes need an allowlisted Origin, crew processes are denied the engine port | owner accounts (argon2id via Bun.password), session cookie, CSRF via Origin check + SameSite |
+| Auth | none: the engine runs on the owner's Mac, bound to 127.0.0.1:4280; Host check, exact Origin allowlist (own origins plus MENGAI_SITE_ORIGINS), writes need an allowlisted Origin, crew processes are denied the engine port | owner accounts (argon2id via Bun.password), session cookie, CSRF via Origin check + SameSite |
 | Automation (computer control) | enabled when the hands helper is present and TCC grants exist | hard disabled (module not mounted) |
 | Shell tool | Seatbelt profile (sandbox-exec) jail to workspace, env scrubbed | runs inside the container workspace, env scrubbed, off by default |
 
@@ -159,7 +159,7 @@ Routes never contain business logic; services never import Hono.
 
 ### Local sidecar contract (apps/api/src/local.ts <-> apps/desktop)
 - The desktop shell spawns the compiled sidecar with env `MENGAI_MODE=local`,
-  `MENGAI_DATA_DIR`, `MENGAI_WEB_DIR` (bundled SPA), `MENGAI_PORT=4190` and,
+  `MENGAI_DATA_DIR`, `MENGAI_WEB_DIR` (bundled SPA), `MENGAI_PORT=4280` and,
   when the owner set them in settings.json, `MENGAI_SITE_ORIGINS`.
 - When listening, the sidecar prints one NDJSON line to stdout:
   `{"event":"ready","port":<n>,"controlToken":"<per-launch>",...}`; the shell

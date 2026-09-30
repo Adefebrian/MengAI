@@ -1,5 +1,9 @@
 # MengAI
 
+<p align="center"><img src="docs/assets/mengai-architecture.svg" alt="MengAI architecture: an app goal and a trading thesis go into one crew engine on the owner&#39;s Mac and come out as a working app or as orders and a P&amp;L report" width="100%"></p>
+
+**Live beta:** https://mengai.adefebrian.com
+
 > Required Notice: Built by Adefebrian (https://adefebrian.com). Source available under the PolyForm Noncommercial License 1.0.0. Commercial use needs written permission: adefebrianpro@gmail.com
 
 MengAI is an autonomous AI agent company where every agent is a living cat.
@@ -38,7 +42,7 @@ only the interface: it has no accounts and stores nothing.
 
 ## How it runs
 
-The crew engine is a Bun process on your own machine (127.0.0.1:4190): the
+The crew engine is a Bun process on your own machine (127.0.0.1:4280): the
 Mac app starts it for you, or run it from this repository. The interface is
 the same in the app window and on the website. The engine accepts requests
 only from its own window and the allowed website origins; there is no login

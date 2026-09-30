@@ -102,7 +102,7 @@ mod tests {
         assert!(req.contains("\r\nContent-Length: 17\r\n"));
         assert!(req.ends_with("\r\n\r\n{\"by\":\"shortcut\"}"));
         assert!(!req.to_ascii_lowercase().contains("\r\norigin:"));
-        let bare = String::from_utf8(killswitch_request(4190, None, Trigger::Tray)).unwrap();
+        let bare = String::from_utf8(killswitch_request(4280, None, Trigger::Tray)).unwrap();
         assert!(!bare.contains(CONTROL_TOKEN_HEADER));
         assert!(bare.contains("\r\nContent-Type: application/json\r\n"));
         assert!(bare.ends_with("\r\n\r\n{\"by\":\"tray\"}"));

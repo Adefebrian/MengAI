@@ -63,8 +63,8 @@ describe("engine media", () => {
   test("images and clips from the engine load in CORS mode, in the kit's media frame", async () => {
     const el = await render(
       <>
-        <EngineMedia kind="image" ratio="4/3" src="http://127.0.0.1:4190/api/assets/a-1/file" alt="Export button" width={1024} height={1024} />
-        <EngineMedia kind="video" ratio="4/3" src="http://127.0.0.1:4190/api/assets/a-2/file" alt="A short loop" />
+        <EngineMedia kind="image" ratio="4/3" src="http://127.0.0.1:4280/api/assets/a-1/file" alt="Export button" width={1024} height={1024} />
+        <EngineMedia kind="video" ratio="4/3" src="http://127.0.0.1:4280/api/assets/a-2/file" alt="A short loop" />
       </>,
     );
     const img = el.querySelector("img")!;
