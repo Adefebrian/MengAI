@@ -4131,6 +4131,13 @@ button.app-radio:disabled .app-radio-dot {
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
 }
+/* The coming-soon tag inside an option that is off on this platform; the
+   tag keeps its own ink so the words stay readable on a disabled row. */
+.app-radio-note {
+  display: flex;
+  min-width: 0;
+  padding-block-start: var(--space-2px);
+}
 
 /* =========================================================== SETTINGS */
 .settings-org-now {

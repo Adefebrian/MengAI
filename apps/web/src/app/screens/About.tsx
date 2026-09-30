@@ -18,7 +18,7 @@ import { useResource } from "../hooks";
 import { Page, Region } from "../ui";
 
 export function AboutScreen() {
-  const { api, catsStill, settings, runtime, demo } = useApp();
+  const { api, catsStill, settings, runtime, demo, platform } = useApp();
   const ceo = leadCatName(settings?.ceoName);
   const health = useResource((signal) => api.call("GET /api/health", { signal }), "health");
   return (
@@ -85,11 +85,11 @@ export function AboutScreen() {
           demo
             ? "Sample data only. Nothing here talks to an engine."
             : runtime.own
-              ? `Served by MengAI itself at ${runtime.label}. Nothing to sign in to: quit MengAI from the menu bar to close it.`
-              : `Talks straight to MengAI at ${runtime.label} on this Mac. Nothing to sign in to and no key in this browser; only your view settings stay here.`
+              ? `Served by MengAI itself at ${runtime.label}. Nothing to sign in to: quit MengAI from the ${platform.os === "win32" ? "system tray" : "menu bar"} to close it.`
+              : `Talks straight to MengAI at ${runtime.label} on ${platform.machine}. Nothing to sign in to and no key in this browser; only your view settings stay here.`
         }
       >
-        {demo ? null : <p className="app-empty-line">The engine only answers this Mac, and only the sites on its own list.</p>}
+        {demo ? null : <p className="app-empty-line">The engine only answers {platform.machine}, and only the sites on its own list.</p>}
       </Region>
     </Page>
   );

@@ -184,10 +184,31 @@ describe("landing", () => {
     for (const old of ["Kopi", "Mochi"]) expect(text.includes(old)).toBe(false);
   });
 
-  test("both calls to action reach the app and the Mac download", () => {
+  test("both calls to action reach the app and the Mac and Windows downloads", () => {
     expect(links(WEB_APP_URL).some((a) => a.textContent === "Open the app")).toBe(true);
     expect(links(WEB_APP_URL).length).toBeGreaterThanOrEqual(3);
+    expect(DOWNLOAD_URL).toBe("https://github.com/Adefebrian/MengAI/releases/tag/v0.1.0-beta");
     expect(links(DOWNLOAD_URL).filter((a) => a.textContent === "Download for Mac").length).toBeGreaterThanOrEqual(2);
+    expect(links(DOWNLOAD_URL).filter((a) => a.textContent === "Download for Windows").length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("the download row: Open the app first, then Mac and Windows to the beta release, one platform line, Android coming soon with no link", () => {
+    for (const where of [".kit-masthead", "#get"]) {
+      const section = host.querySelector<HTMLElement>(where)!;
+      const actions = section.querySelector(".kit-actions")!;
+      expect(Array.from(actions.querySelectorAll("a")).map((a) => a.textContent)).toEqual(["Open the app", "Download for Mac", "Download for Windows"]);
+      for (const a of actions.querySelectorAll("a[data-download]")) {
+        expect(a.getAttribute("href")).toBe(DOWNLOAD_URL);
+        expect(a.className).toContain("btn-secondary");
+      }
+      const line = section.querySelector(".lp-download-line")?.textContent ?? "";
+      expect(line).toContain("Apple Silicon");
+      expect(line).toContain("Windows x64");
+      expect(line).toContain("reach Windows later");
+      expect(line).toContain("Android is coming soon.");
+      expect(line.includes(EMDASH)).toBe(false);
+    }
+    expect(Array.from(host.querySelectorAll("a")).some((a) => /android/i.test(a.textContent ?? "") || /android|\.apk/i.test(a.getAttribute("href") ?? ""))).toBe(false);
   });
 
   test("the code editor and the timeline are real UI", () => {
@@ -273,7 +294,7 @@ describe("landing", () => {
     expect(close.querySelector("h2")?.textContent).toBe(CLOSE_TITLE);
     const parts = Array.from(close.querySelectorAll(".lp-close-text, .lp-close-actions"));
     expect(parts.map((p) => p.className.split(" ").find((c) => c.startsWith("lp-")))).toEqual(["lp-close-text", "lp-close-actions"]);
-    expect(Array.from(close.querySelectorAll(".lp-close-actions a")).map((a) => a.textContent)).toEqual(["Open the app", "Download for Mac"]);
+    expect(Array.from(close.querySelectorAll(".lp-close-actions a")).map((a) => a.textContent)).toEqual(["Open the app", "Download for Mac", "Download for Windows"]);
     expect(close.textContent).not.toContain("Shipped");
     expect(close.querySelectorAll(".cat").length).toBe(0);
   });

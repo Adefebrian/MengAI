@@ -67,10 +67,14 @@ describe("engine gate", () => {
     expect(text).toContain("This page connects by itself");
     expect(text).toContain("bun run dev");
     expect(text).toContain("every 2 seconds");
-    expect(text).toContain("Free for personal and noncommercial use, a beta for now.");
+    expect(text).toContain("Free for personal and noncommercial use.");
+    expect(text).toContain("Betas for Apple Silicon Macs and Windows x64. A few crew tricks reach Windows later. Android is coming soon.");
     expect(text).not.toMatch(/open.?source|apache/i);
-    const download = [...el.querySelectorAll("a")].find((a) => a.textContent?.includes("Download for Mac"));
-    expect(download?.getAttribute("href")).toBe("https://github.com/Adefebrian/MengAI/releases/tag/v0.1.0-beta");
+    for (const label of ["Download for Mac", "Download for Windows"]) {
+      const download = [...el.querySelectorAll("a")].find((a) => a.textContent?.includes(label));
+      expect(download?.getAttribute("href")).toBe("https://github.com/Adefebrian/MengAI/releases/tag/v0.1.0-beta");
+    }
+    expect([...el.querySelectorAll("a")].some((a) => /android/i.test(a.textContent ?? ""))).toBe(false);
     expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes("Check again"))).toBe(true);
     for (const gone of NO_AUTH) expect(text.includes(gone)).toBe(false);
     expect(el.querySelector('input[type="email"], input[type="password"]')).toBeNull();

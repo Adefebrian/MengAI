@@ -5,8 +5,9 @@
 // variant centers (split, form and band all start align), so the close is
 // hand-written on the kit grid inside <Section>, recorded in direction.md.
 // Release round: the owner took the shipped strip and its crew row out, so
-// the close is the headline, the lead and the two actions on the page's
-// center axis, with the footer right under it.
+// the close is the headline, the lead and the actions on the page's center
+// axis (Open the app, then the Mac and Windows betas and the one platform
+// line under them), with the footer right under it.
 //
 // JEV decisions (verified, round C): ui.region_gate close_text kept (0.55,
 // relevance 2.08), close_actions kept (0.79, relevance 2.94). Carried from
@@ -16,8 +17,8 @@
 // written permission) live in the footer under it.
 import { useId } from "react";
 import { Section, staggerStyle } from "@mengai/ui";
-import { DownloadIcon } from "../icons";
-import { DOWNLOAD_URL, LICENSE_NAME, WEB_APP_URL } from "../links";
+import { DownloadButtons, DownloadLine } from "../DownloadRow";
+import { LICENSE_NAME, WEB_APP_URL } from "../links";
 
 export const CLOSE_TITLE = "Open the office. The crew is ready.";
 
@@ -31,7 +32,7 @@ export function CloseSection() {
             {CLOSE_TITLE}
           </h2>
           <p className="kit-lead">
-            MengAI is source available under the {LICENSE_NAME}, free for personal and noncommercial use, and runs on your own machine. Get the Mac app, open it, and this
+            MengAI is source available under the {LICENSE_NAME}, free for personal and noncommercial use, and runs on your own machine. Get the app for Mac or Windows, open it, and this
             website is only the window: it keeps no account, no key and no data. Every cat runs on the models you pick, on your own key.
           </p>
         </div>
@@ -39,11 +40,9 @@ export function CloseSection() {
           <a className="btn" href={WEB_APP_URL}>
             Open the app
           </a>
-          <a className="btn btn-secondary" href={DOWNLOAD_URL}>
-            <DownloadIcon size={20} color="currentColor" />
-            <span>Download for Mac</span>
-          </a>
+          <DownloadButtons />
         </div>
+        <DownloadLine />
       </div>
     </Section>
   );

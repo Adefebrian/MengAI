@@ -21,7 +21,7 @@ export function WorkbenchSection() {
       lead={
         <>
           The app shows the office and the work behind it: the file a cat is typing, every event in order, each call Oyen made and the minutes of every meeting.
-          What ships opens as a live preview in the app and as a folder on your Mac. <a href={WEB_APP_URL}>Open the app</a> to watch a sample run.
+          What ships opens as a live preview in the app and as a folder on your own machine. <a href={WEB_APP_URL}>Open the app</a> to watch a sample run.
         </>
       }
     >

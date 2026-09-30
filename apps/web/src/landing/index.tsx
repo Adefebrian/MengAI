@@ -7,7 +7,9 @@
 //
 // Ledger (composition.variant, in page order), validatePageRecipe gives []:
 //   masthead.left        the claim over the product frame: the app's run
-//                        view with the living office at work inside it
+//                        view with the living office at work inside it;
+//                        Open the app, then the Mac and Windows betas and
+//                        one platform line (Android coming soon)
 //   logo-row.row         runs on your own key, the providers (attached)
 //   custom.lifecycle     one goal grows a whole company, studio or fund
 //   bento.lead-left      the editor, the timeline, decisions and minutes
@@ -29,8 +31,9 @@ import { useEffect } from "react";
 import { AppShell, Masthead, Page, type AppShellDestination, type RecipeEntry } from "@mengai/ui";
 import { Brand } from "./brand";
 import { HeroFrame } from "./hero/HeroFrame";
-import { CodeIcon, DownloadIcon, KeyIcon, PlayIcon, ShieldIcon, UsersIcon } from "./icons";
-import { DOWNLOAD_URL, WEB_APP_URL } from "./links";
+import { DownloadButtons, DownloadLine } from "./DownloadRow";
+import { CodeIcon, KeyIcon, PlayIcon, ShieldIcon, UsersIcon } from "./icons";
+import { WEB_APP_URL } from "./links";
 import { CloseSection } from "./sections/Close";
 import { KeysSection } from "./sections/Keys";
 import { LifecycleSection } from "./sections/Lifecycle";
@@ -103,10 +106,8 @@ export function Landing({ motion = true }: { motion?: boolean }) {
                 <a className="btn" href={WEB_APP_URL}>
                   Open the app
                 </a>
-                <a className="btn btn-secondary" href={DOWNLOAD_URL}>
-                  <DownloadIcon size={20} color="currentColor" />
-                  <span>Download for Mac</span>
-                </a>
+                <DownloadButtons />
+                <DownloadLine />
               </>
             }
             proof={<HeroFrame />}

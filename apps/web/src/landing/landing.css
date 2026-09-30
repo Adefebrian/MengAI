@@ -1596,6 +1596,33 @@
 }
 
 /* ---------------------------------------------------------------------
+ * The download row (hero and close): Open the app, the Mac and Windows
+ * betas as secondary buttons, then one muted platform line on a row of its
+ * own under them. In the hero the line sits inside the kit actions (its own
+ * flex row from 640px); in the close it sits under the actions on the
+ * center axis.
+ * ------------------------------------------------------------------- */
+.lp .lp-download-line {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  overflow-wrap: break-word;
+}
+
+@media (min-width: 640px) {
+  .lp .kit-actions > .lp-download-line {
+    flex: 0 0 100%;
+  }
+}
+
+.lp .lp-close-head > .lp-download-line {
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* ---------------------------------------------------------------------
  * The close (custom.close, round C; release round: the shipped strip is
  * out): a centered SaaS close on the kit grid. The heading and the lead on
  * the page's center axis and the two actions centered under them, then

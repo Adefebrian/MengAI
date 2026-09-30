@@ -7,7 +7,10 @@
 // every role on the crew, what it does, its tools and its model.
 // Regions and containers per JEV ui.region_gate (head plain, setup plain,
 // live card, new run card, runs rows, projects divided, the add form in
-// plain spacing inside it at 0.58, company rows).
+// plain spacing inside it at 0.58, company rows). On a platform without the
+// crew sandbox (Windows and Linux today) crew shell commands are off: New
+// run says so beside Start the run with the coming-soon line, the roles
+// that run commands say what waits, and folder paths follow that system.
 import { Cat } from "@mengai/cats";
 import {
   ACTIVITY_LABEL,
@@ -31,12 +34,13 @@ import { Link, navigate } from "../../router";
 import { withCrewLooks } from "../../store/looks";
 import { tokensUsed } from "../../store/runStore";
 import { useApp } from "../context";
+import { examplePath, isAbsolutePath, trimPath, type PlatformInfo } from "../platform";
 import { fmtAgo, fmtInt, fmtUsd } from "../format";
 import { useAction, useNow, useResource } from "../hooks";
 import { RUN_STATUS, isFinished } from "../status";
 import { COMPANY_WORD } from "../run/stages";
 import { OpenFolderButton } from "../parts/OpenFolder";
-import { FormStatus, Page, PageHead, RadioGroup, Region, SelectField, TextArea, TextField } from "../ui";
+import { FormStatus, Page, PageHead, RadioGroup, Region, SelectField, Soon, TextArea, TextField } from "../ui";
 
 const ROLE_JOB: Record<AgentRole, string> = {
   lead: "Turns your goal into a task graph, hands out the work and writes the final report.",
@@ -48,6 +52,16 @@ const ROLE_JOB: Record<AgentRole, string> = {
   researcher: "Reads the web for answers when you allow network tools.",
   operator: "Would operate apps on your Mac. It sits this build out.",
 };
+
+/** What a role does on this platform: where crew shell commands are off, the roles that run them say what waits. */
+function roleJob(role: AgentRole, platform: PlatformInfo): string {
+  if (role === "operator") return `Would operate apps on ${platform.machine}. It sits this build out.`;
+  if (platform.features.shell) return ROLE_JOB[role];
+  if (role === "engineer") return "Reads and writes code in the workspace. Its shell commands are coming soon here.";
+  if (role === "reviewer") return "Reads every change, then passes it or sends it back. Running the tests itself is coming soon here.";
+  if (role === "qa") return "Writes tests against real fixtures. Running the whole suite is coming soon here.";
+  return ROLE_JOB[role];
+}
 
 const ROLE_POSE: Record<AgentRole, Activity> = {
   lead: "plan",
@@ -138,7 +152,7 @@ function LiveRun({ run, snap, project, still, ceo }: { run: RunDTO; snap: RunSna
 }
 
 function NewRun({ projects, focus }: { projects: ProjectDTO[]; focus: boolean }) {
-  const { api, settings } = useApp();
+  const { api, settings, platform } = useApp();
   const [projectId, setProjectId] = useState<string>("");
   const [goal, setGoal] = useState("");
   const [tokens, setTokens] = useState<string>("");
@@ -273,6 +287,7 @@ function NewRun({ projects, focus }: { projects: ProjectDTO[]; focus: boolean })
             </p>
           )}
         </div>
+        {platform.features.shell ? null : <Soon feature="shell" />}
         <div className="app-form-actions">
           <button type="submit" aria-busy={start.busy || undefined} disabled={!projectId}>
             <ProductIcon name="play" size={20} />
@@ -289,7 +304,7 @@ function NewRun({ projects, focus }: { projects: ProjectDTO[]; focus: boolean })
 }
 
 export function HomeScreen({ hash }: { hash: string }) {
-  const { api, catsStill, settings } = useApp();
+  const { api, catsStill, settings, platform } = useApp();
   const ceo = leadCatName(settings?.ceoName);
   const now = useNow(60_000);
   const runs = useResource((signal) => api.call("GET /api/runs", { signal }), "runs");
@@ -318,11 +333,14 @@ export function HomeScreen({ hash }: { hash: string }) {
   const addProject = (e: FormEvent) => {
     e.preventDefault();
     const name = newName.trim();
-    const path = newPath.trim().replace(/(.)\/+$/, "$1");
+    const path = trimPath(newPath, platform.os);
+    const badPath = !!path && !isAbsolutePath(path, platform.os);
     setAdded(null);
     setNameError(name ? null : "Give the project a name.");
-    setPathError(path && !path.startsWith("/") ? "Use the full path, starting with a slash, like /Users/you/code/shop." : null);
-    if (!name || (path && !path.startsWith("/"))) return;
+    setPathError(
+      badPath ? (platform.os === "win32" ? `Use the full path, starting with the drive, like ${examplePath(platform.os)}.` : "Use the full path, starting with a slash, like /Users/you/code/shop.") : null,
+    );
+    if (!name || badPath) return;
     void add.run(async () => {
       const p = await api.call("POST /api/projects", { body: path ? { name, workspacePath: path } : { name } });
       projects.setData((prev) => [...(prev ?? []), p]);
@@ -452,11 +470,11 @@ export function HomeScreen({ hash }: { hash: string }) {
               <div className="field-row">
                 <TextField ref={nameRef} label="Name" value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={120} autoComplete="off" error={nameError} hint="What the crew calls it" />
                 <TextField
-                  label="Folder on this Mac"
+                  label={`Folder on ${platform.machine}`}
                   className="num"
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
-                  placeholder="/Users/you/code/shop"
+                  placeholder={examplePath(platform.os)}
                   spellCheck={false}
                   autoCapitalize="off"
                   autoComplete="off"
@@ -514,7 +532,7 @@ export function HomeScreen({ hash }: { hash: string }) {
                     {ROLE_LABEL[role]}
                     {role === "lead" ? <span className="company-name">{ceo}</span> : null}
                   </span>
-                  <span className="company-job">{ROLE_JOB[role]}</span>
+                  <span className="company-job">{roleJob(role, platform)}</span>
                 </span>
                 <span className="company-facts">
                   {off ? (

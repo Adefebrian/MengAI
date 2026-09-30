@@ -21,6 +21,8 @@ export type { TabItem, TabsProps } from "./Tabs";
 export { Sheet, Drawer } from "./Dialog";
 export type { DialogProps } from "./Dialog";
 export { Chip } from "./Chip";
+export { ComingSoon, ComingSoonTag } from "./ComingSoon";
+export type { ComingSoonProps } from "./ComingSoon";
 export type { ChipProps } from "./Chip";
 export { DataTable } from "./DataTable";
 export type { DataTableColumn, DataTableProps } from "./DataTable";

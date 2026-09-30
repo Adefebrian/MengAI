@@ -19,6 +19,11 @@
 // each live order waits for the owner. Every default is the safe one.
 // Secrets typed into the wizard go once to the runtime on this machine (its
 // keychain) and are cleared from the page as the request leaves.
+//
+// On a platform without the crew sandbox (Windows and Linux today) live
+// trading and the presets that start a local MCP server are off: the Live
+// choices, live auto-trade and those presets stay in view, disabled, with
+// the coming-soon tag and one line on why. Paper and custom REST work.
 import {
   DEFAULT_TRADING,
   TRADING_VENUE_PRESETS,
@@ -29,15 +34,16 @@ import {
   type TradingVenueDTO,
   type TradingVenuePreset,
 } from "@mengai/shared";
-import { EmptyState, Notice, ProductIcon, Sheet, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
+import { ComingSoonTag, EmptyState, Notice, ProductIcon, Sheet, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { ApiError } from "../../api/client";
 import { useApp } from "../context";
+import { soonLabel, soonRowReason } from "../platform";
 import { fmtAgo, fmtInt, fmtSignedUsd } from "../format";
 import { useAction, useNow, useResource } from "../hooks";
 import { OrderList, PositionsTable, positionTotals, waitsOnYou } from "../parts/Orders";
 import { VENUE_STATUS } from "../status";
-import { FormStatus, Page, PageHead, RadioGroup, Region, Segmented, Switch, TextField } from "../ui";
+import { FormStatus, Page, PageHead, RadioGroup, Region, Segmented, Soon, Switch, TextField } from "../ui";
 
 /** A 404 (or no server) means the trading module is not on this server yet. */
 function unavailable(error: string | null, err: unknown): boolean {
@@ -161,11 +167,15 @@ export function isSecretField(f: { secret?: boolean }): boolean {
 }
 
 function VenueRow({ v, now, onChange, onRemove }: { v: TradingVenueDTO; now: number; onChange: (next: TradingVenueDTO) => void; onRemove: (v: TradingVenueDTO) => void }) {
-  const { api } = useApp();
+  const { api, platform } = useApp();
   const look = VENUE_STATUS[v.status];
   const learn = useAction();
   const toggle = useAction();
   const enabled = v.status !== "disabled";
+  // a venue behind a local MCP server cannot start here yet; a live venue cannot place live orders
+  const stdioOff = !platform.features.mcpStdio && !isHttp(presetOf(v.preset) ?? TRADING_VENUE_PRESETS[0]!);
+  const liveOff = !platform.features.liveTrading && v.mode === "live";
+  const soonId = useId();
   const skills = v.learnedSkills;
   const skillsId = useId();
   return (
@@ -186,19 +196,26 @@ function VenueRow({ v, now, onChange, onRemove }: { v: TradingVenueDTO; now: num
             <span>{modeWord(v)}</span>
             <span>Changed {fmtAgo(v.updatedAt, now)}</span>
           </span>
-          <span className="venue-state" aria-live="polite">
-            {v.status === "learning"
-              ? "The crew is reading its tools and trying them on paper. Every cat gets what it learns the moment it lands."
-              : v.status === "ready"
-                ? v.mode === "paper"
-                  ? "Ready. The crew trades here on its own, on paper."
-                  : "Ready. Live orders run on their own only inside your auto-trade limits; every other one waits for you."
-                : v.status === "connected"
-                  ? "Connected. Press Learn and the crew learns how to use it."
-                  : v.status === "disabled"
-                    ? "Off. No cat can reach it until you turn it back on."
-                    : null}
-          </span>
+          {stdioOff || liveOff ? (
+            // in place of the state line: what this venue cannot do on this platform yet
+            <Soon feature={stdioOff ? "mcpStdio" : "liveTrading"} id={soonId} inline>
+              {soonRowReason(platform, stdioOff ? "mcpStdio" : "liveTrading", "venue")}
+            </Soon>
+          ) : (
+            <span className="venue-state" aria-live="polite">
+              {v.status === "learning"
+                ? "The crew is reading its tools and trying them on paper. Every cat gets what it learns the moment it lands."
+                : v.status === "ready"
+                  ? v.mode === "paper"
+                    ? "Ready. The crew trades here on its own, on paper."
+                    : "Ready. Live orders run on their own only inside your auto-trade limits; every other one waits for you."
+                  : v.status === "connected"
+                    ? "Connected. Press Learn and the crew learns how to use it."
+                    : v.status === "disabled"
+                      ? "Off. No cat can reach it until you turn it back on."
+                      : null}
+            </span>
+          )}
           {v.status === "error" && v.error ? (
             <span className="app-form-status" data-tone="danger">
               <ProductIcon name="alertCircle" size={16} />
@@ -226,7 +243,7 @@ function VenueRow({ v, now, onChange, onRemove }: { v: TradingVenueDTO; now: num
             <Switch
               label="Enabled"
               checked={enabled}
-              disabled={toggle.busy}
+              disabled={toggle.busy || (stdioOff && !enabled)}
               onChange={(on) =>
                 void toggle.run(async () => {
                   onChange(await api.call("PATCH /api/trading/venues/:id", { params: { id: v.id }, body: { enabled: on } }));
@@ -237,7 +254,8 @@ function VenueRow({ v, now, onChange, onRemove }: { v: TradingVenueDTO; now: num
               type="button"
               className="btn-secondary"
               aria-busy={learn.busy || undefined}
-              disabled={!enabled || v.status === "learning"}
+              disabled={!enabled || v.status === "learning" || stdioOff}
+              aria-describedby={stdioOff ? soonId : undefined}
               onClick={() =>
                 void learn.run(async () => {
                   onChange(await api.call("POST /api/trading/venues/:id/learn", { params: { id: v.id } }));
@@ -268,10 +286,16 @@ type Step = 1 | 2 | 3 | "done";
 const STEP_TITLE: Record<Exclude<Step, "done">, string> = { 1: "Pick the venue", 2: "Connect it", 3: "Paper or live" };
 
 function ConnectVenue({ latest, onAdded }: { latest: (id: string) => TradingVenueDTO | null; onAdded: (v: TradingVenueDTO) => void }) {
-  const { api } = useApp();
+  const { api, platform } = useApp();
+  const stdioOk = platform.features.mcpStdio;
+  const liveOk = platform.features.liveTrading;
+  const usable = (p: TradingVenuePreset) => stdioOk || isHttp(p);
+  const first = TRADING_VENUE_PRESETS.find(usable) ?? TRADING_VENUE_PRESETS[0]!;
+  const presetSoonId = useId();
+  const modeSoonId = useId();
   const [step, setStep] = useState<Step>(1);
-  const [presetId, setPresetId] = useState(TRADING_VENUE_PRESETS[0]!.id);
-  const preset = presetOf(presetId) ?? TRADING_VENUE_PRESETS[0]!;
+  const [presetId, setPresetId] = useState(first.id);
+  const preset = presetOf(presetId) ?? first;
   const [label, setLabel] = useState("");
   const [target, setTarget] = useState(preset.target);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
@@ -299,7 +323,7 @@ function ConnectVenue({ latest, onAdded }: { latest: (id: string) => TradingVenu
     setTarget(p.target);
     setSecrets({});
     setTestnet(p.supportsTestnet);
-    if (!p.supportsPaper) setMode("live");
+    if (!p.supportsPaper && liveOk) setMode("live");
     setErrors({});
   };
 
@@ -348,7 +372,7 @@ function ConnectVenue({ latest, onAdded }: { latest: (id: string) => TradingVenu
   };
 
   const reset = () => {
-    pick(TRADING_VENUE_PRESETS[0]!.id);
+    pick(first.id);
     setLabel("");
     setMode("paper");
     setCreatedId(null);
@@ -384,8 +408,17 @@ function ConnectVenue({ latest, onAdded }: { latest: (id: string) => TradingVenu
               name="venue-preset"
               value={presetId}
               onChange={pick}
-              options={TRADING_VENUE_PRESETS.map((p) => ({ value: p.id, label: p.label, description: `${KIND_LINE[p.kind]}. ${PRESET_LINE[p.id] ?? (isHttp(p) ? "An HTTP API." : "An MCP server on your machine.")}` }))}
+              describedBy={stdioOk ? undefined : presetSoonId}
+              options={TRADING_VENUE_PRESETS.map((p) => ({
+                value: p.id,
+                label: p.label,
+                description: `${KIND_LINE[p.kind]}. ${PRESET_LINE[p.id] ?? (isHttp(p) ? "An HTTP API." : "An MCP server on your machine.")}`,
+                disabled: !usable(p),
+                note: usable(p) ? undefined : <ComingSoonTag label={soonLabel(platform)} />,
+              }))}
             />
+            {/* the options that are off carry the tag; the reason sits once under the group */}
+            {stdioOk ? null : <Soon feature="mcpStdio" id={presetSoonId} tag={false} />}
             <div className="app-form-actions">
               <button type="button" onClick={() => go(2)}>
                 <span>Next</span>
@@ -461,14 +494,16 @@ function ConnectVenue({ latest, onAdded }: { latest: (id: string) => TradingVenu
                 name="venue-mode"
                 showLegend
                 value={mode}
-                options={[...(preset.supportsPaper ? [{ value: "paper" as const, label: "Paper" }] : []), { value: "live", label: "Live" }]}
+                options={[...(preset.supportsPaper ? [{ value: "paper" as const, label: "Paper" }] : []), { value: "live", label: "Live", disabled: !liveOk }]}
                 onChange={setMode}
+                describedBy={liveOk ? undefined : modeSoonId}
               />
               <p className="field-hint">
                 {mode === "paper"
                   ? "Paper runs on its own: the crew places orders with no real money and learns from every fill."
                   : "Live runs on its own only when auto-trade is on with all three limits below; otherwise each order waits for you."}
               </p>
+              {liveOk ? null : <Soon feature="liveTrading" id={modeSoonId} />}
             </div>
             {preset.supportsTestnet ? (
               <Switch
@@ -544,8 +579,12 @@ export function autoTradeGaps(s: Pick<TradingSettings, "maxOrderUsd" | "dailyLos
 }
 
 function SettingsCard({ initial, missing, onSaved }: { initial: TradingSettings | null; missing: boolean; onSaved: (s: TradingSettings) => void }) {
-  const { api } = useApp();
-  const [form, setForm] = useState<TradingSettings>(initial ?? DEFAULT_TRADING);
+  const { api, platform } = useApp();
+  const liveOk = platform.features.liveTrading;
+  const soonId = useId();
+  // where live trading is off, the form holds paper and auto-trade off, so a save never asks for live
+  const allowed = (s: TradingSettings): TradingSettings => (liveOk ? s : { ...s, mode: "paper", autoTrade: false });
+  const [form, setForm] = useState<TradingSettings>(() => allowed(initial ?? DEFAULT_TRADING));
   const [maxOrder, setMaxOrder] = useState(String((initial ?? DEFAULT_TRADING).maxOrderUsd));
   const [lossLimit, setLossLimit] = useState(String((initial ?? DEFAULT_TRADING).dailyLossLimitUsd));
   const [ok, setOk] = useState<string | null>(null);
@@ -554,10 +593,10 @@ function SettingsCard({ initial, missing, onSaved }: { initial: TradingSettings 
 
   useEffect(() => {
     if (!initial) return;
-    setForm(initial);
+    setForm(liveOk ? initial : { ...initial, mode: "paper", autoTrade: false });
     setMaxOrder(String(initial.maxOrderUsd));
     setLossLimit(String(initial.dailyLossLimitUsd));
-  }, [initial]);
+  }, [initial, liveOk]);
 
   const money = (v: string) => Number(v.replace(/[^0-9.]/g, ""));
   const gaps = autoTradeGaps({ maxOrderUsd: money(maxOrder) || 0, dailyLossLimitUsd: money(lossLimit) || 0, allowedSymbols: form.allowedSymbols });
@@ -596,17 +635,20 @@ function SettingsCard({ initial, missing, onSaved }: { initial: TradingSettings 
               value={form.mode}
               options={[
                 { value: "paper", label: "Paper" },
-                { value: "live", label: "Live" },
+                { value: "live", label: "Live", disabled: !liveOk },
               ]}
               onChange={(mode) => setForm((f) => ({ ...f, mode }))}
+              describedBy={liveOk ? undefined : soonId}
             />
             <p className="field-hint">
               {form.mode === "paper" ? "Paper runs on its own: orders fill at market prices with no real money. The default." : "Live sends orders through your connected venues, inside the limits below."}
             </p>
+            {liveOk ? null : <Soon feature="liveTrading" id={soonId} />}
           </div>
           <Switch
             label="Auto-trade live orders"
-            description={form.autoTrade ? "On. Live orders inside every limit below run without asking you." : "Off. Every live order waits for your Approve. The default."}
+            description={!liveOk ? "Off. It turns on once live trading comes here." : form.autoTrade ? "On. Live orders inside every limit below run without asking you." : "Off. Every live order waits for your Approve. The default."}
+            disabled={!liveOk}
             checked={form.autoTrade}
             onChange={(autoTrade) => {
               setFieldError((f) => ({ ...f, auto: undefined }));
@@ -661,7 +703,7 @@ function SettingsCard({ initial, missing, onSaved }: { initial: TradingSettings 
               type="button"
               className="btn-ghost"
               onClick={() => {
-                setForm(DEFAULT_TRADING);
+                setForm(allowed(DEFAULT_TRADING));
                 setMaxOrder(String(DEFAULT_TRADING.maxOrderUsd));
                 setLossLimit(String(DEFAULT_TRADING.dailyLossLimitUsd));
                 setFieldError({});

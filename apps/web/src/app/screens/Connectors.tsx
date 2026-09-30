@@ -9,6 +9,10 @@
 // radio group (0.97), the role scope as checkboxes (0.92). Motion tier 0.
 // A secret is sent once and stored in the vault: the page only ever shows
 // the 4 character hint the server returns, and clears the field on send.
+// On a platform without the crew sandbox (Windows and Linux today) a local
+// MCP server cannot start: the kind stays in view, disabled, with the
+// coming-soon tag and one line on why, and a local connector's row keeps
+// Remove but not Test. Remote MCP servers and HTTP APIs work.
 import {
   AGENT_ROLES,
   ROLE_LABEL,
@@ -18,14 +22,15 @@ import {
   type CreateConnectorBody,
   type Risk,
 } from "@mengai/shared";
-import { EmptyState, ProductIcon, Sheet, SkeletonRows, StatusPill, type GlyphName } from "@mengai/ui/src/product";
+import { ComingSoonTag, EmptyState, ProductIcon, Sheet, SkeletonRows, StatusPill, type GlyphName } from "@mengai/ui/src/product";
 import { useId, useState, type FormEvent } from "react";
 import { ApiError } from "../../api/client";
 import { useApp } from "../context";
+import { soonLabel, soonRowReason } from "../platform";
 import { fmtAgo, fmtInt } from "../format";
 import { useAction, useNow, useResource } from "../hooks";
 import { CONNECTOR_STATUS, RISK } from "../status";
-import { Checkbox, FormStatus, Page, PageHead, RadioGroup, Region, Switch, TextArea, TextField } from "../ui";
+import { Checkbox, FormStatus, Page, PageHead, RadioGroup, Region, Soon, Switch, TextArea, TextField } from "../ui";
 
 const KIND_WORD: Record<ConnectorKind, string> = {
   mcp_stdio: "MCP server, local command",
@@ -51,13 +56,16 @@ function rolesWord(roles: AgentRole[] | null): string {
 }
 
 function ConnectorRow({ c, onChange, onRemove, now }: { c: ConnectorDTO; onChange: (next: ConnectorDTO) => void; onRemove: (c: ConnectorDTO) => void; now: number }) {
-  const { api } = useApp();
+  const { api, platform } = useApp();
   const look = CONNECTOR_STATUS[c.status];
   const test = useAction();
   const toggle = useAction();
   const [open, setOpen] = useState(false);
   const toolsId = useId();
+  const soonId = useId();
   const enabled = c.status !== "disabled";
+  // a local MCP server cannot start on a platform without the crew sandbox
+  const stdioOff = c.kind === "mcp_stdio" && !platform.features.mcpStdio;
   const risky = c.tools.filter((t) => t.risk === "sensitive" || t.risk === "destructive").length;
   return (
     <li className="p-rows-item" data-kind="connector">
@@ -93,11 +101,16 @@ function ConnectorRow({ c, onChange, onRemove, now }: { c: ConnectorDTO; onChang
               <span>{c.error}</span>
             </span>
           ) : null}
+          {stdioOff ? (
+            <Soon feature="mcpStdio" id={soonId} inline>
+              {soonRowReason(platform, "mcpStdio", "connector")}
+            </Soon>
+          ) : null}
           <span className="connector-actions">
             <Switch
               label="Enabled"
               checked={enabled}
-              disabled={toggle.busy}
+              disabled={toggle.busy || (stdioOff && !enabled)}
               onChange={(v) =>
                 void toggle.run(async () => {
                   onChange(await api.call("PATCH /api/connectors/:id", { params: { id: c.id }, body: { enabled: v } }));
@@ -108,7 +121,8 @@ function ConnectorRow({ c, onChange, onRemove, now }: { c: ConnectorDTO; onChang
               type="button"
               className="btn-secondary"
               aria-busy={test.busy || undefined}
-              disabled={!enabled}
+              disabled={!enabled || stdioOff}
+              aria-describedby={stdioOff ? soonId : undefined}
               onClick={() =>
                 void test.run(async () => {
                   const next = await api.call("POST /api/connectors/:id/test", { params: { id: c.id } });
@@ -178,8 +192,10 @@ const SECRET: Record<ConnectorKind, { label: string; hint: string }> = {
 };
 
 function AddConnector({ onAdded }: { onAdded: (c: ConnectorDTO) => void }) {
-  const { api } = useApp();
-  const [kind, setKind] = useState<ConnectorKind>("mcp_stdio");
+  const { api, platform } = useApp();
+  const stdioOk = platform.features.mcpStdio;
+  const soonId = useId();
+  const [kind, setKind] = useState<ConnectorKind>(stdioOk ? "mcp_stdio" : "mcp_http");
   const [label, setLabel] = useState("");
   const [target, setTarget] = useState("");
   const [secret, setSecret] = useState("");
@@ -242,12 +258,21 @@ function AddConnector({ onAdded }: { onAdded: (c: ConnectorDTO) => void }) {
             setKind(k);
             setErrors({});
           }}
+          describedBy={stdioOk ? undefined : soonId}
           options={[
-            { value: "mcp_stdio", label: "MCP server, local command", description: "Starts on this machine and talks over stdio." },
+            {
+              value: "mcp_stdio",
+              label: "MCP server, local command",
+              description: "Starts on this machine and talks over stdio.",
+              disabled: !stdioOk,
+              note: stdioOk ? undefined : <ComingSoonTag label={soonLabel(platform)} />,
+            },
             { value: "mcp_http", label: "MCP server, remote URL", description: "A hosted MCP server over HTTP." },
             { value: "http_api", label: "HTTP API", description: "Any REST API; an OpenAPI document turns its endpoints into tools." },
           ]}
         />
+        {/* the local command kind carries the tag; the reason sits once under the group */}
+        {stdioOk ? null : <Soon feature="mcpStdio" id={soonId} tag={false} />}
         <TextField label="Name" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} placeholder={kind === "http_api" ? "Broker API" : "GitHub"} error={errors.label} hint="Shown to the crew beside each tool" />
         <TextField label={t.label} value={target} onChange={(e) => setTarget(e.target.value)} placeholder={t.placeholder} spellCheck={false} autoCapitalize="off" error={errors.target} hint={t.hint} />
         {kind === "http_api" ? (

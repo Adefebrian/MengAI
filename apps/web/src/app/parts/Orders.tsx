@@ -7,16 +7,20 @@
 // trade as the title (side, quantity, symbol, type), its state as an icon
 // plus a word, paper or live, the cat that proposed it, the trader's reason
 // and the risk manager's note; a proposed live order carries Approve and
-// Reject. Positions (core.table 0.5): a table in tabular figures with the
+// Reject (Approve stays disabled, with the coming-soon line, on a platform
+// where live trading is off; Reject always works). Positions (core.table 0.5): a table in tabular figures with the
 // P&L signed, never color alone, and the totals under it.
 import type { OrderDTO, PositionDTO } from "@mengai/shared";
 import { Chip, DataTable, ProductIcon } from "@mengai/ui/src/product";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { errorMessage } from "../../api/client";
 import { fmtAgo, fmtPrice, fmtQty, fmtSignedUsd } from "../format";
 import { T, useMotionLevel } from "../motion";
+import { usePlatform } from "../context";
+import { soonRowReason } from "../platform";
 import { ORDER_STATUS } from "../status";
+import { Soon } from "../ui";
 
 export function orderTitle(o: OrderDTO): string {
   const side = o.side === "buy" ? "Buy" : "Sell";
@@ -70,6 +74,9 @@ function OrderRow({
     }
   };
   const ask = waitsOnYou(o) && !!onDecide;
+  const platform = usePlatform();
+  const liveOff = o.mode === "live" && !platform.features.liveTrading;
+  const soonId = useId();
   return (
     <div className="p-row order-row" data-type="static" data-waiting={ask ? "" : undefined}>
       <span className="p-row-leading">
@@ -96,7 +103,7 @@ function OrderRow({
         {o.riskNote ? <span className="order-risk">Risk check: {sentence(o.riskNote)}</span> : null}
         {ask ? (
           <span className="order-actions">
-            <button type="button" aria-busy={busy === "approve" || undefined} disabled={busy !== null} onClick={() => void decide("approve")}>
+            <button type="button" aria-busy={busy === "approve" || undefined} disabled={busy !== null || liveOff} aria-describedby={liveOff ? soonId : undefined} onClick={() => void decide("approve")}>
               <ProductIcon name="check" size={20} />
               <span>Approve</span>
             </button>
@@ -105,6 +112,11 @@ function OrderRow({
               <span>Reject</span>
             </button>
           </span>
+        ) : null}
+        {ask && liveOff ? (
+          <Soon feature="liveTrading" id={soonId} inline>
+            {soonRowReason(platform, "liveTrading", "order")}
+          </Soon>
         ) : null}
         {error ? (
           <span className="app-form-status" data-tone="danger" role="alert">

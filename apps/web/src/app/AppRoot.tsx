@@ -7,8 +7,10 @@
 // owner's own Mac, so an engine that is not running shows the onboarding
 // inside the shell, and the page connects by itself the moment it answers.
 // Stop all, the kill switch, sits in the header at every width and is
-// never moved into More.
-import type { HealthDTO, OwnerSettings } from "@mengai/shared";
+// never moved into More. The engine's health names its platform and what it
+// can run safely there; every screen reads that from the context and shows
+// the rest as coming soon in place.
+import type { OwnerSettings } from "@mengai/shared";
 import { AppShell, type AppShellDestination } from "@mengai/ui";
 import { Glyph, Notice, ProductIcon, SkeletonRows } from "@mengai/ui/src/product";
 import { MotionConfig } from "motion/react";
@@ -16,10 +18,11 @@ import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactN
 import { createApiClient, type ApiClient } from "../api/client";
 import { connectRuntime, runtimeClient, type Connection } from "../api/connect";
 import { runtimeLabel } from "../api/runtime";
-import { createDemoFetch } from "../demo/demoApi";
+import { createDemoFetch, demoHealth } from "../demo/demoApi";
 import { DEMO_LABEL } from "../demo/fixture";
 import { onLinkClick, type Location, type RouteMatch } from "../router";
 import { AppContext, readCatMotion, writeCatMotion, type AppContextValue, type CatMotion, type Flash } from "./context";
+import { platformOf } from "./platform";
 import { useAction, useMedia } from "./hooks";
 import { waitsOnYou } from "./parts/Orders";
 import { RunScreen } from "./run/RunScreen";
@@ -72,8 +75,6 @@ function destinations(pending: number): AppShellDestination[] {
   ];
 }
 
-const DEMO_HEALTH: HealthDTO = { ok: true, mode: "local", version: "0.1.0 demo", configured: true, automation: { available: false, accessibility: false, screen: false }, jev: { configured: true } };
-
 type Gate = { kind: "loading" } | Connection;
 
 /** How often the onboarding looks for the engine again on its own. */
@@ -90,7 +91,7 @@ function interceptLinks(e: MouseEvent<HTMLDivElement>) {
 }
 
 export function AppRoot({ route, location, demo }: { route: RouteMatch<AppRouteId> | null; location: Location; demo: boolean }) {
-  const [gate, setGate] = useState<Gate>(demo ? { kind: "ready", base: "", health: DEMO_HEALTH } : { kind: "loading" });
+  const [gate, setGate] = useState<Gate>(demo ? { kind: "ready", base: "", health: demoHealth() } : { kind: "loading" });
   const base = gate.kind === "ready" ? gate.base : "";
   const api = useMemo<ApiClient>(() => (demo ? createApiClient({ fetch: createDemoFetch() }) : runtimeClient(base)), [demo, base]);
 
@@ -107,7 +108,7 @@ export function AppRoot({ route, location, demo }: { route: RouteMatch<AppRouteI
 
   useEffect(() => {
     if (demo) {
-      setGate({ kind: "ready", base: "", health: DEMO_HEALTH });
+      setGate({ kind: "ready", base: "", health: demoHealth() });
       return;
     }
     void check();
@@ -158,6 +159,8 @@ function Frame({
   onRetry: () => void;
 }) {
   const ready = gate.kind === "ready";
+  const health = gate.kind === "ready" ? gate.health : null;
+  const platform = useMemo(() => platformOf(health), [health]);
   const [settings, setSettings] = useState<OwnerSettings | null>(null);
   const [catMotion, setCatMotionState] = useState<CatMotion>(() => readCatMotion());
   const [flash, setFlash] = useState<Flash | null>(null);
@@ -231,7 +234,7 @@ function Frame({
       ) : null}
       {stopAll.error ? (
         <Notice tone="danger" title="Stop all did not reach the server" onDismiss={() => stopAll.setError(null)}>
-          {stopAll.error} Quit the Mac app or stop the server process to be sure.
+          {stopAll.error} Quit the MengAI app or stop the server process to be sure.
         </Notice>
       ) : null}
     </>
@@ -252,6 +255,7 @@ function Frame({
         refreshApprovals: () => setApprovalsNonce((n) => n + 1),
         notices,
         runtime: { label: demo ? "Sample data in this page" : runtimeLabel(gate.base), own: !demo && gate.base === "" },
+        platform,
       }
     : null;
 

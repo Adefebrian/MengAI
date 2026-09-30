@@ -202,7 +202,7 @@ export function JailView() {
         </StatusPill>
       </p>
       <p className="lp-budget-row">
-        <span className="lp-view-muted">Mac app listens on</span>
+        <span className="lp-view-muted">The app listens on</span>
         <span className="kit-num lp-view-strong">127.0.0.1</span>
       </p>
     </div>

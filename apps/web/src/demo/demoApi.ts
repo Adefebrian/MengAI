@@ -4,15 +4,21 @@
 // real API serves, with sample data, so every screen renders the real
 // client path (ApiClient, errors, CSRF header) with no network at all.
 // Keys typed into the demo are never kept: only a 4 character hint, the
-// same rule the real vault follows.
+// same rule the real vault follows. Health answers as a Mac engine with
+// every feature on; ?platform=win32 (or linux) answers as that engine, with
+// the sandbox-dependent features off and refused like the real engine
+// refuses them, so the page shows its coming-soon states.
 import {
   CSRF_HEADER,
   PROVIDER_PRESETS,
+  TRADING_VENUE_PRESETS,
   findPreset,
   type AssetDTO,
   type ContextXrayDTO,
   type CreateProviderBody,
   type EvalRunDTO,
+  type HealthDTO,
+  type PlatformFeatures,
   type FindingDTO,
   type LessonDTO,
   type ModelRouting,
@@ -246,7 +252,8 @@ function createPreviewState() {
   const get = (projectId: string): PreviewDTO => {
     if (seed === "empty") return dto(projectId, { error: "No dev, start or preview script in package.json and no index.html at the top of the folder yet." });
     const r = rec(projectId);
-    if (r.phase === "idle") return dto(projectId, {});
+    // the engine reports what it would run before it starts: the dev script
+    if (r.phase === "idle") return dto(projectId, { command: "bun run dev", kind: "script" });
     const base = { command: "bun run dev", kind: "script" as const, startedAt: r.since || Date.now() };
     if (r.phase === "stopped") return dto(projectId, { ...base, status: "stopped", logTail: [...START, "Stopped by you"] });
     const age = r.since ? Date.now() - r.since : Number.POSITIVE_INFINITY;
@@ -274,6 +281,20 @@ function createPreviewState() {
   };
 }
 
+/** The engine platform the demo plays: ?platform=win32 or linux, else a Mac. */
+export function demoPlatform(search: string = typeof window === "undefined" ? "" : window.location.search): string {
+  const q = new URLSearchParams(search).get("platform");
+  return q === "win32" || q === "linux" ? q : "darwin";
+}
+
+/** The demo engine's health: every feature on for a Mac, the sandbox-dependent ones off elsewhere. */
+export function demoHealth(search?: string): HealthDTO {
+  const platform = demoPlatform(search);
+  const on = platform === "darwin";
+  const features: PlatformFeatures = { shell: on, liveTrading: on, mcpStdio: on, scriptPreview: on };
+  return { ok: true, mode: "local", version: "0.1.0 demo", configured: true, automation: { available: false, accessibility: false, screen: false }, jev: { configured: true }, platform, features };
+}
+
 class DemoHttpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
     super(message);
@@ -288,6 +309,11 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
   const st = createDemoState();
   const cap = createCapabilityState();
   const preview = createPreviewState();
+  const health = demoHealth();
+  /** The real engine refuses a sandbox-dependent feature on a platform without the crew sandbox (422 coming_soon). */
+  const needs = (feature: keyof PlatformFeatures, what: string) => {
+    if (!health.features[feature]) throw new DemoHttpError(422, "coming_soon", `${what} is coming soon on ${health.platform === "win32" ? "Windows" : "Linux"}: the crew sandbox there is not ready yet.`);
+  };
   const knownProject = (id: string | undefined) => {
     if (!id || !st.projects.some((p) => p.id === id)) throw new DemoHttpError(404, "not_found", "No project with that id.");
     return id;
@@ -300,7 +326,7 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
   const runs = (): RunDTO[] => [st.snapshot.run, st.olderRun];
 
   const routes: Array<[string, Handler]> = [
-    ["GET /api/health", () => ({ ok: true, mode: "local", version: "0.1.0 demo", configured: true, automation: { available: false, accessibility: false, screen: false }, jev: { configured: true } })],
+    ["GET /api/health", () => health],
     ["GET /api/projects", () => st.projects],
     ["POST /api/projects", ({ body }) => {
       const b = body as { name: string; workspacePath?: string };
@@ -312,7 +338,12 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
     ["GET /api/projects/:id/file", ({ query }) => demoFile(query.get("path") ?? "", clockFn())],
     ["GET /api/projects/:id", ({ params }) => st.projects.find((p) => p.id === knownProject(params.id))],
     ["GET /api/projects/:id/preview", ({ params }) => preview.get(knownProject(params.id))],
-    ["POST /api/projects/:id/preview", ({ params }) => preview.start(knownProject(params.id))],
+    ["POST /api/projects/:id/preview", ({ params }) => {
+      const id = knownProject(params.id);
+      // every sample project runs a dev script (bun run dev)
+      if (preview.get(id).kind === "script") needs("scriptPreview", "A dev script preview");
+      return preview.start(id);
+    }],
     ["DELETE /api/projects/:id/preview", ({ params }) => preview.stop(knownProject(params.id))],
     ["POST /api/projects/:id/reveal", ({ params }) => (knownProject(params.id), { ok: true })],
     ["GET /api/runs", () => runs()],
@@ -376,7 +407,11 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       return demoMind(a, s.roles);
     }],
     ["GET /api/connectors", () => cap.connectors],
-    ["POST /api/connectors", ({ body }) => cap.addConnector(body as CreateConnectorBody)],
+    ["POST /api/connectors", ({ body }) => {
+      const b = body as CreateConnectorBody;
+      if (b.kind === "mcp_stdio") needs("mcpStdio", "A local MCP server");
+      return cap.addConnector(b);
+    }],
     ["PATCH /api/connectors/:id", ({ params, body }) => {
       const c = cap.updateConnector(params.id!, body as UpdateConnectorBody);
       if (!c) throw new DemoHttpError(404, "not_found", "No connector with that id.");
@@ -388,14 +423,18 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       return { ok: true };
     }],
     ["POST /api/connectors/:id/test", ({ params }) => {
+      if (cap.connectors.find((x) => x.id === params.id)?.kind === "mcp_stdio") needs("mcpStdio", "A local MCP server");
       const c = cap.testConnector(params.id!);
       if (!c) throw new DemoHttpError(404, "not_found", "No connector with that id.");
       return c;
     }],
     ["GET /api/trading/venues", () => cap.listVenues()],
     ["POST /api/trading/venues", ({ body }) => {
+      const b = body as CreateTradingVenueBody;
+      if (TRADING_VENUE_PRESETS.find((p) => p.id === b.preset)?.connector === "mcp_stdio") needs("mcpStdio", "A local MCP server");
+      if (b.mode === "live") needs("liveTrading", "Live trading");
       try {
-        return cap.addVenue(body as CreateTradingVenueBody);
+        return cap.addVenue(b);
       } catch {
         throw new DemoHttpError(400, "bad_preset", "That venue preset is not in this build.");
       }
@@ -410,16 +449,24 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       return { ok: true };
     }],
     ["POST /api/trading/venues/:id/learn", ({ params }) => {
+      const preset = cap.listVenues().find((x) => x.id === params.id)?.preset;
+      if (TRADING_VENUE_PRESETS.find((p) => p.id === preset)?.connector === "mcp_stdio") needs("mcpStdio", "A local MCP server");
       const v = cap.learnVenue(params.id!);
       if (!v) throw new DemoHttpError(404, "not_found", "No venue with that id.");
       return v;
     }],
     ["GET /api/trading/settings", () => cap.getTrading()],
-    ["PUT /api/trading/settings", ({ body }) => cap.setTrading(body as TradingSettings)],
+    ["PUT /api/trading/settings", ({ body }) => {
+      const b = body as TradingSettings;
+      if (b.mode === "live") needs("liveTrading", "Live trading");
+      return cap.setTrading(b);
+    }],
     ["GET /api/trading/orders", () => cap.orders],
     ["GET /api/trading/positions", () => cap.positions],
     ["POST /api/trading/orders/:id/decision", ({ params, body }) => {
-      const o = cap.decideOrder(params.id!, (body as { decision: "approve" | "reject" }).decision);
+      const decision = (body as { decision: "approve" | "reject" }).decision;
+      if (decision === "approve" && cap.orders.find((x) => x.id === params.id)?.mode === "live") needs("liveTrading", "Live trading");
+      const o = cap.decideOrder(params.id!, decision);
       if (!o) throw new DemoHttpError(404, "not_found", "No order with that id.");
       return o;
     }],

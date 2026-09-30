@@ -13,7 +13,7 @@ import { ISSUES_URL, LICENSE_NAME, LICENSE_URL, PERMISSION_EMAIL, PERMISSION_MAI
 export const QUESTIONS: FAQItem[] = [
   {
     q: "Do the cats need an OpenAI key?",
-    a: "No. Any provider in the list works, or any OpenAI or Anthropic compatible endpoint, including Ollama and LM Studio on your Mac. You pick the model for every desk.",
+    a: "No. Any provider in the list works, or any OpenAI or Anthropic compatible endpoint, including Ollama and LM Studio on your own machine. You pick the model for every desk.",
   },
   {
     q: "What does a run cost?",

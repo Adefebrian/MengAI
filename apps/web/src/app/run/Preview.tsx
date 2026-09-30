@@ -12,15 +12,19 @@
 // failed start shows the reason and the output tail in a disclosure; a
 // project with nothing to run says why, with Open folder as the next step.
 // The sample run frames the sample site as a srcdoc: a page served by the
-// engine or the website refuses to be framed, by design.
+// engine or the website refuses to be framed, by design. On a platform
+// without the crew sandbox (Windows and Linux today) a dev script cannot
+// run: the region stays in place with Start preview disabled, the
+// coming-soon tag and one line on why; a static site previews as ever.
 import type { PreviewDTO, PreviewStatus } from "@mengai/shared";
 import { EmptyState, Notice, ProductIcon, SkeletonRows, StatusPill, type GlyphName, type StatusTone } from "@mengai/ui/src/product";
 import { useCallback, useEffect, useId, useState } from "react";
 import { ApiError, errorMessage } from "../../api/client";
 import { DEMO_SITE_HTML } from "../../demo/site";
 import { useApp } from "../context";
+import type { PlatformInfo } from "../platform";
 import { OpenFolderButton } from "../parts/OpenFolder";
-import { FormStatus, Segmented } from "../ui";
+import { FormStatus, Segmented, Soon } from "../ui";
 
 const LOOK: Record<PreviewStatus, { tone: StatusTone; icon: GlyphName; word: string }> = {
   idle: { tone: "neutral", icon: "minusCircle", word: "Not running" },
@@ -45,6 +49,11 @@ export const PREVIEW_POLL_MS = 1000;
 /** Installing, starting or serving. */
 export function previewRunning(p: PreviewDTO | null): boolean {
   return !!p && (p.status === "installing" || p.status === "starting" || p.status === "ready");
+}
+
+/** A dev script project on a platform that cannot run dev scripts yet (a static site still previews). */
+export function scriptPreviewOff(p: PreviewDTO | null, platform: PlatformInfo): boolean {
+  return !platform.features.scriptPreview && !!p && p.kind === "script" && !previewRunning(p);
 }
 
 /** The engine says there is nothing to run: no dev, start or preview script and no index.html. */
@@ -195,8 +204,9 @@ export function PreviewRegion({
   /** before the run ships, the region can be put away again once it is not running */
   onHide?: () => void;
 }) {
-  const { demo } = useApp();
+  const { demo, platform } = useApp();
   const hid = useId();
+  const soonId = useId();
   const [width, setWidth] = useState<PreviewWidth>("full");
   const [nonce, setNonce] = useState(0);
   const p = state.preview;
@@ -204,17 +214,20 @@ export function PreviewRegion({
   const look = LOOK[status];
   const running = previewRunning(p);
   const nothing = nothingToPreview(p);
+  const off = scriptPreviewOff(p, platform);
   const ready = status === "ready" && !!p?.url;
   const name = projectName ?? "the project";
   const how = p?.kind === "static" ? `Serves the index.html of ${name}` : `Runs ${p?.command ?? "the dev server"} in ${name}`;
 
   const meta = nothing
     ? "The project's own dev script, or its index.html, runs right here once there is one."
-    : running || status === "failed"
-      ? `${how}, on this Mac, with no keys in its environment.`
-      : shipped
-        ? "The crew shipped it. Click through it right here before anything else."
-        : "What the crew has built so far, run from the project folder on this Mac.";
+    : off
+      ? `${name} previews through ${p?.command ?? "its dev script"}.`
+      : running || status === "failed"
+        ? `${how}, on ${platform.machine}, with no keys in its environment.`
+        : shipped
+          ? "The crew shipped it. Click through it right here before anything else."
+          : `What the crew has built so far, run from the project folder on ${platform.machine}.`;
 
   let body;
   if (!p && state.loadError) {
@@ -230,6 +243,24 @@ export function PreviewRegion({
       <EmptyState icon="folder" title="Nothing to preview yet" action={<OpenFolderButton projectId={projectId} />}>
         {p.error}
       </EmptyState>
+    );
+  } else if (off) {
+    body = (
+      <>
+        <Soon feature="scriptPreview" id={soonId} />
+        <div className="app-form-actions">
+          <button type="button" disabled aria-describedby={soonId}>
+            <ProductIcon name="play" size={20} />
+            <span>Start preview</span>
+          </button>
+          <OpenFolderButton projectId={projectId} />
+          {onHide ? (
+            <button type="button" className="btn-ghost" onClick={onHide}>
+              Hide
+            </button>
+          ) : null}
+        </div>
+      </>
     );
   } else if (status === "failed") {
     body = (

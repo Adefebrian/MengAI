@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // The engine gate, inside the app shell. MengAI has no accounts and the
 // website keeps nothing, so there is nothing to sign in to and no code to
-// copy: the crew engine runs on the owner's own Mac, and this page finds it
-// on its own.
-//   RuntimeOfflineScreen  nothing answers: download the Mac app and open
-//                         it (or run bun run dev from the repo); the page
+// copy: the crew engine runs on the owner's own Mac or PC, and this page
+// finds it on its own.
+//   RuntimeOfflineScreen  nothing answers: download the app (the Mac and
+//                         Windows betas, the visitor's own system as the
+//                         primary button per JEV ui.component_recipe
+//                         detected_primary 0.43, low confidence, top pick
+//                         kept; Android coming soon, no link) and open it
+//                         (or run bun run dev from the repo); the page
 //                         looks again every 2 s and moves on by itself.
 //                         When something answers but refuses this site
 //                         (a site that is not on the engine's list), the
@@ -17,7 +21,8 @@
 import { Cat } from "@mengai/cats";
 import { Notice, ProductIcon } from "@mengai/ui/src/product";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
-import { DEFAULT_RUNTIME_URL, MAC_DOWNLOAD_URL, normalizeRuntimeUrl, originOf, readRuntimeSetting, runtimeLabel, writeRuntimeSetting } from "../../api/runtime";
+import { DEFAULT_RUNTIME_URL, normalizeRuntimeUrl, originOf, readRuntimeSetting, runtimeLabel, writeRuntimeSetting } from "../../api/runtime";
+import { availableDownloads, downloadLine, visitorDownload, type DownloadTarget } from "../../downloads";
 import { FormStatus, Page, Region, TextField } from "../ui";
 
 function Head({ title, lead, still }: { title: string; lead: string; still: boolean }) {
@@ -90,7 +95,7 @@ function AddressCard({ onSaved }: { onSaved: () => void }) {
     onSaved();
   };
   return (
-    <Region container="card" title="Engine address" className="app-card onboard-card" meta="Where this page looks for MengAI. Only an address on this Mac is allowed, so your keys never leave it.">
+    <Region container="card" title="Engine address" className="app-card onboard-card" meta="Where this page looks for MengAI. Only an address on this machine is allowed, so your keys never leave it.">
       <form className="app-form" onSubmit={submit} noValidate>
         <TextField
           label="Address"
@@ -102,7 +107,7 @@ function AddressCard({ onSaved }: { onSaved: () => void }) {
           autoComplete="off"
           inputMode="url"
           error={error}
-          hint="The Mac app and bun run dev answer on 127.0.0.1:4280, or the next free port up to 4289. This page finds it by itself."
+          hint="The MengAI app and bun run dev answer on 127.0.0.1:4280, or the next free port up to 4289. This page finds it by itself."
         />
         <div className="app-form-actions">
           <button type="submit">Save and look again</button>
@@ -126,15 +131,23 @@ function AddressCard({ onSaved }: { onSaved: () => void }) {
   );
 }
 
+/** The builds that are out, the visitor's own system first (it gets the primary button), Mac first when unknown. */
+export function downloadOrder(visitor: ReturnType<typeof visitorDownload> = visitorDownload()): DownloadTarget[] {
+  const list = availableDownloads();
+  const mine = list.findIndex((d) => d.id === visitor);
+  return mine > 0 ? [list[mine]!, ...list.filter((_, i) => i !== mine)] : list;
+}
+
 export function RuntimeOfflineScreen({ where, refused, onRetry, still }: { where: string | null; refused: boolean; onRetry: () => void; still: boolean }) {
   const label = runtimeLabel(where ?? DEFAULT_RUNTIME_URL);
+  const downloads = downloadOrder();
   const own = `${originOf(where ?? DEFAULT_RUNTIME_URL)}/app`;
   const site = typeof window === "undefined" ? "this site" : window.location.origin;
   return (
     <Page>
       <Head
         title={refused ? "Oyen is awake, but the door is shut" : "Oyen is not answering yet"}
-        lead="MengAI runs on your own Mac. This page is only the window: your keys, your projects and the whole crew stay with you, and the website keeps nothing."
+        lead="MengAI runs on your own Mac or PC. This page is only the window: your keys, your projects and the whole crew stay with you, and the website keeps nothing."
         still={still}
       />
       {refused ? (
@@ -151,19 +164,23 @@ export function RuntimeOfflineScreen({ where, refused, onRetry, still }: { where
           <Steps
             title="Wake the crew in three steps"
             steps={[
-              { title: "Download MengAI for Mac", text: "Free for personal and noncommercial use, a beta for now. Drag it into Applications." },
-              { title: "Open it", text: "Oyen curls up in your menu bar and the crew wakes on this Mac, on your own resources." },
+              { title: "Download MengAI", text: `Free for personal and noncommercial use. ${downloadLine()}` },
+              { title: "Open it", text: "Oyen curls up in your menu bar, or the system tray on Windows, and the crew wakes on your own machine, on your own resources." },
               { title: "This page connects by itself", text: "No code to copy and nothing to sign in to. Keep this tab open and the crew comes to the window." },
             ]}
           >
             <p className="app-region-meta">
               Running from the source instead? Run <code className="num">bun run dev</code> in the repo and keep this page open.
             </p>
+            <div className="app-form-actions onboard-downloads">
+              {downloads.map((d, i) => (
+                <a key={d.id} className={i === 0 ? "btn" : "btn btn-secondary"} href={d.href ?? undefined} rel="noreferrer" data-download={d.id}>
+                  <ProductIcon name="download" size={20} />
+                  <span>{d.label}</span>
+                </a>
+              ))}
+            </div>
             <div className="app-form-actions">
-              <a className="btn" href={MAC_DOWNLOAD_URL} rel="noreferrer">
-                <ProductIcon name="download" size={20} />
-                <span>Download for Mac</span>
-              </a>
               <button type="button" className="btn-secondary" onClick={onRetry}>
                 <ProductIcon name="refresh" size={20} />
                 <span>Check again</span>

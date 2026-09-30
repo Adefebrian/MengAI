@@ -43,7 +43,7 @@ import { Decisions } from "./Decisions";
 import { runApprovals, spendByAgent } from "./derive";
 import { leadOf, officeAgents, officeLabel, officeMeetings, officePlan } from "./office";
 import { OfficeStage } from "./OfficeStage";
-import { PreviewRegion, previewRunning, usePreview } from "./Preview";
+import { PreviewRegion, previewRunning, scriptPreviewOff, usePreview } from "./Preview";
 import { Replay } from "./Replay";
 import { RunHeader } from "./RunHeader";
 import { RunTracker } from "./RunTracker";
@@ -61,7 +61,7 @@ import { Xray } from "./Xray";
 type TabId = "crew" | "feed" | "code" | "tasks" | "timeline" | "usage" | "xray" | "decisions";
 
 export function RunScreen({ runId }: { runId: string }) {
-  const { api, catsStill, refreshApprovals } = useApp();
+  const { api, catsStill, refreshApprovals, platform } = useApp();
   const data = useRunData(runId);
   const desktop = useMedia(DESKTOP_QUERY);
   const level = useMotionLevel();
@@ -185,7 +185,8 @@ export function RunScreen({ runId }: { runId: string }) {
     projectId && !preview.unavailable && !showPreview
       ? () => {
           setPreviewOpen(true);
-          void preview.start();
+          // a dev script that cannot run on this platform opens the region with its coming-soon line instead
+          if (!scriptPreviewOff(preview.preview, platform)) void preview.start();
         }
       : undefined;
   const previewRegion = showPreview ? (

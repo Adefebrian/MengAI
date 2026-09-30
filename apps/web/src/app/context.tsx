@@ -1,11 +1,13 @@
 // Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // What every app screen shares: the API client (the local engine or the
-// demo server), the engine it came from, the owner settings, and the local
-// cat motion choice. There is no session: nobody signs in to anything.
+// demo server), the engine it came from and the platform it runs on (what
+// it can run safely there), the owner settings, and the local cat motion
+// choice. There is no session: nobody signs in to anything.
 import type { OwnerSettings } from "@mengai/shared";
 import { createContext, useContext, type ReactNode } from "react";
 import type { ApiClient } from "../api/client";
+import { MAC_PLATFORM, type PlatformInfo } from "./platform";
 
 export type CatMotion = "live" | "still";
 
@@ -33,6 +35,8 @@ export interface AppContextValue {
   notices: ReactNode;
   /** the local engine this page talks to, and whether it served this page itself */
   runtime: { label: string; own: boolean };
+  /** the engine's system and the features it can run safely there; the rest show as coming soon */
+  platform: PlatformInfo;
 }
 
 export const AppContext = createContext<AppContextValue | null>(null);
@@ -40,6 +44,11 @@ export const AppContext = createContext<AppContextValue | null>(null);
 /** The context, or null outside the app frame (the engine gate). */
 export function useAppMaybe(): AppContextValue | null {
   return useContext(AppContext);
+}
+
+/** The engine's platform, or the Mac defaults outside the app frame. */
+export function usePlatform(): PlatformInfo {
+  return useContext(AppContext)?.platform ?? MAC_PLATFORM;
 }
 
 export function useApp(): AppContextValue {

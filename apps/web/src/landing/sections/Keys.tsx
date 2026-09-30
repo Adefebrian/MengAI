@@ -30,7 +30,7 @@ export interface KeyPromise {
 
 /** One claim per item, a cat line over the fact, beside the app view. */
 export const KEY_PROMISES: KeyPromise[] = [
-  { say: "Your keys stay home.", fact: "Keys go from your browser straight to the macOS Keychain on your own machine. This website never sees them, and they never reach a log." },
+  { say: "Your keys stay home.", fact: "Keys go from your browser straight to the macOS Keychain or the Windows Credential Manager on your own machine. This website never sees them, and they never reach a log." },
   { say: "Any bowl will do.", fact: `${NAMED_PROVIDERS.length} presets, or any OpenAI or Anthropic compatible endpoint, local models included.` },
   { say: "We eat what you serve.", fact: "No house model: fast, balanced and deep map to any model id you add." },
   { say: "Your tools, our paws.", fact: "Exchanges, brokers and your own tools over MCP servers and APIs. One cat learns a tool and every cat uses it at once." },

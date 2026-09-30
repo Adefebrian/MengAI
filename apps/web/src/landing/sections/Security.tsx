@@ -31,7 +31,7 @@ export const SAFEGUARDS: Safeguard[] = [
   {
     area: "b",
     title: "Keys stay in the vault",
-    body: "Kept in the macOS Keychain on your own machine, never on this website, and scrubbed from every output before a cat sees it.",
+    body: "Kept in the macOS Keychain or the Windows Credential Manager on your own machine, never on this website, and scrubbed from every output before a cat sees it.",
   },
   {
     area: "c",
@@ -41,7 +41,7 @@ export const SAFEGUARDS: Safeguard[] = [
   {
     area: "d",
     title: "Jailed to your project",
-    body: "Files and commands stay inside the project folder unless you grant more, and the Mac app answers only on 127.0.0.1.",
+    body: "Files and commands stay inside the project folder unless you grant more, and the app answers only on 127.0.0.1.",
   },
 ];
 

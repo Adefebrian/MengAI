@@ -4,8 +4,9 @@
 // wrapper (one rhythm for every screen), the page head, a region head, the
 // card, and form fields (label above, 44px control, a reserved helper or
 // error slot, so validation never shifts a row).
-import { ProductIcon, type GlyphName } from "@mengai/ui/src/product";
-import { useAppMaybe } from "./context";
+import { ComingSoon, ProductIcon, type GlyphName } from "@mengai/ui/src/product";
+import { useAppMaybe, usePlatform } from "./context";
+import { soonLabel, soonReason, type FeatureKey } from "./platform";
 import { useId, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type Ref, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 
 /** The one page wrapper inside the contained shell: 1280 cap, one gap between regions. */
@@ -179,21 +180,26 @@ export function Segmented<T extends string>({
   onChange,
   disabled,
   showLegend,
+  describedBy,
 }: {
   legend: string;
   name: string;
   value: T;
-  options: Array<{ value: T; label: string }>;
+  /** an option marked disabled stays in view but cannot be chosen (a feature this platform cannot run yet) */
+  options: Array<{ value: T; label: string; disabled?: boolean }>;
   onChange: (v: T) => void;
   disabled?: boolean;
   showLegend?: boolean;
+  /** id of the line that says why an option is off */
+  describedBy?: string;
 }) {
   const lid = useId();
   const move = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
     if (!step) return;
     e.preventDefault();
-    const next = options[(index + step + options.length) % options.length]!;
+    const next = nextEnabled(options, index, step);
+    if (!next) return;
     onChange(next.value);
     const group = e.currentTarget.parentElement;
     requestAnimationFrame(() => group?.querySelector<HTMLButtonElement>(`[data-value="${next.value}"]`)?.focus());
@@ -205,7 +211,7 @@ export function Segmented<T extends string>({
           {legend}
         </p>
       ) : null}
-      <div className="app-seg" role="radiogroup" aria-labelledby={showLegend ? lid : undefined} aria-label={showLegend ? undefined : legend} data-name={name}>
+      <div className="app-seg" role="radiogroup" aria-labelledby={showLegend ? lid : undefined} aria-label={showLegend ? undefined : legend} aria-describedby={describedBy} data-name={name}>
         {options.map((o, i) => {
           const on = value === o.value;
           return (
@@ -217,7 +223,7 @@ export function Segmented<T extends string>({
               tabIndex={on ? 0 : -1}
               data-value={o.value}
               className="app-seg-item"
-              disabled={disabled}
+              disabled={disabled || o.disabled}
               onClick={() => onChange(o.value)}
               onKeyDown={(e) => move(e, i)}
             >
@@ -277,20 +283,25 @@ export function RadioGroup<T extends string>({
   options,
   onChange,
   disabled,
+  describedBy,
 }: {
   legend: string;
   name: string;
   value: T;
-  options: Array<{ value: T; label: string; description?: string }>;
+  /** an option marked disabled stays in view with its note (a coming-soon tag) but cannot be chosen */
+  options: Array<{ value: T; label: string; description?: string; disabled?: boolean; note?: ReactNode }>;
   onChange: (v: T) => void;
   disabled?: boolean;
+  /** id of the line that says why an option is off */
+  describedBy?: string;
 }) {
   const lid = useId();
   const move = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
     if (!step) return;
     e.preventDefault();
-    const next = options[(index + step + options.length) % options.length]!;
+    const next = nextEnabled(options, index, step);
+    if (!next) return;
     onChange(next.value);
     const group = e.currentTarget.parentElement;
     requestAnimationFrame(() => group?.querySelector<HTMLButtonElement>(`[data-value="${next.value}"]`)?.focus());
@@ -300,7 +311,7 @@ export function RadioGroup<T extends string>({
       <p className="field-label" id={lid}>
         {legend}
       </p>
-      <div className="app-radio-list" role="radiogroup" aria-labelledby={lid} data-name={name}>
+      <div className="app-radio-list" role="radiogroup" aria-labelledby={lid} aria-describedby={describedBy} data-name={name}>
         {options.map((o, i) => {
           const on = value === o.value;
           return (
@@ -312,7 +323,7 @@ export function RadioGroup<T extends string>({
               tabIndex={on ? 0 : -1}
               data-value={o.value}
               className="app-radio"
-              disabled={disabled}
+              disabled={disabled || o.disabled}
               onClick={() => onChange(o.value)}
               onKeyDown={(e) => move(e, i)}
             >
@@ -322,12 +333,37 @@ export function RadioGroup<T extends string>({
               <span className="app-radio-text">
                 <span className="app-radio-label">{o.label}</span>
                 {o.description ? <span className="app-radio-desc">{o.description}</span> : null}
+                {o.note ? <span className="app-radio-note">{o.note}</span> : null}
               </span>
             </button>
           );
         })}
       </div>
     </div>
+  );
+}
+
+/** The next option an arrow key lands on, skipping the ones that are off; null when none is on. */
+function nextEnabled<O extends { disabled?: boolean }>(options: O[], index: number, step: number): O | null {
+  const n = options.length;
+  for (let i = 1; i <= n; i++) {
+    const o = options[(((index + step * i) % n) + n) % n]!;
+    if (!o.disabled) return o;
+  }
+  return null;
+}
+
+/**
+ * A feature this engine's platform cannot run yet, in place: the
+ * "Coming soon on Windows" tag and one plain line on why (the crew sandbox
+ * for that platform is not ready yet).
+ */
+export function Soon({ feature, id, inline, tag = true, children }: { feature: FeatureKey; id?: string; inline?: boolean; tag?: boolean; children?: ReactNode }) {
+  const p = usePlatform();
+  return (
+    <ComingSoon label={soonLabel(p)} id={id} as={inline ? "span" : "p"} tag={tag}>
+      {children ?? soonReason(p, feature)}
+    </ComingSoon>
   );
 }
 
