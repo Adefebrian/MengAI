@@ -130,3 +130,57 @@ export interface PositionDTO {
   unrealizedUsd: number;
   realizedUsd: number;
 }
+
+// ------------------------------------------------------------ trading venues
+/**
+ * Presets for the Trading menu's connection wizard. A venue is a connector
+ * (MCP or HTTP API) plus trading metadata. Commands and URLs are editable
+ * templates: the owner confirms them before connecting.
+ */
+export interface TradingVenuePreset {
+  id: string;
+  label: string;
+  kind: "crypto" | "broker" | "dex" | "custom";
+  connector: ConnectorKind;
+  /** mcp_stdio: the command template; http: the base URL template */
+  target: string;
+  /** field names the wizard asks for; values go to the vault, never returned */
+  secrets: Array<{ key: string; label: string }>;
+  supportsPaper: boolean;
+  supportsTestnet: boolean;
+  docsUrl: string;
+}
+
+export const TRADING_VENUE_PRESETS: TradingVenuePreset[] = [
+  { id: "ccxt-mcp", label: "CCXT MCP (crypto exchanges)", kind: "crypto", connector: "mcp_stdio", target: "npx -y @lazydino/ccxt-mcp", secrets: [{ key: "API_KEY", label: "API key" }, { key: "API_SECRET", label: "API secret" }], supportsPaper: true, supportsTestnet: true, docsUrl: "https://github.com/ccxt/ccxt" },
+  { id: "alpaca-mcp", label: "Alpaca (stocks and crypto broker)", kind: "broker", connector: "mcp_stdio", target: "uvx alpaca-mcp-server serve", secrets: [{ key: "ALPACA_API_KEY", label: "API key" }, { key: "ALPACA_SECRET_KEY", label: "Secret key" }], supportsPaper: true, supportsTestnet: false, docsUrl: "https://github.com/alpacahq/alpaca-mcp-server" },
+  { id: "custom-mcp", label: "Custom MCP server", kind: "custom", connector: "mcp_stdio", target: "", secrets: [{ key: "API_KEY", label: "API key" }], supportsPaper: true, supportsTestnet: true, docsUrl: "https://modelcontextprotocol.io" },
+  { id: "custom-http", label: "Custom REST API (OpenAPI)", kind: "custom", connector: "http_api", target: "https://", secrets: [{ key: "Authorization", label: "Auth header value" }], supportsPaper: true, supportsTestnet: true, docsUrl: "https://spec.openapis.org/oas/latest.html" },
+];
+
+/** A trading venue connection as the Trading menu shows it. */
+export interface TradingVenueDTO {
+  id: string;
+  /** the connector row that carries the tools and the vault secret */
+  connectorId: string;
+  preset: string;
+  label: string;
+  mode: "paper" | "live";
+  testnet: boolean;
+  status: "connected" | "learning" | "ready" | "error" | "disabled";
+  error: string | null;
+  /** skills the crew learned for this venue (shared by every agent) */
+  learnedSkills: Array<{ id: string; name: string; uses: number; wins: number }>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateTradingVenueBody {
+  preset: string;
+  label?: string;
+  /** overrides the preset target (command or URL) */
+  target?: string;
+  secrets?: Record<string, string>;
+  mode: "paper" | "live";
+  testnet?: boolean;
+}
