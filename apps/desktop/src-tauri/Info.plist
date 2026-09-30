@@ -2,13 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>NSAccessibilityUsageDescription</key>
-  <string>MengAI uses Accessibility only when you turn on the input or screen capability, so the operator cat can read and click controls you approve. Every action is shown to you first and recorded in the audit log.</string>
-  <key>NSScreenCaptureUsageDescription</key>
-  <string>MengAI captures the screen only when you turn on the screen capability, so the operator cat can see what it is working on. Screenshots stay on this Mac.</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key>
-  <string>Built by Adefebrian. Apache-2.0.</string>
+  <string>Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. PolyForm Noncommercial 1.0.0; commercial use needs permission.</string>
 </dict>
 </plist>

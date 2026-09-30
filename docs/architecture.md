@@ -16,7 +16,7 @@ Brand: MengAI (scope @mengai). "Meng" is how Indonesians call a cat.
 | KV (rate limit, response cache, locks) | in-memory LRU | Redis via Bun RedisClient |
 | Blobs (assets, screenshots) | local dir `<appdata>/blobs` | S3 via Bun.s3 (s3.datacenter.jalgroup.id) |
 | Vault (API keys) | OS keychain via Bun.secrets (service = bundle id) | envelope AES-256-GCM, KEK from env `VAULT_KEK`, DEK per secret, ciphertext in `vault_items` |
-| Auth | single-use launch token -> HttpOnly cookie; API bound to 127.0.0.1 random port; Host + Origin check | owner accounts (argon2id via Bun.password), session cookie, CSRF via Origin check + SameSite |
+| Auth | none: the engine runs on the owner's Mac, bound to 127.0.0.1:4190; Host check, exact Origin allowlist (own origins plus MENGAI_SITE_ORIGINS), writes need an allowlisted Origin, crew processes are denied the engine port | owner accounts (argon2id via Bun.password), session cookie, CSRF via Origin check + SameSite |
 | Automation (computer control) | enabled when the hands helper is present and TCC grants exist | hard disabled (module not mounted) |
 | Shell tool | Seatbelt profile (sandbox-exec) jail to workspace, env scrubbed | runs inside the container workspace, env scrubbed, off by default |
 
@@ -39,7 +39,7 @@ tools/          check-boundaries.ts, migrate.ts, bench-tokens.ts
 ## 4. API modules (apps/api/src/modules/<domain>, one public index.ts each)
 | Module | Owns tables | Job |
 |---|---|---|
-| auth | users, sessions | owner login (server), launch token (local), session middleware |
+| auth | users, sessions | owner login (server); local mode has no auth and treats every allowed request as the owner |
 | vault | vault_items | put/get/delete secret by ref; key fingerprints for output redaction |
 | providers | providers, model_tiers | BYOK registry, presets, test connection, list models, resolve (tier or role) -> {provider, model} |
 | llm (core adapter, not a module) | none | openai-compatible + anthropic adapters behind the LlmProvider port |
@@ -159,16 +159,20 @@ Routes never contain business logic; services never import Hono.
 
 ### Local sidecar contract (apps/api/src/local.ts <-> apps/desktop)
 - The desktop shell spawns the compiled sidecar with env `MENGAI_MODE=local`,
-  `MENGAI_DATA_DIR`, `MENGAI_WEB_DIR` (bundled SPA), `MENGAI_HANDS_BIN`
-  (bundled helper), optional `MENGAI_PORT` (default: random free port on 127.0.0.1).
-- When listening, the sidecar prints exactly one NDJSON line to stdout:
-  `{"event":"ready","port":<n>,"launchToken":"<one-time>","controlToken":"<per-launch>"}`.
-- The shell opens `http://127.0.0.1:<port>/#launch=<launchToken>`; the web app
-  posts it to `POST /api/auth/launch` once and gets the session cookie.
-- Tray and global shortcut call `POST /api/killswitch` with header
-  `x-mengai-control: <controlToken>` (see CONTROL_TOKEN_HEADER in shared).
-- The sidecar exits on SIGTERM or when stdin closes; the shell always sends
-  SIGTERM on quit and kills the process group after 3 s.
+  `MENGAI_DATA_DIR`, `MENGAI_WEB_DIR` (bundled SPA), `MENGAI_PORT=4190` and,
+  when the owner set them in settings.json, `MENGAI_SITE_ORIGINS`.
+- When listening, the sidecar prints one NDJSON line to stdout:
+  `{"event":"ready","port":<n>,"controlToken":"<per-launch>",...}`; the shell
+  requires `port` and ignores unknown keys.
+- The shell opens `http://127.0.0.1:<port>/app`. There is no launch token,
+  pairing or session: the website and the window call the API directly and the
+  engine trusts only its Host and the Origin allowlist.
+- Tray and global shortcut call `POST /api/killswitch` (allowed without an
+  Origin, stopping is the safe direction), with `x-mengai-control` when a
+  control token was printed.
+- The sidecar exits on SIGTERM or when stdin closes; on quit the shell sends
+  SIGTERM, waits 3 s, kills the process group and sweeps every child process
+  it listed (previews, connectors) so nothing keeps running.
 
 ### File ownership in W1 (one owner per path, no exceptions)
 | Workstream | Owns |

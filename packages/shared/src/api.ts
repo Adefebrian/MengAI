@@ -270,7 +270,6 @@ export interface Routes {
   "PATCH /api/trading/venues/:id": [Partial<import("./capabilities").CreateTradingVenueBody> & { enabled?: boolean }, import("./capabilities").TradingVenueDTO];
   "DELETE /api/trading/venues/:id": [never, { ok: true }];
   "POST /api/trading/venues/:id/learn": [never, import("./capabilities").TradingVenueDTO];
-  /** local runtime pairing from a hosted website: exchanges a pairing token for a bearer session and registers the calling origin */
   "GET /api/trading/settings": [never, import("./capabilities").TradingSettings];
   "PUT /api/trading/settings": [import("./capabilities").TradingSettings, import("./capabilities").TradingSettings];
   "GET /api/trading/orders": [never, import("./capabilities").OrderDTO[]];

@@ -31,8 +31,8 @@
     "category": "DeveloperTool",
     "shortDescription": "AI agent crew, shown as living cats",
     "longDescription": "MengAI runs a crew of AI agents on your own Mac with your own model keys.",
-    "copyright": "Copyright 2026 Adefebrian. Built by Adefebrian. Licensed under Apache-2.0.",
-    "license": "Apache-2.0",
+    "copyright": "Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. PolyForm Noncommercial 1.0.0; commercial use needs permission.",
+    "license": "PolyForm-Noncommercial-1.0.0",
     "publisher": "Adefebrian",
     "icon": [
       "icons/32x32.png",
