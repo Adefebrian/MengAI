@@ -528,7 +528,15 @@ mod tests {
         let port = held.local_addr().unwrap().port();
         assert!(!port_available(port));
         drop(held);
-        assert!(port_available(port));
+        // The kernel tears the probe's connection down asynchronously, so under parallel tests
+        // the port can read busy for a moment after the listener closes (flaky before, 1 in 10).
+        let freed = (0..50).any(|_| {
+            port_available(port) || {
+                std::thread::sleep(Duration::from_millis(20));
+                false
+            }
+        });
+        assert!(freed, "port {port} free again after the listener closed");
     }
 
     #[test]

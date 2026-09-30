@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 //! MengAI macOS shell (Tauri 2).
 //!
-//! Spawns the compiled Bun API sidecar, waits for its ready line, opens the
-//! main window on http://127.0.0.1:<port>/app (local mode has no auth, so no
-//! token rides along), and owns the kill switch (tray item and
-//! Cmd+Shift+Escape). The window is the UI; the owner's website reaches the
-//! same engine once its origin is listed in settings.json. Quitting stops the
+//! One instance per Mac: a second launch hands off to the running one, which
+//! shows its window, and exits before it starts anything (instance.rs). The
+//! shell spawns the compiled Bun API sidecar on the configured port, or on the
+//! first free port of 4190..4199 when that one is held by another program
+//! (ports.rs), waits for its ready line, opens the main window on
+//! http://127.0.0.1:<port>/app (local mode has no auth, so no token rides
+//! along), and owns the kill switch (tray item and Cmd+Shift+Escape). The
+//! window is the UI; the owner's website reaches the same engine once its
+//! origin is listed in settings.json. Quitting stops the
 //! engine and everything it started, live previews included. Every startup
 //! failure and every failure to reach the engine is loud: an error dialog and
 //! a clean stop, never a panic and never a silent fallback.
@@ -14,6 +18,8 @@
 
 mod applog;
 mod control;
+mod instance;
+mod ports;
 mod procs;
 mod settings;
 mod sidecar;
@@ -37,6 +43,8 @@ use tauri_plugin_shell::ShellExt;
 
 use applog::AppLog;
 use control::Trigger;
+use instance::{InstanceLock, LockError};
+use ports::NoPort;
 use settings::Settings;
 use sidecar::{Event, Paths, Sidecar};
 
@@ -61,6 +69,8 @@ struct Shell {
     kill_in_flight: AtomicBool,
     /// `<app data dir>/settings.json`, once the data dir is known.
     settings_path: OnceLock<PathBuf>,
+    /// The data dir lock, held until the process exits.
+    instance: OnceLock<InstanceLock>,
 }
 
 fn kill_shortcut() -> Shortcut {
@@ -70,6 +80,8 @@ fn kill_shortcut() -> Shortcut {
 fn main() {
     let kill_id = kill_shortcut().id();
     let app = tauri::Builder::default()
+        // First, so a second launch hands off and exits before any other plugin or setup runs.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| on_second_launch(app)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -126,6 +138,7 @@ fn setup(app: &AppHandle) {
         quitting: AtomicBool::new(false),
         kill_in_flight: AtomicBool::new(false),
         settings_path: OnceLock::new(),
+        instance: OnceLock::new(),
     });
     if let Err(message) = start(app, &log) {
         spawn_fatal(app, message);
@@ -143,14 +156,20 @@ fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
     let data_dir = app.path().app_data_dir().map_err(|e| format!("MengAI could not locate its data folder ({e})."))?;
     create_private_dir(&data_dir)
         .map_err(|e| format!("MengAI could not create its data folder at {} ({e}).", data_dir.display()))?;
-    let settings = load_settings(app, log, &data_dir)?;
-    if !sidecar::port_available(settings.port) {
-        return Err(format!(
-            "Port {} on 127.0.0.1 is already in use, often by another MengAI engine such as `bun run dev`. Quit it, or set another \"port\" in {}, then open MengAI again.",
-            settings.port,
-            data_dir.join(settings::FILE_NAME).display()
-        ));
-    }
+    // Before any port probe or spawn: a second shell never starts a second engine on this data dir.
+    let lock = instance::lock(&data_dir).map_err(|e| match e {
+        LockError::Held => format!(
+            "MengAI is already running on this Mac (another copy uses {}). Use its window or its menu bar item, or quit it, then open MengAI again.",
+            data_dir.display()
+        ),
+        LockError::Io(e) => format!(
+            "MengAI could not lock its data folder at {} ({e}).",
+            data_dir.join(instance::LOCK_FILE).display()
+        ),
+    })?;
+    let _ = app.state::<Shell>().instance.set(lock);
+    let loaded = load_settings(app, log, &data_dir)?;
+    let settings = Settings { port: engine_port(log, &loaded, &data_dir)?, ..loaded };
     let resources =
         app.path().resource_dir().map_err(|e| format!("MengAI could not locate its bundled resources ({e})."))?;
     let paths = Paths {
@@ -189,6 +208,62 @@ fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
         .spawn(move || supervise(handle, rx, settings))
         .map_err(|e| format!("MengAI could not watch its engine ({e})."))?;
     Ok(())
+}
+
+/// The port the engine starts on (ports.rs), logged with the reason. Err is the dialog text.
+fn engine_port(log: &AppLog, settings: &Settings, data_dir: &Path) -> Result<u16, String> {
+    let file = data_dir.join(settings::FILE_NAME);
+    match ports::choose(settings.port, sidecar::port_available) {
+        Ok(pick) => {
+            match pick.busy {
+                None => log.info("shell", &format!("engine port {}: the configured port is free", pick.port)),
+                Some(busy) => {
+                    let holder = ports::probe_holder(busy, ports::HEALTH_DEADLINE);
+                    log.warn(
+                        "shell",
+                        &format!(
+                            "engine port {}: the configured port {busy} is held by {}, so the engine starts on the first free port of {}..{}",
+                            pick.port,
+                            holder.describe(),
+                            ports::FALLBACK_RANGE.start(),
+                            ports::FALLBACK_RANGE.end()
+                        ),
+                    );
+                }
+            }
+            Ok(pick.port)
+        }
+        Err(NoPort::Busy(port)) => {
+            let holder = ports::probe_holder(port, ports::HEALTH_DEADLINE);
+            log.error(
+                "shell",
+                &format!("engine port {port} is held by {} and is outside the fallback range", holder.describe()),
+            );
+            Err(format!(
+                "Port {port} on 127.0.0.1 is already in use, by {}. MengAI uses the exact \"port\" set in {} when it lies outside {}..{}. Quit that program, or set another \"port\", then open MengAI again.",
+                holder.describe(),
+                file.display(),
+                ports::FALLBACK_RANGE.start(),
+                ports::FALLBACK_RANGE.end()
+            ))
+        }
+        Err(NoPort::RangeBusy { first, last }) => {
+            log.error("shell", &format!("engine ports {first}..{last} are all in use"));
+            Err(format!(
+                "Ports {first} to {last} on 127.0.0.1 are all in use, often by other MengAI engines such as `bun run dev`. MengAI tries each one in turn. Quit one of them, or set a free \"port\" outside that range in {}, then open MengAI again.",
+                file.display()
+            ))
+        }
+    }
+}
+
+/// A second launch handed off to this instance: bring the window forward. It starts nothing.
+fn on_second_launch(app: &AppHandle) {
+    let shown = window::raise_main(app);
+    if let Some(shell) = app.try_state::<Shell>() {
+        let what = if shown { "showing the window" } else { "the window opens once the engine is ready" };
+        shell.log.info("shell", &format!("another launch of MengAI handed off to this one; {what}"));
+    }
 }
 
 /// True when `dir` holds at least one `.sql` file (what the sidecar migrates from).
@@ -247,7 +322,7 @@ fn supervise(app: AppHandle, rx: Receiver<Event>, settings: Settings) {
                 shell.log.warn(
                     "shell",
                     &format!(
-                        "engine listens on {} instead of the configured port {}; the website may not find it",
+                        "engine listens on {} instead of the chosen port {}; the website may not find it",
                         ready.port, settings.port
                     ),
                 );

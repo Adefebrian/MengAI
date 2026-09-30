@@ -121,12 +121,13 @@ pub fn open_main(app: &AppHandle, port: u16) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Brings the main window to the front (unminimize, show, focus). False while it does not exist yet.
+pub fn raise_main(app: &AppHandle) -> bool {
+    crate::instance::raise(app.get_webview_window(MAIN_WINDOW).as_ref())
+}
+
 pub fn show_main(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-    }
+    raise_main(app);
 }
 
 #[cfg(test)]

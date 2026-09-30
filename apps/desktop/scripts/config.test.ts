@@ -231,6 +231,26 @@ describe("shared contract", () => {
     expect(root.scripts.dev).toContain("MENGAI_PORT=4190");
   });
 
+  test("one instance per Mac: the handoff runs before any plugin or setup, then the data dir lock, then the port choice", async () => {
+    const main = await read("src/main.rs");
+    const builder = main.slice(main.indexOf("tauri::Builder::default()"));
+    const plugins = [...builder.matchAll(/\.plugin\(\s*(tauri_plugin_[a-z_]+)/g)].map((m) => m[1]);
+    expect(plugins[0]).toBe("tauri_plugin_single_instance");
+    expect(main).toContain("tauri_plugin_single_instance::init(|app, _args, _cwd| on_second_launch(app))");
+    const start = main.slice(main.indexOf("fn start("), main.indexOf("fn engine_port("));
+    const lock = start.indexOf("instance::lock(&data_dir)");
+    const port = start.indexOf("engine_port(log, &loaded, &data_dir)");
+    const spawn = start.indexOf("Sidecar::spawn(");
+    expect(lock).toBeGreaterThan(0);
+    expect(port).toBeGreaterThan(lock);
+    expect(spawn).toBeGreaterThan(port);
+    // The fallback range matches the one the web app probes.
+    const ports = await read("src/ports.rs");
+    expect(ports).toContain("pub const FALLBACK_RANGE: RangeInclusive<u16> = 4190..=4199;");
+    const runtime = await Bun.file(join(repoRoot, "apps", "web", "src", "api", "runtime.ts")).text();
+    expect(runtime).toContain("export const RUNTIME_PORTS = { first: 4190, last: 4199 } as const;");
+  });
+
   test("no pairing and no launch token: the window loads /app on the exact engine origin", async () => {
     expect(existsSync(join(tauriDir, "src", "pair.rs"))).toBe(false);
     const api = await Bun.file(join(repoRoot, "packages", "shared", "src", "api.ts")).text();
@@ -281,12 +301,13 @@ describe("dependencies and house rules", () => {
       "tauri-plugin-dialog",
       "tauri-plugin-opener",
       "tauri-plugin-global-shortcut",
+      "tauri-plugin-single-instance",
       "serde",
       "serde_json",
       "libc",
     ]);
     for (const d of deps) expect(audited.has(d)).toBe(true);
-    for (const needed of ["tauri", "tauri-plugin-shell", "tauri-plugin-dialog", "tauri-plugin-opener", "tauri-plugin-global-shortcut"]) {
+    for (const needed of ["tauri", "tauri-plugin-shell", "tauri-plugin-dialog", "tauri-plugin-opener", "tauri-plugin-global-shortcut", "tauri-plugin-single-instance"]) {
       expect(deps).toContain(needed);
     }
   });

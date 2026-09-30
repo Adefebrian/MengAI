@@ -22,12 +22,17 @@ tauri-plugin-dialog = "2.8"
 tauri-plugin-opener = "2.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# kill(2) and killpg(2) only: SIGTERM to the sidecar, SIGKILL to its process
-# group. Already in the lockfile through tauri; JEV be.new_tech adopt 0.96.
+# kill(2) and killpg(2): SIGTERM to the sidecar, SIGKILL to its process group;
+# flock(2): one shell per data dir. Already in the lockfile through tauri;
+# JEV be.new_tech adopt 0.96.
 libc = "0.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2.4"
+# One app per Mac: a second launch hands off to the running instance (which
+# shows its window) and exits before it starts an engine. Official Tauri
+# plugin, deps already in the lockfile through tauri; JEV be.new_tech adopt 0.94.
+tauri-plugin-single-instance = "2.5"
 
 [profile.release]
 codegen-units = 1

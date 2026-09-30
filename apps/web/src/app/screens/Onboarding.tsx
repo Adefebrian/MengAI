@@ -102,7 +102,7 @@ function AddressCard({ onSaved }: { onSaved: () => void }) {
           autoComplete="off"
           inputMode="url"
           error={error}
-          hint="The Mac app and bun run dev both answer on 127.0.0.1:4190."
+          hint="The Mac app and bun run dev answer on 127.0.0.1:4190, or the next free port up to 4199. This page finds it by itself."
         />
         <div className="app-form-actions">
           <button type="submit">Save and look again</button>

@@ -9,8 +9,9 @@ the web app (apps/web); the shell never renders its own UI.
 
 1. Install: open `MengAI_<version>_aarch64.dmg` and drag MengAI to
    Applications.
-2. Open MengAI. The engine starts on this Mac at `127.0.0.1:4190` and the
-   window shows the app.
+2. Open MengAI. The engine starts on this Mac at `127.0.0.1:4190` (or the
+   first free port up to 4199 when another program holds 4190) and the
+   window shows the app. Opening MengAI again only brings that window back.
 3. Add a key for the model provider you use. It is stored in the macOS
    keychain on this Mac and only ever sent to that provider.
 4. Give the crew a goal. Watch it work, open the live preview of what it
@@ -31,8 +32,14 @@ engine.
 
 ## How it starts
 
-1. `setup` reads [settings.json](#settings), checks that its port is free on
-   127.0.0.1, then spawns `mengai-api` (resolved by tauri-plugin-shell from
+0. One instance per Mac: `tauri-plugin-single-instance` is registered first,
+   so a second launch hands off to the running app (which unminimizes, shows
+   and focuses its window) and exits before it probes a port or starts an
+   engine. Behind it, the shell holds an exclusive flock on
+   `<data dir>/shell.lock` for its whole life; if the plugin ever lets a
+   second shell through, that one stops with an "already running" dialog.
+1. `setup` reads [settings.json](#settings), picks the engine port (below),
+   then spawns `mengai-api` (resolved by tauri-plugin-shell from
    `bundle.externalBin`) in its own process group with a cleared
    environment. It passes only HOME, USER, LOGNAME, TMPDIR, PATH, LANG,
    SHELL, TZ, `LC_*`, any other `MENGAI_*` passthrough (for example
@@ -51,7 +58,12 @@ engine.
      `EMBEDDED_MIGRATIONS`) and migrates with no folder at all; the folder is
      an explicit override, so a shipped app and its SQL always match. The
      shell refuses to start, with a dialog, if that folder has no `.sql` file.
-   - `MENGAI_PORT` = `port` from settings.json (default 4190)
+   - `MENGAI_PORT` = `port` from settings.json (default 4190) when it is free
+     on 127.0.0.1. When it is busy and inside 4190..4199, the first free port
+     of that range instead (the log says which port and whether the holder
+     answered `/api/health` as a MengAI engine, for example root `bun run
+     dev`); the web app probes the same range. An explicit port outside the
+     range is used as is, busy means a dialog.
    - `MENGAI_SITE_ORIGINS` = `siteOrigins` from settings.json as a comma
      list, only when it is not empty
 2. The shell reads stdout until the ready line
@@ -103,7 +115,7 @@ template below (mode 0600) on first launch. Changes apply on the next launch.
 | Key | Meaning |
 |---|---|
 | `siteOrigins` | Exact origins of websites that serve the MengAI UI and may call this engine, for example `["https://mengai.example"]`. Passed to the engine as `MENGAI_SITE_ORIGINS` (comma list). Each entry must be https with a public host: no path, query, fragment, credentials or wildcard, and no loopback host (`localhost`, `*.localhost`, `127.x`, `[::1]`, `0.0.0.0`). Entries are stored as their bare origin and deduplicated; at most 16. Empty means only the engine's own origins. |
-| `port` | Loopback port of the engine, 1024 to 65535, passed as `MENGAI_PORT`. The website UI connects to `http://127.0.0.1:4190` by default, so change it only together with the web app's runtime URL. |
+| `port` | Loopback port of the engine, 1024 to 65535, passed as `MENGAI_PORT`. Inside 4190..4199 a busy port falls back to the first free port of that range, which the website UI also probes; outside it the exact port is used (no fallback), so change the web app's runtime address with it. |
 
 An older file with `"siteUrl"` is migrated on launch: an https origin moves
 into `siteOrigins`, an http loopback dev origin is dropped with a warning in
@@ -159,7 +171,9 @@ above), shows an error dialog and quits.
 | tray, app menu, data folder, resource folder or supervisor thread unavailable | error dialog, quit |
 | settings.json unreadable or invalid | error dialog naming the file, quit (the sidecar is never spawned) |
 | old settings.json cannot be rewritten after migration | logged; the migrated values are used |
-| settings port already in use on 127.0.0.1 (for example by root `bun run dev`) | error dialog, quit (the sidecar is never spawned) |
+| MengAI opened again while it runs | the running app shows its window; the second launch exits (no second engine) |
+| another shell already holds `shell.lock` in the data dir | error dialog, quit (the sidecar is never spawned) |
+| settings port busy (for example by root `bun run dev`) | inside 4190..4199: logged, the engine starts on the first free port of the range; all ten busy, or an explicit port outside the range busy: error dialog, quit (the sidecar is never spawned) |
 | bundled sqlite migrations missing | error dialog, quit (the sidecar is never spawned) |
 | sidecar cannot spawn | error dialog, quit |
 | no ready line within 30 s | SIGTERM, 3 s, kill group and sweep, error dialog, quit |
@@ -179,10 +193,13 @@ cd src-tauri && cargo check && cargo test   # Rust unit tests, incl. real proces
 bun run scripts/icons.ts                     # regenerate icons from the vector mark
 ```
 
-The app and the root `bun run dev` both answer on 127.0.0.1:4190, so run one
-at a time, or give the app another `port` in settings.json (dev and release
-builds share `~/Library/Application Support/id.mengai.app`). `bun run smoke
--- --open` needs that port free too.
+The app and the root `bun run dev` both default to 127.0.0.1:4190. When
+`bun run dev` holds it, the app starts its engine on the next free port up to
+4199 and the web app finds it there; the root dev engine has no fallback, so
+start it first. The dev and release builds share the identifier and
+`~/Library/Application Support/id.mengai.app`, so only one of them runs at a
+time (the second hands off to the first). `bun run smoke -- --open` finds
+the engine port with `lsof`, so a fallback port works there too.
 
 `cargo check` on a fresh clone writes a placeholder
 `src-tauri/binaries/mengai-api-<triple>` (a shell script that exits 78 with a
@@ -402,9 +419,9 @@ capability.
 
 ## Dependencies
 
-Tauri 2 and its shell, dialog, opener and global-shortcut plugins, serde,
-serde_json, and libc (kill and killpg only, already in the lockfile through
-Tauri). The HTTP client for the kill switch, the log writer, the settings
-reader and the process tree sweep (`/bin/ps`, no FFI) are small in-house
-modules (URL parsing is `tauri::Url`). `bun test` fails if a new direct crate
-appears.
+Tauri 2 and its shell, dialog, opener, global-shortcut and single-instance
+plugins, serde, serde_json, and libc (kill, killpg and flock only, already in
+the lockfile through Tauri). The HTTP client for the kill switch and the port
+probe, the log writer, the settings reader and the process tree sweep
+(`/bin/ps`, no FFI) are small in-house modules (URL parsing is `tauri::Url`).
+`bun test` fails if a new direct crate appears.

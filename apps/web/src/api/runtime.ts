@@ -10,15 +10,23 @@
 // from the browser to the engine and into its OS keychain; the page keeps
 // only UI preferences in localStorage.
 //
-// Where it looks: the runtime address setting when one is saved, else the
-// page's own origin when the page is served from this machine, else
-// http://127.0.0.1:4190. Only loopback addresses are accepted, so neither a
-// crafted link nor a typo can point the page (and the keys typed into it)
+// Where it looks: the saved runtime address when there is one, then the
+// page's own origin when the page is served from this machine, then
+// http://127.0.0.1:4190. When none of those answers, it probes
+// http://127.0.0.1:4191..4199, where the Mac app starts its engine when 4190
+// is held by something else (for example `bun run dev`), at most every 10 s
+// while nothing answers; a port found there is remembered as the saved
+// address (see connect.ts). Only loopback addresses are accepted, so neither
+// a crafted link nor a typo can point the page (and the keys typed into it)
 // at another machine.
 import type { HealthDTO } from "@mengai/shared";
 import type { FetchLike } from "./client";
 
 export const DEFAULT_RUNTIME_URL = "http://127.0.0.1:4190";
+/** Ports the Mac app may start its engine on. Must match FALLBACK_RANGE in apps/desktop/src-tauri/src/ports.rs. */
+export const RUNTIME_PORTS = { first: 4190, last: 4199 } as const;
+/** How often the range is probed again while nothing answers. */
+export const RANGE_RECHECK_MS = 10_000;
 export const REPO_URL = "https://github.com/Adefebrian/MengAI";
 /** The Mac beta. It is a prerelease, so releases/latest does not point at it. */
 export const MAC_DOWNLOAD_URL = `${REPO_URL}/releases/tag/v0.1.0-beta`;
@@ -89,12 +97,38 @@ export function originOf(base: string, loc: PageLocation = page()): string {
   return base || loc.origin;
 }
 
-/** Where to look for the runtime, in order. */
+/** Where to look for the runtime first, in order: the saved address, this page's own origin on this machine, 127.0.0.1:4190. */
 export function runtimeCandidates(loc: PageLocation = page(), setting: string | null = readRuntimeSetting()): string[] {
-  if (setting) return [baseFor(setting, loc)];
   const list: string[] = [];
-  if (isLoopbackHost(loc.hostname)) list.push("");
-  if (loc.origin !== DEFAULT_RUNTIME_URL) list.push(DEFAULT_RUNTIME_URL);
+  const add = (origin: string) => {
+    const base = baseFor(origin, loc);
+    if (!list.includes(base)) list.push(base);
+  };
+  if (setting) add(setting);
+  if (isLoopbackHost(loc.hostname)) add(loc.origin);
+  add(DEFAULT_RUNTIME_URL);
+  return list;
+}
+
+function rangeOrigin(port: number): string {
+  return `http://127.0.0.1:${port}`;
+}
+
+/** True for http://127.0.0.1:4190..4199, the addresses the page finds (and may forget) on its own. */
+export function isRangeAddress(origin: string): boolean {
+  const m = /^http:\/\/127\.0\.0\.1:(\d{4})$/.exec(origin);
+  const port = m ? Number(m[1]) : NaN;
+  return port >= RUNTIME_PORTS.first && port <= RUNTIME_PORTS.last;
+}
+
+/** The rest of the range to probe when no candidate answers: 4191..4199 minus any origin already tried. */
+export function runtimeRange(tried: string[], loc: PageLocation = page()): string[] {
+  const seen = new Set(tried.map((b) => originOf(b, loc)));
+  const list: string[] = [];
+  for (let port = RUNTIME_PORTS.first + 1; port <= RUNTIME_PORTS.last; port++) {
+    const origin = rangeOrigin(port);
+    if (!seen.has(origin)) list.push(origin);
+  }
   return list;
 }
 
@@ -116,8 +150,12 @@ function isHealth(v: unknown): v is HealthDTO {
   return !!v && typeof v === "object" && (v as HealthDTO).ok === true && typeof (v as HealthDTO).version === "string";
 }
 
-/** Look for the engine at one base, within a short timeout. No cookies, no credentials. */
-export async function probeRuntime(base: string, opts: { fetch?: FetchLike; timeoutMs?: number } = {}): Promise<Probe> {
+/**
+ * Look for the engine at one base, within a short timeout. No cookies, no credentials.
+ * `opaque: false` skips the no-cors request that tells "refuses this site" from "nothing there",
+ * for callers that only count an engine this page can read.
+ */
+export async function probeRuntime(base: string, opts: { fetch?: FetchLike; timeoutMs?: number; opaque?: boolean } = {}): Promise<Probe> {
   const doFetch: FetchLike = opts.fetch ?? ((input, init) => fetch(input, init));
   const url = `${base}/api/health`;
   const timeout = () => {
@@ -134,7 +172,7 @@ export async function probeRuntime(base: string, opts: { fetch?: FetchLike; time
     // a page server that answers every path with index.html is not the engine
     return isHealth(body) ? { state: "open", health: body } : { state: "down" };
   } catch {
-    if (!base) return { state: "down" };
+    if (!base || opts.opaque === false) return { state: "down" };
   } finally {
     first.done();
   }

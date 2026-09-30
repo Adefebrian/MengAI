@@ -7,7 +7,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createApiClient, type FetchLike } from "./client";
 import { connectRuntime, resetConnectForTests } from "./connect";
-import { DEFAULT_RUNTIME_URL, MAC_DOWNLOAD_URL, baseFor, normalizeRuntimeUrl, probeRuntime, readRuntimeSetting, runtimeCandidates, writeRuntimeSetting } from "./runtime";
+import {
+  DEFAULT_RUNTIME_URL,
+  MAC_DOWNLOAD_URL,
+  RANGE_RECHECK_MS,
+  RUNTIME_PORTS,
+  baseFor,
+  isRangeAddress,
+  normalizeRuntimeUrl,
+  probeRuntime,
+  readRuntimeSetting,
+  runtimeCandidates,
+  runtimeRange,
+  writeRuntimeSetting,
+} from "./runtime";
 import { fetchEventSource, parseSseChunk } from "./sse";
 
 const HEALTH = { ok: true, mode: "local", version: "0.1.0", configured: true, automation: { available: false, accessibility: false, screen: false }, jev: { configured: false } };
@@ -32,12 +45,26 @@ describe("runtime addresses", () => {
     }
   });
 
-  test("the website looks at 127.0.0.1:4190, a page on this machine looks at itself first, a saved address wins", () => {
+  test("the website looks at 127.0.0.1:4190, a page on this machine looks at itself first, a saved address goes first", () => {
     expect(runtimeCandidates({ origin: "https://mengai.example", hostname: "mengai.example" }, null)).toEqual([DEFAULT_RUNTIME_URL]);
     expect(runtimeCandidates({ origin: "http://127.0.0.1:4190", hostname: "127.0.0.1" }, null)).toEqual([""]);
     expect(runtimeCandidates({ origin: "http://localhost:3000", hostname: "localhost" }, null)).toEqual(["", DEFAULT_RUNTIME_URL]);
-    expect(runtimeCandidates({ origin: "https://mengai.example", hostname: "mengai.example" }, "http://127.0.0.1:4297")).toEqual(["http://127.0.0.1:4297"]);
+    expect(runtimeCandidates({ origin: "https://mengai.example", hostname: "mengai.example" }, "http://127.0.0.1:4297")).toEqual(["http://127.0.0.1:4297", DEFAULT_RUNTIME_URL]);
+    expect(runtimeCandidates({ origin: "http://127.0.0.1:4192", hostname: "127.0.0.1" }, "http://127.0.0.1:4192")).toEqual(["", DEFAULT_RUNTIME_URL]);
+    expect(runtimeCandidates({ origin: "http://localhost:3000", hostname: "localhost" }, "http://127.0.0.1:4193")).toEqual(["http://127.0.0.1:4193", "", DEFAULT_RUNTIME_URL]);
     expect(baseFor("http://127.0.0.1:4297", { origin: "http://127.0.0.1:4297", hostname: "127.0.0.1" })).toBe("");
+  });
+
+  test("the fallback range is 127.0.0.1:4191..4199 minus what was already tried", () => {
+    expect(RUNTIME_PORTS).toEqual({ first: 4190, last: 4199 });
+    const site = { origin: "https://mengai.example", hostname: "mengai.example" };
+    const all = runtimeRange([DEFAULT_RUNTIME_URL], site);
+    expect(all).toEqual([4191, 4192, 4193, 4194, 4195, 4196, 4197, 4198, 4199].map((p) => `http://127.0.0.1:${p}`));
+    expect(runtimeRange(["http://127.0.0.1:4193", DEFAULT_RUNTIME_URL], site)).not.toContain("http://127.0.0.1:4193");
+    // A page served by the engine on 4192 already tried itself as "".
+    expect(runtimeRange(["", DEFAULT_RUNTIME_URL], { origin: "http://127.0.0.1:4192", hostname: "127.0.0.1" })).not.toContain("http://127.0.0.1:4192");
+    for (const yes of ["http://127.0.0.1:4190", "http://127.0.0.1:4191", "http://127.0.0.1:4199"]) expect(isRangeAddress(yes)).toBe(true);
+    for (const no of ["http://127.0.0.1:4189", "http://127.0.0.1:4200", "http://localhost:4191", "https://127.0.0.1:4191", "http://127.0.0.1:41910"]) expect(isRangeAddress(no)).toBe(false);
   });
 
   test("the saved address refuses anything off this machine", () => {
@@ -113,6 +140,109 @@ describe("connect", () => {
     };
     const c = await connectRuntime({ fetch: fake, candidates: [DEFAULT_RUNTIME_URL, "http://127.0.0.1:4297"] });
     expect(c).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4297" });
+  });
+});
+
+describe("port range", () => {
+  const SITE = { origin: "https://mengai.example", hostname: "mengai.example" };
+  const RANGE = runtimeRange([DEFAULT_RUNTIME_URL], SITE);
+
+  /** A fake loopback: `open` ports answer health, `opaque` ports answer only no-cors, everything else is closed. */
+  function loopback(state: { open: Record<number, unknown>; opaque?: number[] }) {
+    const seen: Array<{ port: number; mode: RequestMode | undefined }> = [];
+    const fake: FetchLike = async (url, init) => {
+      const port = Number(new URL(url).port);
+      seen.push({ port, mode: init.mode });
+      if (port in state.open && init.mode !== "no-cors") return json(200, state.open[port]);
+      if (state.opaque?.includes(port) && init.mode === "no-cors") return new Response(null, { status: 200 });
+      throw new TypeError("Failed to fetch");
+    };
+    return { fake, seen };
+  }
+
+  /** One look as the page on the website makes it: candidates from the saved address, then the range. */
+  function look(fake: FetchLike, now = 0) {
+    const candidates = runtimeCandidates(SITE, readRuntimeSetting());
+    return connectRuntime({ fetch: fake, candidates, range: runtimeRange(candidates, SITE), now: () => now });
+  }
+
+  test("4190 busy with something else: the engine on 4191 is found and remembered", async () => {
+    const { fake, seen } = loopback({ open: { 4191: HEALTH } });
+    const c = await look(fake);
+    expect(c).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4191" });
+    expect(readRuntimeSetting()).toBe("http://127.0.0.1:4191");
+    // 4190 first, then every range port once, and no opaque request into the range.
+    expect(seen[0]!.port).toBe(4190);
+    expect(seen.filter((s) => s.port !== 4190).map((s) => s.port).sort()).toEqual(RANGE.map((u) => Number(new URL(u).port)));
+    expect(seen.some((s) => s.port !== 4190 && s.mode === "no-cors")).toBe(false);
+  });
+
+  test("the lowest answering port wins, and only a local MengAI engine counts", async () => {
+    const { fake } = loopback({ open: { 4192: { ...HEALTH, mode: "server" }, 4194: HEALTH, 4197: HEALTH } });
+    expect(await look(fake)).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4194" });
+  });
+
+  test("a range port that answers only an opaque request is not an engine: still offline", async () => {
+    const { fake } = loopback({ open: {}, opaque: [4193] });
+    expect(await look(fake)).toEqual({ kind: "offline", tried: [DEFAULT_RUNTIME_URL] });
+    expect(readRuntimeSetting()).toBeNull();
+    // A page server that answers every path with index.html is not an engine either.
+    const spa: FetchLike = async (url) => (url.includes(":4195") ? new Response("<!doctype html>", { status: 200 }) : Promise.reject(new TypeError("Failed to fetch")));
+    resetConnectForTests();
+    expect((await look(spa)).kind).toBe("offline");
+  });
+
+  test("while offline the range is probed at most every 10 s; the 2 s look only tries the candidates", async () => {
+    const { fake, seen } = loopback({ open: {} });
+    const rangeProbes = () => seen.filter((s) => s.port !== 4190).length;
+    await look(fake, 0);
+    expect(rangeProbes()).toBe(9);
+    await look(fake, 2_000);
+    await look(fake, RANGE_RECHECK_MS - 1);
+    expect(rangeProbes()).toBe(9);
+    expect(seen.filter((s) => s.port === 4190 && s.mode !== "no-cors").length).toBe(3);
+    await look(fake, RANGE_RECHECK_MS);
+    expect(rangeProbes()).toBe(18);
+  });
+
+  test("the remembered port stops answering: the range is probed again at once and the new port remembered", async () => {
+    const net = { open: { 4191: HEALTH } as Record<number, unknown> };
+    const { fake, seen } = loopback(net);
+    expect(await look(fake, 0)).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4191" });
+    expect(await look(fake, 1_000)).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4191" });
+    // Remembered: the second look asked 4191 first and nothing else.
+    expect(seen.at(-1)!.port).toBe(4191);
+    net.open = { 4195: HEALTH };
+    expect(await look(fake, 3_000)).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4195" });
+    expect(readRuntimeSetting()).toBe("http://127.0.0.1:4195");
+    net.open = {};
+    expect((await look(fake, 4_000)).kind).toBe("offline");
+    // The remembered address stays saved while nothing answers, so it is asked first once it is back.
+    expect(readRuntimeSetting()).toBe("http://127.0.0.1:4195");
+  });
+
+  test("4190 answering again forgets a remembered range port", async () => {
+    writeRuntimeSetting("http://127.0.0.1:4193");
+    const { fake } = loopback({ open: { 4190: HEALTH } });
+    expect(await look(fake)).toMatchObject({ kind: "ready", base: DEFAULT_RUNTIME_URL });
+    expect(readRuntimeSetting()).toBeNull();
+  });
+
+  test("an address the owner typed outside the range is used first and never overwritten", async () => {
+    writeRuntimeSetting("localhost:5000");
+    const { fake, seen } = loopback({ open: { 4194: HEALTH } });
+    expect(await look(fake)).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4194" });
+    expect(seen[0]!.port).toBe(5000);
+    expect(readRuntimeSetting()).toBe("http://localhost:5000");
+  });
+
+  test("the default look probes the range too; an explicit candidate list alone does not", async () => {
+    const { fake, seen } = loopback({ open: { 4196: HEALTH } });
+    await connectRuntime({ fetch: fake, candidates: [DEFAULT_RUNTIME_URL] });
+    expect(seen.every((s) => s.port === 4190)).toBe(true);
+    resetConnectForTests();
+    expect(await connectRuntime({ fetch: fake })).toMatchObject({ kind: "ready", base: "http://127.0.0.1:4196" });
+    expect(readRuntimeSetting()).toBe("http://127.0.0.1:4196");
   });
 });
 
