@@ -42,6 +42,27 @@ export interface HealthDTO {
   configured: boolean;
   automation: { available: boolean; accessibility: boolean; screen: boolean };
   jev: { configured: boolean };
+  /** the operating system the engine runs on: "darwin", "win32" or "linux" */
+  platform: string;
+  /** what this platform can run safely today; the UI labels the rest "Coming soon" */
+  features: PlatformFeatures;
+}
+
+/**
+ * Features that depend on the crew sandbox. macOS has Seatbelt, so every one is
+ * on there. Windows has no equivalent yet, and each of these would let a crew
+ * process reach the engine (and approve its own action), so they stay off until
+ * a Windows sandbox lands.
+ */
+export interface PlatformFeatures {
+  /** crew shell commands (tests, builds, installs) */
+  shell: boolean;
+  /** live trading orders; paper trading works everywhere */
+  liveTrading: boolean;
+  /** local MCP servers started as processes; remote MCP and HTTP connectors work everywhere */
+  mcpStdio: boolean;
+  /** live preview of dev scripts; static sites preview everywhere */
+  scriptPreview: boolean;
 }
 
 export interface SessionDTO {
