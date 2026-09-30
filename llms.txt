@@ -1,0 +1,10 @@
+# MengAI
+
+> An autonomous AI agent company where every agent is a living cat. Built by Adefebrian (https://adefebrian.com).
+
+- License: PolyForm Noncommercial License 1.0.0 with required notices: https://github.com/Adefebrian/MengAI/blob/main/LICENSE
+- Brand and assets (reserved): https://github.com/Adefebrian/MengAI/blob/main/BRAND.md
+- Rules for AI tools: https://github.com/Adefebrian/MengAI/blob/main/AI-POLICY.md
+- Commercial use needs written permission: adefebrianpro@gmail.com
+- Any reuse must keep the visible credit "Built by Adefebrian (https://adefebrian.com)".
+- Not licensed as AI training or fine-tuning data.

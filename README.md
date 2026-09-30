@@ -1,73 +1,55 @@
 # MengAI
 
-MengAI is an AI agent orchestration product where the agents are living
-cats. Give the crew a goal; the lead cat plans the work, engineers,
-designers, reviewers, QA, security and research cats build it, hand tasks
-to each other, review each other, and report back. You watch every step
-live, and the whole thing runs on your own model keys.
+> Required Notice: Built by Adefebrian (https://adefebrian.com). Source available under the PolyForm Noncommercial License 1.0.0. Commercial use needs written permission: adefebrianpro@gmail.com
 
-It ships as a public website, a web app you can self-host, and a native
-macOS app, all from one codebase.
+MengAI is an autonomous AI agent company where every agent is a living cat.
+Give the crew a goal: Oyen, the ginger CEO cat, plans the work, hires the
+roles it needs, holds meetings, approves requests and ships. Every cat has
+its own desk, walks the office, reviews the others and learns from every
+run. You watch every step live, see what is in each cat's head, and follow
+the work on a delivery style tracker from goal to shipped.
 
-Built by Adefebrian. Open source under the Apache License 2.0 (see
-`LICENSE` and `NOTICE`).
+Everything runs on your own Mac with your own model keys. The website is
+only the interface: it has no accounts and stores nothing.
+
+**Download the beta for Mac:** https://github.com/Adefebrian/MengAI/releases/tag/v0.1.0-beta
 
 ## What it does
 
-- Multi-agent orchestration: a task graph with dependencies, handoffs,
-  review rounds, budgets, pause, resume, stop, and a kill switch.
-- Bring your own keys: OpenAI, Anthropic, DeepSeek, Xiaomi MiMo, Gemini,
-  OpenRouter, Groq, Mistral, xAI, Moonshot, Z.ai, Qwen, MiniMax, Together,
-  Fireworks, Ollama, LM Studio, AgentRouter, or any OpenAI or Anthropic
-  compatible endpoint. Keys live in the macOS keychain (app) or an
-  encrypted vault (server) and are never returned, logged or sent to a
-  model.
-- Token efficiency: stable-first prompt layout for vendor prompt caching,
-  role-scoped tool sets, per-call budgets, rolling summaries, tool output
-  truncation, and a built-in benchmark against the legacy behaviour.
-- Self-learning memory: lessons scored by outcome, promoted across
-  projects, and reusable skills.
-- JEV decision layer for routing, model tier, loop exit and severity
-  calls, with a deterministic fallback stamped `UNVERIFIED BY JEV`.
-- Asset generation (images and video) through your configured providers.
-- Defensive security scanning of your own codebase: dependency audit,
-  credential leak detection, configuration review.
-- Local computer automation with per-capability permission, confirmation
-  for anything destructive or sensitive, a hash-chained audit log and an
-  always-visible kill switch (see `docs/automation-safety.md`).
+- A living office: desks, meetings, handoffs, reviews, hiring and letting
+  go, with scenario unique motion for each kind of work.
+- Company brain: loop engineering, autonomous prompt engineering judged by
+  JEV, dynamic roles, unlimited agents and sub agents, crew wide skills.
+- Bring your own key for any provider and any model: OpenAI, Anthropic,
+  DeepSeek, Xiaomi MiMo, Gemini, OpenRouter, Groq, Mistral, xAI, Moonshot,
+  Z.ai, Qwen, MiniMax, Together, Fireworks, Ollama, LM Studio, AgentRouter,
+  or any OpenAI or Anthropic compatible endpoint. Keys stay in your Mac's
+  keychain and are never returned, logged or put in a prompt.
+- Two company kinds: a software studio and a hedge fund.
+- Connectors: MCP servers (local and remote) and HTTP APIs with OpenAPI.
+- Trading with safety: connect an exchange or broker, the crew learns how to
+  use it and every cat uses what it learned. Paper by default; live orders
+  run automatically only inside the owner's hard limits.
+- Live preview and Open folder for everything the crew builds.
+- Token efficiency: stable first prompt layout for prompt caching, role
+  scoped tools, budgets and rolling summaries.
 
-## Repository layout
+## How it runs
 
-```
-apps/api        Hono API on Bun (modular monolith, one module per domain)
-apps/web        React SPA built with Bun.build: landing at / and the app at /app
-apps/desktop    Tauri 2 shell for macOS; runs the API as a compiled sidecar
-packages/shared wire contract: enums, DTOs, events, routes, provider presets
-packages/ui     JAL Core design system and product components
-packages/cats   the cat character system (SVG rig, motion, reduced motion)
-packages/config env schema
-services/hands  native macOS helper for local automation (Rust, stdio JSON-RPC)
-migrations/     SQLite (app) and Postgres (server) schemas
-infra/          Dockerfile, docker-compose, deploy guide
-docs/           architecture, design, reports, ADRs
-```
+The crew engine is a Bun process on your own machine (127.0.0.1:4190): the
+Mac app starts it for you, or run it from this repository. The interface is
+the same in the app window and on the website. The engine accepts requests
+only from its own window and the allowed website origins; there is no login
+and no account anywhere.
 
-Architecture: `docs/architecture.md`.
+## Development
 
-## Quick start (development)
-
-Requirements: Bun 1.3.14 (`bun --version`). Rust stable only for the
-desktop shell and the native helper.
+Requirements: Bun 1.3.14. Rust stable for the desktop shell.
 
 ```bash
 bun install
-cp .env.example .env
 bun run dev
 ```
-
-`bun run dev` starts the API in local mode on 127.0.0.1 and serves the
-web app. Open the printed URL, add a provider key under Providers, pick a
-project folder, and start a run.
 
 Checks:
 
@@ -77,26 +59,24 @@ bunx turbo typecheck build
 bun run check:boundaries
 ```
 
-## Self-hosting the web app
+Layout: `apps/api` (Hono engine on Bun), `apps/web` (landing and app),
+`apps/desktop` (Tauri 2 shell for macOS), `packages/shared` (wire
+contract), `packages/ui` (JAL Core design system), `packages/cats` (the cat
+characters, office and tracker), `migrations/`, `docs/`. Architecture:
+`docs/architecture.md`.
 
-See `infra/deploy.md`. One container serves the API and the SPA; Postgres
-and Redis run beside it. Server mode uses a single owner account created
-on first launch with a setup code from the environment.
+## License and credit
 
-## macOS app
+- Code: [PolyForm Noncommercial License 1.0.0](LICENSE) with required
+  notices. Personal and other noncommercial use, study and changes are
+  allowed; every copy and every work based on MengAI must keep the visible
+  credit **Built by Adefebrian (https://adefebrian.com)** and these terms.
+- Commercial use of any kind needs written permission first:
+  adefebrianpro@gmail.com.
+- The MengAI name, logo, app icons, Oyen and the cat characters are
+  reserved brand assets: see [BRAND.md](BRAND.md).
+- Rules for AI assistants and coding agents: see [AI-POLICY.md](AI-POLICY.md).
+- Not licensed as AI training or fine-tuning data.
 
-See `apps/desktop/README.md` for building, signing and notarizing.
-
-## Security model
-
-- Every API request is validated; strict security headers, an origin
-  allowlist, CSRF checks, rate limits and body caps are on by default.
-- Agent shell commands run in a jailed sandbox scoped to the project
-  workspace with a scrubbed environment and hard timeouts.
-- Secrets are redacted from logs, events, database rows and prompts.
-- Report a vulnerability privately to the maintainer before disclosure.
-
-## Credits
-
-Built by Adefebrian. MengAI began as a rewrite of the catcomp
-("Briworkers") project; see `NOTICE` for attribution.
+MengAI began as a rewrite of the catcomp ("Briworkers") project; see
+[NOTICE](NOTICE) for attribution.
