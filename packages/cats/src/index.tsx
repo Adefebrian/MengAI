@@ -9,6 +9,7 @@ import "./cats.css";
 
 export * from "./contract";
 export * from "./office-contract";
+export * from "./tracker-contract";
 export { Cat } from "./cat";
 export { CatCard } from "./card";
 export { Office, type OfficeClock } from "./office/office";
