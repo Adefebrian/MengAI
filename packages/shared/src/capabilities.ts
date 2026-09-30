@@ -144,15 +144,15 @@ export interface TradingVenuePreset {
   connector: ConnectorKind;
   /** mcp_stdio: the command template; http: the base URL template */
   target: string;
-  /** field names the wizard asks for; values go to the vault, never returned */
-  secrets: Array<{ key: string; label: string }>;
+  /** fields the wizard asks for; values go to the vault, never returned. secret false means a plain setting (shown as text) */
+  secrets: Array<{ key: string; label: string; secret?: boolean }>;
   supportsPaper: boolean;
   supportsTestnet: boolean;
   docsUrl: string;
 }
 
 export const TRADING_VENUE_PRESETS: TradingVenuePreset[] = [
-  { id: "ccxt-mcp", label: "CCXT MCP (crypto exchanges)", kind: "crypto", connector: "mcp_stdio", target: "npx -y ccxt-mcp", secrets: [{ key: "CCXT_MCP_EXCHANGE", label: "Exchange id, e.g. binance" }, { key: "CCXT_MCP_APIKEY", label: "API key" }, { key: "CCXT_MCP_SECRET", label: "API secret" }], supportsPaper: true, supportsTestnet: true, docsUrl: "https://github.com/ccxt/ccxt/tree/master/mcp" },
+  { id: "ccxt-mcp", label: "CCXT MCP (crypto exchanges)", kind: "crypto", connector: "mcp_stdio", target: "npx -y ccxt-mcp", secrets: [{ key: "CCXT_MCP_EXCHANGE", label: "Exchange id, e.g. binance", secret: false }, { key: "CCXT_MCP_APIKEY", label: "API key" }, { key: "CCXT_MCP_SECRET", label: "API secret" }], supportsPaper: true, supportsTestnet: true, docsUrl: "https://github.com/ccxt/ccxt/tree/master/mcp" },
   { id: "alpaca-mcp", label: "Alpaca (stocks and crypto broker)", kind: "broker", connector: "mcp_stdio", target: "uvx alpaca-mcp-server", secrets: [{ key: "ALPACA_API_KEY", label: "API key" }, { key: "ALPACA_SECRET_KEY", label: "Secret key" }], supportsPaper: true, supportsTestnet: false, docsUrl: "https://github.com/alpacahq/alpaca-mcp-server" },
   { id: "custom-mcp", label: "Custom MCP server", kind: "custom", connector: "mcp_stdio", target: "", secrets: [{ key: "API_KEY", label: "API key" }], supportsPaper: true, supportsTestnet: true, docsUrl: "https://modelcontextprotocol.io" },
   { id: "custom-http", label: "Custom REST API (OpenAPI)", kind: "custom", connector: "http_api", target: "https://", secrets: [{ key: "Authorization", label: "Auth header value" }], supportsPaper: true, supportsTestnet: true, docsUrl: "https://spec.openapis.org/oas/latest.html" },

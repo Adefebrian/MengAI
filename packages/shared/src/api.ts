@@ -18,6 +18,7 @@ import type {
   LlmCallDTO,
   ModelRouting,
   PermissionDTO,
+  PreviewDTO,
   ProjectDTO,
   ProviderDTO,
   ProviderModel,
@@ -201,6 +202,11 @@ export interface Routes {
   "DELETE /api/projects/:id": [never, { ok: true }];
   "GET /api/projects/:id/files": [never, FileNodeDTO[]];
   "GET /api/projects/:id/file": [never, FileContent];
+  // live preview and open folder (local engine only)
+  "GET /api/projects/:id/preview": [never, PreviewDTO];
+  "POST /api/projects/:id/preview": [{ restart?: boolean }, PreviewDTO];
+  "DELETE /api/projects/:id/preview": [never, PreviewDTO];
+  "POST /api/projects/:id/reveal": [never, { ok: true }];
 
   "GET /api/runs": [never, RunDTO[]];
   "POST /api/runs": [CreateRunBody, RunDTO];
@@ -265,7 +271,6 @@ export interface Routes {
   "DELETE /api/trading/venues/:id": [never, { ok: true }];
   "POST /api/trading/venues/:id/learn": [never, import("./capabilities").TradingVenueDTO];
   /** local runtime pairing from a hosted website: exchanges a pairing token for a bearer session and registers the calling origin */
-  "POST /api/auth/pair": [{ token: string }, { sessionToken: string; origin: string }];
   "GET /api/trading/settings": [never, import("./capabilities").TradingSettings];
   "PUT /api/trading/settings": [import("./capabilities").TradingSettings, import("./capabilities").TradingSettings];
   "GET /api/trading/orders": [never, import("./capabilities").OrderDTO[]];

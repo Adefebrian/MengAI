@@ -60,6 +60,30 @@ export interface ProjectDTO {
   lastRunId: string | null;
 }
 
+/**
+ * Live preview of what the crew built: the local engine runs the project's
+ * own dev script (package.json dev, start or preview) or serves a static
+ * index.html on a free 127.0.0.1 port. Local engine only; the child gets a
+ * minimal env (no provider keys, no MENGAI_* variables).
+ */
+export const PREVIEW_STATUSES = ["idle", "installing", "starting", "ready", "stopped", "failed"] as const;
+export type PreviewStatus = (typeof PREVIEW_STATUSES)[number];
+
+export interface PreviewDTO {
+  projectId: string;
+  status: PreviewStatus;
+  /** http://127.0.0.1:<port>/ once ready, else null */
+  url: string | null;
+  /** how it runs, for the toolbar: "bun run dev", "static index.html" */
+  command: string | null;
+  kind: "script" | "static" | null;
+  /** last lines of the dev server output (redacted, at most 40) */
+  logTail: string[];
+  /** plain reason when status is failed, or why a project has nothing to preview */
+  error: string | null;
+  startedAt: number | null;
+}
+
 export interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
