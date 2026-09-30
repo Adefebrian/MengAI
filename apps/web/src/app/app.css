@@ -3150,11 +3150,14 @@ button.app-switch:disabled .app-switch-track {
 }
 
 /* ======================================================= RUN TRACKER */
-/* Pinned at the top of the run page scroller like a delivery tracker. The
-   band is a direct child of the scroller (main), full width on the page
-   ground with one hairline under it, so content that scrolls under it
-   meets a hard edge, never a shadow or a fade. The tracker inside keeps
-   the page's 1280 cap and inline padding, on the page's content line. */
+/* Pinned at the top of the run page scroller like a delivery tracker (JEV
+   ui.region_gate band_pin pinned_everywhere 0.65). The band is a direct
+   child of the scroller (main), full width on the page ground with one
+   hairline under it, so content that scrolls under it meets a hard edge,
+   never a shadow or a fade. The DeliveryTracker inside (@mengai/cats, its
+   own tracker.css) keeps the page's 1280 cap and content line; below 640
+   its route strip runs edge to edge (JEV phone_stops full_bleed_strip
+   0.88) and only its driver lines sit on the content line. */
 .run-tracker-band {
   position: sticky;
   top: 0;
@@ -3163,199 +3166,20 @@ button.app-switch:disabled .app-switch-track {
   border-bottom: 1px solid var(--color-border);
 }
 .app-region.run-tracker {
+  --tracker-inline: var(--app-pad-inline);
+  display: block;
   box-sizing: border-box;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "stage togo"
-    "track track"
-    "now now";
-  column-gap: var(--space-16px);
-  row-gap: var(--space-8px);
   inline-size: 100%;
   max-inline-size: 1280px;
   margin-inline: auto;
-  padding: var(--space-12px) var(--app-pad-inline);
+  padding: var(--space-8px) 0 var(--space-12px);
   border-top: 0;
 }
-@media (min-width: 1024px) {
-  .app-region.run-tracker {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "stage now togo"
-      "track track track";
-    column-gap: var(--space-24px);
-  }
-}
-.tracker-stage {
-  grid-area: stage;
-  display: flex;
-  align-items: center;
-  gap: var(--space-8px);
-  min-width: 0;
-  margin: 0;
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-  font-weight: var(--weight-semibold);
-  color: var(--color-ink);
-}
-.tracker-stage-icon {
-  display: inline-flex;
-  flex: none;
-  color: var(--_tone, var(--color-ink));
-}
-.tracker-stage-word {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.tracker-step {
-  flex: none;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  font-weight: var(--weight-regular);
-  color: var(--color-ink-muted);
-  white-space: nowrap;
-}
-.tracker-togo {
-  grid-area: togo;
-  margin: 0;
-  font-size: var(--text-n1);
-  line-height: var(--line-0);
-  color: var(--color-ink-muted);
-  white-space: nowrap;
-  text-align: end;
-}
-.tracker-togo .num {
-  color: var(--color-ink);
-}
-.tracker-about {
-  display: none;
-}
 @media (min-width: 640px) {
-  .tracker-about {
-    display: inline;
+  .app-region.run-tracker {
+    --tracker-inline: 0;
+    padding: var(--space-12px) var(--app-pad-inline);
   }
-}
-.tracker-now {
-  grid-area: now;
-  min-width: 0;
-  margin: 0;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-@media (min-width: 1024px) {
-  .tracker-now {
-    align-self: center;
-  }
-}
-.tracker-track {
-  grid-area: track;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: var(--space-4px);
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.tracker-item {
-  position: relative;
-  display: grid;
-  align-content: start;
-  gap: var(--space-6px);
-  min-width: 0;
-}
-.tracker-seg {
-  display: block;
-  inline-size: 100%;
-  block-size: var(--space-4px);
-  overflow: hidden;
-  background: var(--color-layer-2);
-  border-radius: var(--radius-pill);
-}
-.tracker-fill {
-  display: block;
-  inline-size: 100%;
-  block-size: 100%;
-  background: var(--_track-fill, var(--color-ink));
-  transform-origin: 0 50%;
-  transform: scaleX(0);
-}
-.tracker-item[data-state="done"] .tracker-fill {
-  transform: scaleX(1);
-}
-/* Where the run is: the indeterminate fill (Progress spec), static at 38%
-   until motion is allowed. */
-.tracker-item[data-state="active"] .tracker-fill {
-  transform: scaleX(1);
-  opacity: 0.38;
-}
-.run-tracker[data-outcome="failed"] .tracker-item[data-state="active"] {
-  --_track-fill: var(--color-danger);
-}
-.run-tracker[data-outcome="failed"] .tracker-item[data-state="active"] .tracker-fill {
-  opacity: 1;
-}
-/* The stage that sent the work back keeps a warning segment until the run passes it again. */
-.tracker-item[data-state="returned"] .tracker-seg {
-  background: color-mix(in oklab, var(--color-warning) 36%, var(--color-layer-2));
-}
-.tracker-label {
-  display: none;
-}
-@media (min-width: 768px) {
-  .tracker-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4px);
-    min-width: 0;
-    font-size: var(--text-n1);
-    line-height: var(--line-n1);
-    color: var(--color-ink-muted);
-  }
-}
-.tracker-label-icon {
-  display: inline-flex;
-  flex: none;
-}
-.tracker-label-text {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.tracker-item[data-state="active"] .tracker-label {
-  color: var(--color-ink);
-  font-weight: var(--weight-semibold);
-}
-.tracker-item[data-state="done"] .tracker-label-icon {
-  color: var(--color-ink);
-}
-.tracker-item[data-state="returned"] .tracker-label {
-  color: var(--color-warning);
-}
-@keyframes tracker-run {
-  0% {
-    transform: translateX(0) scaleX(0);
-  }
-  50% {
-    transform: translateX(0) scaleX(1);
-  }
-  100% {
-    transform: translateX(100%) scaleX(0);
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .app-root:not([data-motion="off"]) .run-tracker[data-outcome="running"] .tracker-item[data-state="active"] .tracker-fill {
-    opacity: 1;
-    animation: tracker-run calc(2 * var(--loop-pulse)) var(--ease-standard) infinite;
-  }
-}
-[dir="rtl"] .tracker-fill {
-  transform-origin: 100% 50%;
 }
 
 /* ============================================================ CREW ROWS */

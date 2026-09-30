@@ -54,7 +54,7 @@ export function WorkbenchSection() {
           </div>
         }
         title="What Oyen decided"
-        body="Each request, and who answered it."
+        body="Each request a cat sent, and who answered it."
       />
       <BentoTile
         area="d"

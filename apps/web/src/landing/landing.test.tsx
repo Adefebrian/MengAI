@@ -11,9 +11,11 @@ import { PROVIDER_PRESETS } from "@mengai/shared";
 import { LOGOS_LABEL, PROVIDER_MARKS } from "./sections/Logos";
 import { TOKEN_STATS } from "./sections/Tokens";
 import { SHIPPED_CREW } from "./views/shipped";
+import { SYNC_SEATS } from "./views/workbench";
+import { CLOSE_TITLE } from "./sections/Close";
 import { BUDGET } from "./views/security";
 import { STORY_GOAL } from "./story/script";
-import { LIFE_TITLE, STATE_WORD } from "./sections/Lifecycle";
+import { LIFE_TITLE } from "./sections/Lifecycle";
 import { QUESTIONS } from "./sections/Questions";
 import { SAFEGUARDS } from "./sections/Security";
 import { FOOTER_LINKS } from "./sections/SiteFooter";
@@ -45,8 +47,8 @@ const key = (e: Parameters<typeof toLedgerEntry>[0]) => {
 
 const links = (href: string) => Array.from(host.querySelectorAll<HTMLAnchorElement>("a")).filter((a) => a.getAttribute("href") === href);
 const life = () => host.querySelector<HTMLElement>("#company")!;
-const status = () => life().querySelector(".lp-track-status")?.textContent;
-const cells = () => Array.from(life().querySelectorAll<HTMLElement>(".lp-cell"));
+const status = () => life().querySelector(".lp-track .tracker-now")?.textContent;
+const cells = () => Array.from(life().querySelectorAll<HTMLElement>(".lp-track .tracker-item"));
 
 async function click(el: HTMLElement) {
   await act(async () => {
@@ -73,6 +75,7 @@ describe("landing", () => {
     const text = host.textContent ?? "";
     expect(text).not.toContain("gpt-4o-mini");
     expect(text.toLowerCase()).not.toContain("by default");
+    expect(text.toLowerCase()).not.toContain("default model");
   });
 
   test("the paw logo and the wordmark sit in the header and the footer", () => {
@@ -119,28 +122,30 @@ describe("landing", () => {
     expect(CHAT_PROVIDERS.length).toBeGreaterThanOrEqual(NAMED_PROVIDERS.length);
   });
 
-  test("the lifecycle opens with Oyen alone, the tracker on its first stage and the full floor", () => {
+  test("the lifecycle opens with Oyen alone, the delivery tracker on its first stop and the full floor", () => {
     expect(life().querySelector("h2")?.textContent).toBe(LIFE_TITLE);
     const office = life().querySelector('.office[data-variant="full"]');
     expect(office).not.toBeNull();
+    expect(life().querySelector(".lp-track .tracker")).not.toBeNull();
+    expect(life().querySelector(".lp-track .tracker-avatar .cat")?.getAttribute("aria-label")).toContain("Oyen");
     expect(status()).toBe(STUDIO.steps[0]!.caption);
-    expect(cells().map((c) => c.querySelector(".lp-cell-label")?.textContent)).toEqual(STUDIO.stages.map((s) => s.label));
-    expect(cells().map((c) => c.dataset.state)).toEqual(["now", "next", "next", "next", "next", "next", "next"]);
-    expect(life().querySelectorAll('.lp-cell[aria-current="step"]').length).toBe(1);
+    expect(cells().map((c) => c.querySelector(".tracker-label")?.textContent)).toEqual(STUDIO.stages.map((s) => s.label));
+    expect(cells().map((c) => c.dataset.state)).toEqual(["active", "todo", "todo", "todo", "todo", "todo", "todo"]);
+    expect(life().querySelectorAll('.tracker-item[aria-current="step"]').length).toBe(1);
     expect(life().querySelector(".lp-head h3")?.textContent).toBe("What is in Cemong's head");
     expect(life().querySelectorAll(".lp-scene").length).toBe(STUDIO.steps.length);
   });
 
-  test("a scene plays at a tap: the review bounce sends the tracker back to Working", async () => {
+  test("a scene plays at a tap: the review bounce turns the courier back to Working", async () => {
     const bounce = STUDIO.steps.findIndex((s) => s.id === "bounce");
     const button = life().querySelectorAll<HTMLButtonElement>(".lp-scene")[bounce]!;
     await click(button);
     expect(button.getAttribute("aria-current")).toBe("step");
     expect(status()).toBe(STUDIO.steps[bounce]!.caption);
     const states = cells().map((c) => c.dataset.state);
-    expect(states[3]).toBe("now");
-    expect(states[4]).toBe("back");
-    expect(cells()[4]!.querySelector(".lp-cell-state")?.textContent).toBe(STATE_WORD.back);
+    expect(states[3]).toBe("active");
+    expect(states[4]).toBe("returned");
+    expect(life().querySelector(".lp-track .tracker-round")?.textContent).toBe("Round 2");
     const fresh = Array.from(life().querySelectorAll(".lp-head-row[data-fresh] .lp-head-key span:first-child")).map((e) => e.textContent);
     expect(fresh).toEqual(["Strategy", "Memory", "Trust"]);
     expect(life().querySelector(".lp-head")?.textContent).toContain("Adopted after an offline eval");
@@ -148,11 +153,12 @@ describe("landing", () => {
     expect(life().querySelector(".lp-track .jal-icon-btn")?.getAttribute("aria-label")).toBe("Pause the story");
   });
 
-  test("the shipped scene reads every stage done", async () => {
+  test("the shipped scene reads every stop done, the courier at the last stop", async () => {
     const buttons = life().querySelectorAll<HTMLButtonElement>(".lp-scene");
     await click(buttons[buttons.length - 1]!);
     expect(cells().every((c) => c.dataset.state === "done")).toBe(true);
-    expect(life().querySelectorAll('.lp-cell[aria-current="step"]').length).toBe(0);
+    expect(life().querySelector(".lp-track .tracker")?.hasAttribute("data-done")).toBe(true);
+    expect(cells().at(-1)!.getAttribute("aria-current")).toBe("step");
   });
 
   test("the switch turns the company into a hedge fund", async () => {
@@ -162,7 +168,7 @@ describe("landing", () => {
     await click(kinds[1]!);
     expect(kinds[1]!.getAttribute("aria-pressed")).toBe("true");
     expect(kinds[0]!.getAttribute("aria-pressed")).toBe("false");
-    expect(cells().map((c) => c.querySelector(".lp-cell-label")?.textContent)).toEqual(FUND.stages.map((s) => s.label));
+    expect(cells().map((c) => c.querySelector(".tracker-label")?.textContent)).toEqual(FUND.stages.map((s) => s.label));
     expect(status()).toBe(FUND.steps[0]!.caption);
     expect(life().querySelector(".lp-head h3")?.textContent).toBe("What is in Jahe's head");
     expect(life().querySelector(".office")?.getAttribute("data-variant")).toBe("full");
@@ -231,11 +237,51 @@ describe("landing", () => {
     expect(BUDGET).toEqual({ used: 182_400, total: 400_000 });
   });
 
-  test("the close carries the crew that shipped the goal", () => {
-    const close = host.querySelector("#get");
-    expect(close?.querySelector(".lp-shipped")?.textContent).toContain("Shipped");
-    expect(close?.querySelectorAll(".lp-crew .cat").length).toBe(SHIPPED_CREW.length);
+  test("the close is centered: text, then both actions, then the crew strip", () => {
+    const close = host.querySelector<HTMLElement>("#get")!;
+    expect(close.dataset.kitComposition).toBe("custom");
+    expect(close.dataset.variant).toBe("close");
+    expect(close.querySelector("h2")?.textContent).toBe(CLOSE_TITLE);
+    const parts = Array.from(close.querySelectorAll(".lp-close-text, .lp-close-actions, .lp-shipped"));
+    expect(parts.map((p) => p.className.split(" ").find((c) => c.startsWith("lp-")))).toEqual(["lp-close-text", "lp-close-actions", "lp-shipped"]);
+    expect(Array.from(close.querySelectorAll(".lp-close-actions a")).map((a) => a.textContent)).toEqual(["Open the app", "Download for Mac"]);
+    expect(close.querySelector(".lp-shipped")?.textContent).toContain("Shipped");
+    expect(close.querySelector(".lp-shipped")?.textContent).toContain("Sample, the studio story above");
+    expect(close.querySelectorAll(".lp-crew .cat").length).toBe(SHIPPED_CREW.length);
     expect(SHIPPED_CREW[0]).toBe("oyen");
+  });
+
+  test("the footer carries the brand, six product links and the legal line", () => {
+    const footer = host.querySelector(".kit-footer")!;
+    const labels = Array.from(footer.querySelectorAll(".kit-footer-links a")).map((a) => a.textContent);
+    expect(labels).toEqual(FOOTER_LINKS.map((l) => l.label));
+    expect(labels.length).toBe(6);
+    expect(footer.querySelector(".kit-footer-legal")?.textContent).toContain("Apache-2.0");
+  });
+
+  test("the minutes seat eight cats, each named, from the shared roster", () => {
+    const seats = host.querySelector('#workbench [aria-label="At the sync"]')!;
+    expect(Array.from(seats.children).filter((c) => c.tagName === "LI").length).toBe(8);
+    expect(seats.querySelectorAll(".cat").length).toBe(8);
+    expect(Array.from(seats.querySelectorAll(".lp-seat-name")).map((n) => n.textContent)).toEqual(SYNC_SEATS.map((c) => c.name));
+  });
+
+  test("the scene list keeps its heading inside its own block, in two columns", () => {
+    const scenes = life().querySelector<HTMLElement>(".lp-scenes")!;
+    expect(scenes.querySelector(".lp-scenes-head h3")?.textContent).toBe("Jump to a scene");
+    const list = scenes.querySelector<HTMLElement>(".lp-scene-list")!;
+    expect(list.style.getPropertyValue("--lp-scene-rows")).toBe(String(Math.ceil(STUDIO.steps.length / 2)));
+  });
+
+  test("the head card speaks in plain words: no scores, no internal ids", async () => {
+    for (const company of [STUDIO, FUND]) {
+      for (const step of company.steps) {
+        for (const row of Object.values(step.head ?? {})) {
+          if (typeof row === "string") continue;
+          expect(`${row?.value} ${row?.evidence}`).not.toMatch(/\b[01]\.\d{2}\b|mem\.|JEV/);
+        }
+      }
+    }
   });
 
   test("every control has a name", () => {

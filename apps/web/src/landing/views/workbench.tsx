@@ -4,6 +4,8 @@
 // once under reduced motion); the timeline fills in step with it. Beside
 // them, Oyen's decision log and the minutes of the last sync. Sample data.
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { Cat, rosterCrew } from "@mengai/cats";
+import { ROLE_LABEL } from "@mengai/shared";
 import { usePrefersReducedMotion } from "@mengai/ui";
 import { AskIcon, CheckIcon } from "../icons";
 import { CrewCat, crew } from "./crew";
@@ -201,15 +203,30 @@ export function DecisionsView() {
   );
 }
 
+/**
+ * The eight cats at the sync (round C: the owner asked for eight, two rows
+ * of four, a name under each), from the shared crew roster so every cat
+ * wears the coat it wears everywhere else. From 640 the seat grid stretches
+ * to the minutes list beside it, so the two blocks end on one line.
+ */
+export const SYNC_SEATS = rosterCrew(["Oyen", "Cemong", "Klepon", "Tempe", "Onde", "Cilok", "Bakwan", "Serabi"]);
+
 export function MinutesView() {
-  const seats = ["oyen", "cemong", "klepon", "onde"];
   return (
     <div className="lp-minutes">
       <ul className="lp-seats" aria-label="At the sync">
-        {seats.map((id) => (
-          <li key={id}>
-            <CrewCat id={id} activity="think" />
-            <span className="lp-view-muted">{crew(id).name}</span>
+        {SYNC_SEATS.map((c) => (
+          <li key={c.id}>
+            <Cat
+              look={{ coat: c.coat, seed: c.seed }}
+              role={c.role}
+              status="working"
+              activity={c.role === "lead" ? "plan" : "think"}
+              mood="focused"
+              label={`${c.name}, ${c.role === "lead" ? "CEO" : ROLE_LABEL[c.role]}`}
+              size={48}
+            />
+            <span className="lp-view-muted lp-seat-name">{c.name}</span>
           </li>
         ))}
       </ul>

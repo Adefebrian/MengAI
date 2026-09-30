@@ -21,7 +21,7 @@
 // is doing, and what changed in the focus cat's head. Pure data plus pure
 // functions: lifeAt(company, i) folds the steps up to i into the props of
 // the Office, the tracker cells and the head card.
-import type { OfficeAgent, OfficeBeat, OfficeMeeting } from "@mengai/cats";
+import type { OfficeAgent, OfficeBeat, OfficeMeeting, TrackerStage } from "@mengai/cats";
 import type { Activity, AgentRole, AgentStatus, Coat, Mood } from "@mengai/shared";
 import type { PlanCard, PlanStatus, ScriptBeat } from "./script";
 
@@ -304,7 +304,7 @@ export const STUDIO: Company = {
           evidence: "Adopted after an offline eval and a judge's check: it covers 3 of 3 recent failures, v3 covered 1.",
         },
         memory: { value: "Tempe wants an error on every field.", evidence: "Written after round 1 of the review." },
-        trust: { value: "Tempe trusts Cemong at 0.33.", evidence: "0 of 1 reviews passed so far." },
+        trust: { value: "Tempe still checks Cemong's work closely.", evidence: "0 of 1 reviews passed so far." },
       },
     },
     {
@@ -373,7 +373,7 @@ export const STUDIO: Company = {
       beats: [{ kind: "review", reviewerId: "tempe", ownerId: "cemong", passed: true, taskTitle: "Build the signup form" }],
       head: {
         memory: { value: "Tempe checks the empty email first.", evidence: "Written after round 2 passed." },
-        trust: { value: "Tempe trusts Cemong at 0.50.", evidence: "1 of 2 reviews passed." },
+        trust: { value: "Tempe trusts Cemong more after round 2.", evidence: "1 of 2 reviews passed." },
       },
     },
     {
@@ -555,7 +555,7 @@ export const FUND: Company = {
           evidence: "Adopted after an offline eval and a judge's check: it covers 2 of 2 risk bounces, v1 covered 0.",
         },
         memory: { value: "Duku caps drawdown at 15%.", evidence: "Written after round 1 of the risk review." },
-        trust: { value: "Duku trusts Jahe at 0.33.", evidence: "0 of 1 reviews passed so far." },
+        trust: { value: "Duku still checks Jahe's work closely.", evidence: "0 of 1 reviews passed so far." },
       },
     },
     {
@@ -634,7 +634,7 @@ export const FUND: Company = {
       beats: [{ kind: "review", reviewerId: "duku", ownerId: "jahe", passed: true, taskTitle: "Backtest the signal" }],
       head: {
         memory: { value: "Round two passed at a 12% drawdown.", evidence: "Written after the risk review passed." },
-        trust: { value: "Duku trusts Jahe at 0.50.", evidence: "1 of 2 reviews passed." },
+        trust: { value: "Duku trusts Jahe more after round 2.", evidence: "1 of 2 reviews passed." },
       },
     },
     {
@@ -792,4 +792,52 @@ export function stageWords(company: Company, step: LifeStep): string {
   const n = company.stages.length;
   if (step.complete) return `${n} of ${n}: ${company.stages[n - 1]!.label}`;
   return `${step.stage + 1} of ${n}: ${company.stages[step.stage]!.label}`;
+}
+
+/**
+ * The DeliveryTracker's stop id for a lifecycle stage: the tracker draws a
+ * pictogram per known stage id (a door for Team hired, a shield for the
+ * risk review), so the few stages this page names differently map to it.
+ */
+export const TRACKER_STOP_ID: Readonly<Record<string, string>> = {
+  plan: "planned",
+  risk: "risk_review",
+  paper: "paper_trade",
+  live: "live_trade",
+};
+
+export interface TrackerState {
+  stages: TrackerStage[];
+  current: number;
+  looping: boolean;
+  loops: number;
+  done: boolean;
+  status: string;
+}
+
+/**
+ * The on-demand tracker at step `index`: the stop the story is at, whether
+ * a review has sent it back (and how many times so far), and the status
+ * line. A stop the story has reached carries the caption of its latest
+ * scene as its detail, so a tap on it retells what happened there; a stop
+ * not reached yet has none, so the tracker says it is still ahead.
+ */
+export function trackerAt(company: Company, index: number): TrackerState {
+  const last = Math.max(0, Math.min(index, company.steps.length - 1));
+  const step = company.steps[last]!;
+  const detail: (string | null)[] = company.stages.map(() => null);
+  let loops = 0;
+  for (let i = 0; i <= last; i++) {
+    const s = company.steps[i]!;
+    detail[s.stage] = s.caption;
+    if (s.back !== undefined && company.steps[i - 1]?.back === undefined) loops += 1;
+  }
+  return {
+    stages: company.stages.map((st, i) => ({ id: TRACKER_STOP_ID[st.id] ?? st.id, label: st.label, detail: detail[i] })),
+    current: step.complete ? company.stages.length - 1 : step.stage,
+    looping: step.back !== undefined,
+    loops,
+    done: step.complete === true,
+    status: step.caption,
+  };
 }

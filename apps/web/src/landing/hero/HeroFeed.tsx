@@ -4,7 +4,9 @@
 // an.R21_flip_feed 0.67). A CEO approval, a meeting, tokens saved: when the
 // frame settles the three latest notices of the morning arrive one after
 // another, newest on top, and the story adds more as it plays. The others
-// make room by a FLIP transform (Framer Motion layout); nothing animates
+// make room by a FLIP transform (Framer Motion layout); a new notice fades
+// into its own slot (round C: the 12 px drop from above left the list's
+// box mid-entrance, ui_audit overflow-parent at 320); nothing animates
 // height or margin. Under reduced motion the notices are simply there.
 //
 // How many show depends on the room the frame gives the feed: a column of
@@ -86,8 +88,8 @@ export function HeroFeed({ feed, count, reduced, ready = true }: { feed: FeedNot
             layout={reduced ? false : "position"}
             className="lp-note"
             data-tone={n.tone}
-            initial={reduced ? false : { opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0, transition: reduced ? INSTANT : IN }}
+            initial={reduced ? false : { opacity: 0 }}
+            animate={{ opacity: 1, transition: reduced ? INSTANT : IN }}
             exit={{ opacity: 0, transition: reduced ? INSTANT : OUT }}
             transition={{ layout: reduced ? INSTANT : IN }}
           >

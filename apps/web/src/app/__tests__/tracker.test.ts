@@ -1,7 +1,8 @@
 // The run tracker, the crew that leaves, the trading desk and the version
 // diff, as data: the tracker follows run.stage (studio or fund stages), a
 // failed review loops back and marks the stage that sent it, a run from an
-// older server is placed from its tasks, the replay folds the same moves;
+// older server is placed from its tasks, the replay folds the same moves,
+// and the DeliveryTracker reads its stops, loop and estimate from them;
 // a cat that is let go leaves the crew and the office but keeps its name
 // for old events; orders and positions land from their events.
 import { describe, expect, test } from "bun:test";
@@ -10,7 +11,7 @@ import { DEMO_EVENTS, DEMO_WARM_SEQ } from "../../demo/fixture";
 import { crewOrder, departedOrder, emptyRunState, reduceRun, replay, stateFromSnapshot, type RunState } from "../../store/runStore";
 import { diffCounts, wordDiff } from "../run/diff";
 import { officeAgents } from "../run/office";
-import { activeLabel, derivedIndex, tokensToGo, trackerLine, trackerModel } from "../run/stages";
+import { activeLabel, compactTokens, deliveryLooping, deliveryStages, derivedIndex, etaShort, tokensToGo, trackerLine, trackerModel } from "../run/stages";
 
 const LONG_DASH = String.fromCharCode(0x2014);
 let seq = 10_000;
@@ -96,6 +97,49 @@ describe("the run tracker", () => {
     const capped = tokensToGo({ ...run, status: "running", budgetTokens: 50_000, progress: 0.2, usage: { ...run.usage, inputTokens: 40_000, outputTokens: 0 } });
     expect(capped.value).toBe("10,000");
     expect(tokensToGo({ ...run, budgetTokens: 0 }).detail).toContain("no token cap");
+  });
+});
+
+describe("the DeliveryTracker props", () => {
+  const backAt = DEMO_EVENTS.findIndex((e) => e.type === "run.stage" && (e as MengaiEvent<"run.stage">).data.previous === "review");
+
+  test("every stop reads the real reason of the latest move into it; stops not reached have none", () => {
+    const m = trackerModel(warm);
+    const stops = deliveryStages(warm, m);
+    expect(stops.map((x) => x.id)).toEqual(["goal", "planned", "hired", "working", "review", "testing", "shipped"]);
+    expect(stops[0]!.detail).toBe("The goal landed on Oyen's desk");
+    expect(stops[1]!.detail).toBe("Oyen planned 5 tasks");
+    expect(stops[2]!.detail).toBe("Gembul and Klepon joined the crew");
+    // back to working after the review, the latest reason wins
+    expect(stops[3]!.detail).toBe("The review asked for doubled quotes and quoted newlines");
+    expect(stops[4]!.detail).toBe("The fix went back to Tempe");
+    expect(stops[6]!.detail).toBeNull();
+    expect(stops.map((x) => x.label)).toEqual(m.stages.map((x) => x.label));
+    for (const x of stops) expect((x.detail ?? "").includes(LONG_DASH)).toBe(false);
+  });
+
+  test("the loop is open from the move back until the run reaches review again", () => {
+    const open = replay(DEMO_EVENTS.slice(0, backAt + 1), emptyRunState("demo"));
+    const mo = trackerModel(open);
+    expect(deliveryLooping(mo)).toBe(true);
+    expect(mo.index).toBe(3);
+    expect(mo.loops).toBe(1);
+    expect(deliveryLooping(trackerModel(warm))).toBe(false);
+    expect(trackerModel(warm).loops).toBe(1);
+    const paused = { ...open, run: { ...open.run!, status: "paused" } } as RunState;
+    expect(deliveryLooping(trackerModel(paused))).toBe(false);
+  });
+
+  test("the estimate is short enough for the driver line", () => {
+    const run = warm.run!;
+    expect(etaShort({ ...run, status: "running", progress: 0.5, usage: { ...run.usage, inputTokens: 40_000, outputTokens: 2_000 } })).toBe("42k tokens to go");
+    expect(etaShort({ ...run, status: "running", progress: 0 })).toBe("Estimating");
+    expect(etaShort({ ...run, status: "done", usage: { ...run.usage, inputTokens: 180_000, outputTokens: 4_400 } })).toBe("184k tokens used");
+    expect(compactTokens(950)).toBe("950");
+    expect(compactTokens(41_600)).toBe("42k");
+    expect(compactTokens(1_260_000)).toBe("1.3M");
+    expect(compactTokens(12_600_000)).toBe("13M");
+    expect(compactTokens(Number.NaN)).toBe("0");
   });
 });
 

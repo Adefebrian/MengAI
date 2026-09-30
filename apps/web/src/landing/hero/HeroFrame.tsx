@@ -37,6 +37,9 @@ import { useCamera } from "./useCamera";
 
 /** --ease-standard */
 const EASE = [0.24, 1, 0.4, 1] as const;
+// The frame fades in on its own box (round C: a 32 px rise carried it past
+// its wrapper mid-entrance, ui_audit overflow-parent at 320; the scroll
+// scrub on the wrapper stays the frame's one moving transform).
 
 export type FrameLayout = "rail" | "strip3" | "strip2" | "one";
 
@@ -91,8 +94,8 @@ export function HeroFrame() {
         className="lp-frame"
         data-layout={layout}
         aria-label="A sample run in the MengAI app"
-        initial={reduced ? false : { opacity: 0, y: 32 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={reduced ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
         transition={reduced ? { duration: 0 } : { duration: 0.6, ease: EASE, delay: 0.15 }}
       >
         <header className="lp-frame-head">

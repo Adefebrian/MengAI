@@ -2,8 +2,11 @@
 // (2.00, container rows 0.70); ui.component_recipe kit.faq.split (0.20,
 // low confidence, the top pick kept); tier 0. Eight short pairs as native
 // details rows, each answer true to docs/architecture.md and the org rules
-// in the API (a cat is let go after three failures in a row).
+// in the API (a cat is let go after three failures in a row). Round C: the
+// head stays beside the rows as they scroll by (landing.css), and the lead
+// ends on the one next step for a question that is not here.
 import { FAQ, type FAQItem } from "@mengai/ui";
+import { ISSUES_URL } from "../links";
 
 export const QUESTIONS: FAQItem[] = [
   {
@@ -41,5 +44,18 @@ export const QUESTIONS: FAQItem[] = [
 ];
 
 export function QuestionsSection() {
-  return <FAQ id="faq" tone="base" variant="split" title="Questions, answered plainly" lead="What people ask Oyen before their first run." items={QUESTIONS} />;
+  return (
+    <FAQ
+      id="faq"
+      tone="base"
+      variant="split"
+      title="Questions, answered plainly"
+      lead={
+        <>
+          What people ask Oyen before their first run. Something else? <a href={ISSUES_URL}>Ask on GitHub</a>.
+        </>
+      }
+      items={QUESTIONS}
+    />
+  );
 }

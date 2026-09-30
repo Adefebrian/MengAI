@@ -7,25 +7,29 @@
 //                    (0.57); tracker divided_section (low 0.17, the primary
 //                    kept, it matches no neighbour); office plain_spacing
 //                    (0.63, the Office draws its own floor plate); head
-//                    card card (0.97); scenes rows (0.48, the primary)
-//   ui.component_recipe  tracker core.stepper_cells (0.90) with the
-//                    cell-state crossfade layer (0.72); status line
-//                    core.static (0.70); switch md.segmented_button (an.R13
+//                    card card (0.97); scenes divided_section (round C:
+//                    the primary card at 0.31, low, matched the head card
+//                    beside it, so the runner-up at 0.30)
+//   ui.component_recipe  tracker: since round C the DeliveryTracker from
+//                    @mengai/cats (the brief's call; its own JEV log is in
+//                    packages/cats/src/tracker), replacing core.stepper_cells
+//                    (0.90); switch md.segmented_button (an.R13
 //                    at 0.18, low confidence, the runner-up is the JAL Core
 //                    spec); head card core.rows (0.99) with the an.R21 new
-//                    row layer (0.72); scenes core.list (0.83)
+//                    row layer (0.72); scenes core.list_two_col_fill (round C,
+//                    0.95)
 //   motion.intensity 2.01, tier 2; motion.choreography stagger_sequence
 //                    (0.91): the tracker, the floor and the panels enter
 //                    one after another
 //
-// Order inside the section: the tracker (status line over seven stage
-// cells, with the pause or replay control), the full Office floor, then
+// Order inside the section: the tracker (the courier route under a bar
+// with the pause or replay control), the full Office floor, then
 // what is in the focus cat's head beside the scene list. Switching the
 // company remounts the stage, so the new story starts from its first step.
-import { Cat, Office } from "@mengai/cats";
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Cat, DeliveryTracker, Office } from "@mengai/cats";
+import { useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Section, SectionHead, staggerStyle } from "@mengai/ui";
-import { ChartBarIcon, CheckCircleIcon, ClockCircleIcon, CodeIcon, PauseIcon, PlayIcon, RestartIcon, RingIcon, UndoIcon } from "../icons";
+import { ChartBarIcon, CodeIcon, PauseIcon, PlayIcon, RestartIcon } from "../icons";
 import {
   COMPANIES,
   COMPANY_KINDS,
@@ -36,8 +40,7 @@ import {
   lifeAt,
   lifeBeats,
   lifeLabel,
-  stageWords,
-  type CellState,
+  trackerAt,
   type Company,
   type CompanyKind,
   type LifeScene,
@@ -54,22 +57,6 @@ const KIND_ICON: Record<CompanyKind, ReactNode> = {
   studio: <CodeIcon size={20} color="currentColor" />,
   fund: <ChartBarIcon size={20} color="currentColor" />,
 };
-
-export const STATE_WORD: Record<CellState, string> = {
-  done: "Done",
-  now: "Now",
-  next: "Next",
-  back: "Sent back",
-};
-
-/** The state glyph carries the cell's name for assistive tech: below 768 the cell shows only the glyph. */
-function StateIcon({ state, label }: { state: CellState; label: string }) {
-  const name = `${label}: ${STATE_WORD[state]}`;
-  if (state === "done") return <CheckCircleIcon size={20} color="currentColor" label={name} />;
-  if (state === "now") return <ClockCircleIcon size={20} color="currentColor" label={name} />;
-  if (state === "back") return <UndoIcon size={20} color="currentColor" label={name} />;
-  return <RingIcon size={20} color="currentColor" label={name} />;
-}
 
 export function LifecycleSection() {
   const headId = useId();
@@ -150,10 +137,18 @@ function controlLabel(story: StoryPlayer): string {
   return story.playing ? "Pause the story" : "Play the story";
 }
 
-/** The on-demand tracker: one status line over the seven stage cells. */
+/**
+ * The on-demand tracker (round C): the DeliveryTracker from @mengai/cats,
+ * Oyen riding the route from the goal to shipped, under one bar with the
+ * story's pause or replay control, the office clock and the sample label.
+ * A review that bounces turns the courier back one stop and tags Round 2;
+ * the arrival at the last stop plays once. A tap on a stop retells that
+ * stop's latest scene; Back to live returns to the story.
+ */
 function Tracker({ company, scene, story }: { company: Company; scene: LifeScene; story: StoryPlayer }) {
-  const { step, cells } = scene;
-  const status = useFadeOnChange<HTMLParagraphElement>(`${story.play}-${story.index}`);
+  const { step } = scene;
+  const track = useMemo(() => trackerAt(company, story.index), [company, story.index]);
+  const oyen = catOf(company, "oyen");
   return (
     <div className="lp-track" data-motion="rise">
       <div className="lp-track-bar">
@@ -168,38 +163,23 @@ function Tracker({ company, scene, story }: { company: Company; scene: LifeScene
         </button>
         <p className="lp-track-meta">
           <span className="kit-num">{step.clock}</span>
-          <span>{stageWords(company, step)}</span>
           <span>{LIFE_LABEL}</span>
         </p>
       </div>
-      <p ref={status} className="lp-track-status">
-        {step.caption}
-      </p>
-      <ol className="lp-cells" aria-label={`Progress of the ${company.label.toLowerCase()} goal`}>
-        {company.stages.map((s, i) => {
-          const state = cells[i]!;
-          return (
-            <li key={s.id} className="lp-cell" data-state={state} aria-current={state === "now" ? "step" : undefined}>
-              <CellIcon state={state} label={s.label} />
-              <span className="lp-cell-text" aria-hidden="true">
-                <span className="lp-cell-label">{s.label}</span>
-                <span className="lp-cell-state">{STATE_WORD[state]}</span>
-              </span>
-            </li>
-          );
-        })}
-      </ol>
+      <div className="lp-track-route" role="group" aria-label={`Progress of the ${company.label.toLowerCase()} goal`}>
+        <DeliveryTracker
+          stages={track.stages}
+          current={track.current}
+          looping={track.looping}
+          loops={track.loops}
+          done={track.done}
+          status={track.status}
+          eta={null}
+          courier={{ name: oyen.name, look: { coat: oyen.coat, seed: oyen.seed } }}
+          still={story.still}
+        />
+      </div>
     </div>
-  );
-}
-
-/** The cell's state glyph, fading in when the state changes. */
-function CellIcon({ state, label }: { state: CellState; label: string }) {
-  const ref = useFadeOnChange<HTMLSpanElement>(state, 150);
-  return (
-    <span ref={ref} className="lp-cell-icon">
-      <StateIcon state={state} label={label} />
-    </span>
   );
 }
 
@@ -263,15 +243,28 @@ function HeadCard({ company, scene }: { company: Company; scene: LifeScene }) {
   );
 }
 
-/** The scenes of the story as rows; any one plays at a tap. */
+/**
+ * The scenes of the story in two columns, read left to right then down, on
+ * a divided section beside the head card (JEV ui.region_gate scenes
+ * divided_section, the runner-up: the primary card matched the head card;
+ * ui.component_recipe core.list_two_col_fill 0.95). The heading and a one
+ * line status sit inside the block on the card's header line; from 1024
+ * the rows share the card's height, so the block starts and ends on the
+ * card's lines. With an odd count the first scene, where the goal lands,
+ * spans both columns, so no cell is empty and the pairs end flush.
+ */
 function Scenes({ company, current, onJump }: { company: Company; current: number; onJump: (i: number) => void }) {
   const id = useId();
+  const rows = Math.ceil(company.steps.length / 2);
   return (
     <nav className="lp-scenes" aria-labelledby={id} data-motion="rise" style={staggerStyle(3)}>
-      <h3 id={id} className="kit-title">
-        Jump to a scene
-      </h3>
-      <ol className="lp-scene-list">
+      <div className="lp-scenes-head">
+        <h3 id={id} className="kit-title">
+          Jump to a scene
+        </h3>
+        <p className="lp-head-status">{company.steps.length} scenes. Pick one and the story plays from there.</p>
+      </div>
+      <ol className="lp-scene-list" style={{ "--lp-scene-rows": String(rows) } as CSSProperties}>
         {company.steps.map((s, i) => (
           <li key={s.id}>
             <button

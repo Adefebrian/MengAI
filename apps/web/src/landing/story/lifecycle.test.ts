@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CAT_NAMES } from "@mengai/shared";
-import { COMPANIES, COMPANY_KINDS, HEAD_KEYS, LIFE_LABEL, cellsAt, lifeAt, lifeBeats, lifeEnergy, lifeLabel, stageWords, type Company } from "./lifecycle";
+import { COMPANIES, COMPANY_KINDS, HEAD_KEYS, LIFE_LABEL, TRACKER_STOP_ID, cellsAt, lifeAt, lifeBeats, lifeEnergy, lifeLabel, stageWords, trackerAt, type Company } from "./lifecycle";
 import { nextDelay, openingStep, type StoryScript } from "./useStory";
 
 const EMDASH = String.fromCharCode(0x2014);
@@ -212,5 +212,42 @@ describe("tracker cells", () => {
     expect(COMPANIES.fund.theme).toBe("fund");
     expect(COMPANIES.fund.stages.map((s) => s.label)).toEqual(["Thesis", "Data research", "Backtest", "Risk review", "Paper trade", "Live trade", "P&L report"]);
     expect(COMPANIES.studio.stages.map((s) => s.label)).toEqual(["Goal received", "Oyen plans", "Team hired", "Working", "Review", "Testing", "Shipped"]);
+  });
+});
+
+describe("delivery tracker state", () => {
+  test("opens on the first stop, one round, no stop told ahead of time", () => {
+    for (const c of Object.values(COMPANIES)) {
+      const t = trackerAt(c, 0);
+      expect(t.current).toBe(0);
+      expect(t.done).toBe(false);
+      expect(t.looping).toBe(false);
+      expect(t.loops).toBe(0);
+      expect(t.status).toBe(c.steps[0]!.caption);
+      expect(t.stages.map((s) => s.label)).toEqual(c.stages.map((s) => s.label));
+      expect(t.stages[0]!.detail).toBe(c.steps[0]!.caption);
+      expect(t.stages.slice(1).every((s) => s.detail === null)).toBe(true);
+    }
+  });
+
+  test("a bounce loops back once and stays one loop until the goal ships", () => {
+    for (const c of Object.values(COMPANIES)) {
+      const bounce = c.steps.findIndex((s) => s.back !== undefined);
+      const t = trackerAt(c, bounce);
+      expect(t.looping).toBe(true);
+      expect(t.loops).toBe(1);
+      expect(t.current).toBe(c.steps[bounce]!.stage);
+      const end = trackerAt(c, c.steps.length - 1);
+      expect(end.done).toBe(true);
+      expect(end.current).toBe(c.stages.length - 1);
+      expect(end.loops).toBe(1);
+      expect(end.looping).toBe(false);
+    }
+  });
+
+  test("stage ids map to the tracker's pictogram ids", () => {
+    const ids = [...trackerAt(COMPANIES.studio, 0).stages, ...trackerAt(COMPANIES.fund, 0).stages].map((s) => s.id);
+    expect(ids).toEqual(["goal", "planned", "hired", "working", "review", "testing", "shipped", "thesis", "research", "backtest", "risk_review", "paper_trade", "live_trade", "report"]);
+    expect(Object.keys(TRACKER_STOP_ID).sort()).toEqual(["live", "paper", "plan", "risk"]);
   });
 });

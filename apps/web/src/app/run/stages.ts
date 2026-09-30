@@ -4,7 +4,9 @@
 // earlier stage). The stage comes from run.stage events, or the snapshot's
 // stage; a run from an older server without either is placed from its
 // tasks and crew, so the tracker never shows an empty track. Pure, so the
-// live page, the replay scrubber and the tests read the same model.
+// live page, the replay scrubber and the tests read the same model. The
+// DeliveryTracker props come from it too: the stops with the reason of the
+// move into each, the open loop, and the short token estimate.
 import { COMPANY_STAGE_LABEL, COMPANY_STAGES, type CompanyKind, type RunDTO } from "@mengai/shared";
 import type { RunState, StageMove } from "../../store/runStore";
 import { crewOrder, tokensUsed } from "../../store/runStore";
@@ -137,6 +139,8 @@ export function trackerLine(s: RunState, m: TrackerModel, now: number): string {
 export interface TokensToGo {
   /** the figure, "42,000" */
   value: string | null;
+  /** the same figure as a number, for the short form */
+  amount: number | null;
   /** true when the figure is an estimate (a live run), false for the final count */
   estimate: boolean;
   /** the words after it */
@@ -155,14 +159,47 @@ export function tokensToGo(run: RunDTO): TokensToGo {
   const budget = run.budgetTokens;
   const left = budget > 0 ? Math.max(0, budget - used) : null;
   const detail = left === null ? `${fmtInt(used)} tokens used, no token cap on this run` : `${fmtInt(used)} of ${fmtInt(budget)} tokens used, ${fmtInt(left)} left in the budget`;
-  if (isFinished(run.status)) return { value: fmtInt(used), estimate: false, text: "tokens used", detail };
+  if (isFinished(run.status)) return { value: fmtInt(used), amount: used, estimate: false, text: "tokens used", detail };
   const p = run.progress;
-  if (!(p >= 0.05) || used <= 0) return { value: null, estimate: true, text: "Estimating tokens to go", detail };
+  if (!(p >= 0.05) || used <= 0) return { value: null, amount: null, estimate: true, text: "Estimating tokens to go", detail };
   let rest = (used * (1 - p)) / p;
   if (left !== null) rest = Math.min(rest, left);
   rest = Math.round(rest / 1000) * 1000;
-  if (rest <= 0) return { value: null, estimate: true, text: "Almost there", detail };
-  return { value: fmtInt(rest), estimate: true, text: "tokens to go", detail };
+  if (rest <= 0) return { value: null, amount: null, estimate: true, text: "Almost there", detail };
+  return { value: fmtInt(rest), amount: rest, estimate: true, text: "tokens to go", detail };
+}
+
+/** A token count in a few characters: 950, 42k, 1.3M. */
+export function compactTokens(n: number): string {
+  const v = Math.max(0, Math.round(Number.isFinite(n) ? n : 0));
+  if (v < 1000) return String(v);
+  if (v < 1_000_000) return `${Math.round(v / 1000)}k`;
+  const m = v / 1_000_000;
+  return `${m < 10 ? Math.round(m * 10) / 10 : Math.round(m)}M`;
+}
+
+/** The courier's estimate, short enough for the driver line: "82k tokens to go", "184k tokens used", "Estimating". */
+export function etaShort(run: RunDTO): string {
+  const t = tokensToGo(run);
+  if (t.amount === null) return t.text === "Almost there" ? t.text : "Estimating";
+  return `${compactTokens(t.amount)} ${t.text}`;
+}
+
+/**
+ * The stops of the DeliveryTracker: one per stage of the company kind,
+ * each with the real reason of the latest run.stage move into it (what the
+ * courier reads when the stop is tapped). The stop the run is at carries
+ * no detail while its own line is the status.
+ */
+export function deliveryStages(s: RunState, m: TrackerModel): Array<{ id: string; label: string; detail: string | null }> {
+  const reason: Record<string, string> = {};
+  for (const mv of s.stageMoves) if (mv.reason) reason[mv.stage] = clip(mv.reason, 120);
+  return m.stages.map((st) => ({ id: st.key, label: st.label, detail: reason[st.key] ?? null }));
+}
+
+/** True while a check has sent the run back and it has not passed that stage again. */
+export function deliveryLooping(m: TrackerModel): boolean {
+  return m.sentBack !== null && m.outcome === "running";
 }
 
 /** How many cats are on the crew right now (departed cats excluded). */

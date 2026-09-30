@@ -463,7 +463,8 @@
   }
 }
 
-/* The tracker: a divided section, a hairline above and below. */
+/* The tracker: a divided section, a hairline above and below; the bar
+   with the story control over the courier route. */
 .lp .lp-track {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -492,121 +493,23 @@
   color: var(--color-ink-muted);
 }
 
-/* The status line keeps room for its longest caption (90 characters at
-   most), so a new scene never moves the floor under it: three body lines
-   on a phone, two title lines from 640, one from 1024. */
-.lp .lp-track-status {
-  margin: 0;
-  min-block-size: calc(3 * var(--line-0));
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-  text-wrap: pretty;
-}
-
-@media (min-width: 640px) {
-  .lp .lp-track-status {
-    min-block-size: calc(2 * var(--line-1));
-    font-size: var(--text-1);
-    line-height: var(--line-1);
-    letter-spacing: var(--tracking-title);
-  }
-}
-
-@media (min-width: 1024px) {
-  .lp .lp-track-status {
-    min-block-size: var(--line-1);
-  }
-}
-
-/* Seven stage cells, one row at every width: icons only below 768, the
-   label and the state word from 768. State is an icon plus a word on a
-   tonal fill or a status surface inside a full hairline, never a stripe. */
-.lp .lp-cells {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: var(--space-4px);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* The route: the DeliveryTracker from @mengai/cats keeps its own anatomy
+   and states (tracker.css); the landing only gives it the full width. */
+.lp .lp-track-route {
   min-width: 0;
 }
 
-.lp .lp-cell {
-  box-sizing: border-box;
-  display: grid;
-  place-items: center;
-  min-block-size: var(--space-40px);
-  min-width: 0;
-  padding: var(--space-8px) var(--space-4px);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--kit-radius-control);
-  color: var(--color-ink-muted);
-}
-
-.lp .lp-cell-icon {
-  display: inline-flex;
-  color: var(--color-ink-subtle);
-}
-
-.lp .lp-cell-text {
-  display: none;
-}
-
-.lp .lp-cell-label {
-  color: var(--color-ink);
-  font-weight: var(--weight-medium);
-}
-
-.lp .lp-cell[data-state="done"] {
-  background: var(--color-layer-1);
-}
-
-.lp .lp-cell[data-state="done"] .lp-cell-icon {
-  color: var(--color-success);
-}
-
-.lp .lp-cell[data-state="now"] {
-  border-color: var(--color-ink);
-}
-
-.lp .lp-cell[data-state="now"] .lp-cell-icon {
-  color: var(--kit-link);
-}
-
-.lp .lp-cell[data-state="back"] {
-  background: var(--color-warning-surface);
-  border-color: var(--color-warning-border);
-}
-
-.lp .lp-cell[data-state="back"] .lp-cell-icon,
-.lp .lp-cell[data-state="back"] .lp-cell-state {
-  color: var(--color-warning);
-}
-
-@media (min-width: 768px) {
-  .lp .lp-cells {
-    gap: var(--space-8px);
-  }
-  .lp .lp-cell {
-    grid-template-rows: auto auto;
-    place-items: start;
-    align-content: start;
-    row-gap: var(--space-8px);
-    padding: var(--space-12px);
-  }
-  .lp .lp-cell-text {
-    display: grid;
-    row-gap: var(--space-2px);
-    min-width: 0;
-    font-size: var(--text-n1);
-    line-height: var(--line-n1);
-    overflow-wrap: anywhere;
-  }
-  .lp .lp-cell[data-state="now"] .lp-cell-label {
-    font-weight: var(--weight-semibold);
+/* On a narrow route the tracker keeps its status to one clipped line; the
+   lifecycle's status is the story itself, so here it wraps in full, with
+   room kept for two lines (the longest caption is 89 characters) so a new
+   scene never moves the floor under the reader. */
+@container tracker (max-width: 639.98px) {
+  .lp .lp-track .tracker-now {
+    min-block-size: calc(2 * var(--line-n1));
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    text-wrap: pretty;
   }
 }
 
@@ -614,12 +517,14 @@
   min-width: 0;
 }
 
-/* The head card and the scene list. */
+/* The head card and the scene list: one shared row from 1024, both
+   stretched to the row, so the scene block starts on the card's top line
+   and ends on its bottom line (round C). Stacked below 1024. */
 .lp .lp-life-panels {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   row-gap: var(--kit-gap-group);
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
 }
 
@@ -723,46 +628,80 @@
   color: var(--color-ink-muted);
 }
 
-/* The scene list: rows of 44 px buttons in one bordered container, the
-   rules between them drawn by the list's own gap, the current scene on
-   the tonal layer-2 fill. */
+/* The scene list: a divided section (a hairline on top, the rows' own
+   hairlines below), the heading and its status line inside the block on
+   the same 48 px header line as the head card's cat and title, then the
+   scenes in two columns read left to right then down. From 1024 the rows
+   share the block's height, so the last hairline lands on the card's
+   bottom line; with an odd count the first scene spans both columns, so
+   no cell is left empty. Below 640 the clock hides and the name keeps the
+   whole row. */
 .lp .lp-scenes {
+  --lp-scene-pad: var(--space-8px);
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   row-gap: var(--kit-gap-related);
   min-width: 0;
+  padding-block-start: var(--kit-inset);
+  border-block-start: 1px solid var(--color-border);
+}
+
+@media (min-width: 640px) {
+  .lp .lp-scenes {
+    --lp-scene-pad: var(--space-12px);
+  }
+}
+
+.lp .lp-scenes-head {
+  display: grid;
+  align-content: start;
+  min-block-size: var(--space-48px);
+  min-width: 0;
+  padding-inline: var(--lp-scene-pad);
+}
+
+.lp .lp-scenes-head > .kit-title {
+  margin: 0;
 }
 
 .lp .lp-scene-list {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(var(--lp-scene-rows, 7), minmax(var(--control-h), 1fr));
+  column-gap: var(--kit-gutter);
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
-  overflow: hidden;
-  background: var(--color-border);
-  border: 1px solid var(--color-border);
-  border-radius: var(--kit-radius-card);
+  border-block-start: 1px solid var(--color-border);
 }
 
 .lp .lp-scene-list > li {
   display: grid;
   min-width: 0;
+  border-block-end: 1px solid var(--color-border);
+}
+
+/* An odd count: the first scene, where the goal lands, spans both
+   columns, so the pairs under it end flush on the block's bottom line. */
+.lp .lp-scene-list > li:first-child:nth-last-child(odd) {
+  grid-column: 1 / -1;
 }
 
 .lp .lp-scene {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: var(--space-48px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   align-items: center;
   column-gap: var(--space-12px);
   inline-size: 100%;
-  block-size: var(--control-h);
-  padding: 0 var(--space-16px);
-  background: var(--color-surface);
+  block-size: 100%;
+  min-block-size: var(--control-h);
+  padding: 0 var(--lp-scene-pad);
+  background: transparent;
   border: 0;
   border-radius: 0;
   color: var(--color-ink-muted);
@@ -773,9 +712,19 @@
 }
 
 .lp .lp-scene-clock {
+  display: none;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
+}
+
+@media (min-width: 640px) {
+  .lp .lp-scene {
+    grid-template-columns: var(--space-48px) minmax(0, 1fr);
+  }
+  .lp .lp-scene-clock {
+    display: inline;
+  }
 }
 
 .lp .lp-scene-name {
@@ -796,7 +745,7 @@
    both states and take the state layer instead. */
 .lp .lp-scene:enabled:hover,
 .lp .lp-scene:enabled:active {
-  background: var(--color-surface);
+  background: transparent;
   border-color: transparent;
   color: var(--color-ink);
   transform: none;
@@ -979,10 +928,16 @@
   color: var(--color-info);
 }
 
+/* The eight seats at the sync: two rows of four, a name under each cat.
+   From 640 the grid stretches to the minutes list beside it and each row
+   takes half of that height, so the cats fill the tile's height with no
+   band under them (round C). */
 .lp .lp-seats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-12px);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, auto));
+  align-items: center;
+  gap: var(--space-12px) var(--space-8px);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -994,6 +949,13 @@
   justify-items: center;
   row-gap: var(--space-4px);
   min-width: 0;
+}
+
+.lp .lp-seat-name {
+  max-inline-size: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .lp .lp-thread {
@@ -1170,7 +1132,13 @@
   .lp .lp-minutes {
     grid-template-columns: auto minmax(0, 1fr);
     column-gap: var(--kit-gutter);
-    align-items: start;
+    align-items: stretch;
+  }
+  .lp .lp-minutes > .lp-seats {
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+  .lp .lp-minutes > .lp-rows {
+    align-self: start;
   }
 }
 
@@ -1188,6 +1156,32 @@
 
 .lp .lp-chart-key {
   margin: 0;
+}
+
+/* The chart's frame is as tall as the chart (round C: the 16 / 9 minimum
+   left an empty band under the rows at 640 to 1023). From 1024 the frame
+   fills the column beside the intro and the figures, the rows share that
+   height, and the caption ends on the last figure's line, so both columns
+   start and end together. */
+.lp #tokens .kit-media-frame {
+  aspect-ratio: auto;
+}
+
+@media (min-width: 1024px) {
+  .lp #tokens .kit-statrow-chart > .kit-media {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .lp #tokens .kit-media-frame > .kit-media-view,
+  .lp #tokens .lp-chart {
+    block-size: 100%;
+  }
+  .lp #tokens .lp-chart {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .lp #tokens .lp-chart-rows {
+    grid-auto-rows: minmax(0, 1fr);
+    align-items: center;
+  }
 }
 
 .lp .lp-chart-rows {
@@ -1259,9 +1253,11 @@
 /* ---------------------------------------------------------------------
  * Security views: the app's own controls in small, centred in their tile.
  * ------------------------------------------------------------------- */
+/* Each control starts on the tile's inset line (round C: centered views
+   put the first lines of neighbouring tiles at different heights). */
 .lp .lp-sec-tile {
   box-sizing: border-box;
-  align-content: center;
+  align-content: start;
   padding: var(--kit-inset);
 }
 
@@ -1517,53 +1513,145 @@
 }
 
 /* ---------------------------------------------------------------------
- * The close's shipped card: the goal, every stage done, the crew in a row.
+ * Questions (kit.faq.split): from 1024 the head stays beside the rows as
+ * they scroll by, under the sticky header, so its column never reads as
+ * an empty band next to the eight questions (round C).
  * ------------------------------------------------------------------- */
+@media (min-width: 1024px) {
+  .lp #faq .kit-faq > .kit-head {
+    position: sticky;
+    top: calc(var(--shell-header-h, 57px) + var(--kit-gap-group));
+    align-self: start;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * The close (custom.close, round C): a centered SaaS close on the kit
+ * grid. The heading and the lead on the page's center axis, the two
+ * actions centered under them, then the shipped strip: a divided section
+ * (one hairline above it; the tone edge of the section ends it) with one
+ * centered line, a muted line and the crew row. Everything spans the
+ * grid, so the axis is the page's own center at every width.
+ * ------------------------------------------------------------------- */
+.lp .lp-close > .kit-grid {
+  justify-items: center;
+  text-align: center;
+}
+
+.lp .lp-close-head {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: center;
+  row-gap: var(--kit-gap-related);
+  inline-size: 100%;
+  min-width: 0;
+}
+
+.lp .lp-close-text {
+  display: grid;
+  justify-items: center;
+  row-gap: var(--kit-gap-related);
+  min-width: 0;
+  max-inline-size: 100%;
+}
+
+.lp .lp-close-text > .kit-heading {
+  margin: 0;
+  max-inline-size: 100%;
+}
+
+/* Centered lines balance, so no line ends on a single word. */
+.lp .lp-close-text > .kit-lead {
+  text-wrap: balance;
+}
+
+.lp .lp-close-actions {
+  inline-size: 100%;
+  justify-content: center;
+}
+
+/* The conversion fill, as the kit gives the CTABand's first action. */
+.lp .lp-close-actions > :first-child:not(.btn-secondary):not(.btn-ghost) {
+  --color-primary: var(--kit-action);
+  --color-primary-hover: var(--kit-action-hover);
+  --color-primary-active: var(--kit-action-active);
+  --color-primary-contrast: var(--kit-action-contrast);
+}
+
+@media (min-width: 640px) {
+  .lp .lp-close-actions {
+    inline-size: auto;
+  }
+}
+
+.lp .lp-close-proof {
+  grid-column: 1 / -1;
+  inline-size: 100%;
+  min-width: 0;
+}
+
 .lp .lp-shipped {
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-12px);
+  justify-items: center;
+  row-gap: var(--kit-gap-inside);
+  inline-size: 100%;
   min-width: 0;
-  padding: var(--kit-inset);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--kit-radius-card);
+  padding-block-start: var(--kit-gap-group);
+  border-block-start: 1px solid var(--color-border);
 }
 
-.lp .lp-shipped-head {
+.lp .lp-shipped-line {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  column-gap: var(--space-12px);
-  row-gap: var(--space-4px);
+  gap: var(--space-8px) var(--space-12px);
+  max-inline-size: 100%;
   min-width: 0;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
 }
 
 .lp .lp-shipped-goal {
   margin: 0;
+  min-width: 0;
   font-size: var(--text-1);
   line-height: var(--line-1);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-title);
   color: var(--color-ink);
-  text-wrap: pretty;
+  text-wrap: balance;
+}
+
+.lp .lp-shipped-meta {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  text-wrap: balance;
 }
 
 .lp .lp-crew {
+  --lp-crew-col: var(--space-64px);
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, var(--lp-crew-col)));
+  justify-content: center;
   gap: var(--space-12px) var(--space-8px);
+  inline-size: 100%;
   margin: 0;
+  margin-block-start: calc(var(--kit-gap-related) - var(--kit-gap-inside));
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
+.lp .lp-crew[data-size="64"] {
+  --lp-crew-col: var(--space-80px);
+}
+
 .lp .lp-crew[data-cols="6"] {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, var(--lp-crew-col)));
 }
 
 .lp .lp-crew-cat {
@@ -1581,6 +1669,44 @@
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
+}
+
+/* ---------------------------------------------------------------------
+ * The footer (kit.footer.inline on the page's center axis, round C: JEV
+ * ui.component_recipe kit.footer.inline_centered 0.97, under the centered
+ * close). The same brand, one line of links and the legal line, each
+ * centered on the grid at every width; the links keep their 44 px rows.
+ * ------------------------------------------------------------------- */
+.lp .kit-footer[data-variant="inline"] > .kit-grid {
+  justify-items: center;
+  row-gap: var(--kit-gap-inside);
+  text-align: center;
+}
+
+.lp .kit-footer[data-variant="inline"] .kit-footer-brand,
+.lp .kit-footer[data-variant="inline"] .kit-footer-links,
+.lp .kit-footer[data-variant="inline"] .kit-footer-legal {
+  grid-column: 1 / -1;
+  justify-self: center;
+  max-inline-size: 100%;
+}
+
+/* On a phone the six links sit in three centered rows of two, so no link
+   is left alone on a line; from 640 they share one centered line. */
+.lp .kit-footer[data-variant="inline"] .kit-footer-links {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  justify-content: center;
+  column-gap: var(--kit-gap-related);
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .lp .kit-footer[data-variant="inline"] .kit-footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 
 /* ---------------------------------------------------------------------

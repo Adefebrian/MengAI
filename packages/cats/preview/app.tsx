@@ -11,6 +11,7 @@ import { Cat, CatCard, lookFor, type CatSize } from "../src/index";
 import { CatFigure } from "../src/cat";
 import { CREW, SCENARIOS, STEPS, TICK_MS, catLabel, frame, statusFor, type Scenario } from "./timeline";
 import { OfficePreview } from "./office";
+import { TrackerPreview } from "./tracker";
 
 let reducedAtStart = false;
 
@@ -312,7 +313,8 @@ export function start(): void {
   reducedAtStart = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const mountNode = document.getElementById("root");
   if (!mountNode) return;
-  const office = location.pathname.replace(/\/+$/, "") === "/office";
-  if (office) document.title = "MengAI office preview";
-  createRoot(mountNode).render(office ? <OfficePreview /> : <Preview />);
+  const path = location.pathname.replace(/\/+$/, "");
+  if (path === "/office") document.title = "MengAI office preview";
+  if (path === "/tracker") document.title = "MengAI tracker preview";
+  createRoot(mountNode).render(path === "/office" ? <OfficePreview /> : path === "/tracker" ? <TrackerPreview reduced={reducedAtStart} /> : <Preview />);
 }

@@ -13,8 +13,10 @@
 //   stat-row.chart       the measured token numbers beside the chart
 //   bento.lead-right     the safety controls, as the app shows them
 //   faq.split            questions, answered plainly
-//   cta-band.split       the close, with the crew that shipped the goal
-//   footer.inline        logo, product links, open source, credit, license
+//   custom.close         the close, centered (round C, the owner's call; no
+//                        kit CTABand variant centers), with the crew strip
+//   footer.inline        logo, product links, open source, credit, license,
+//                        on the page's center axis under the close
 //
 // Motion (motion/): the hero is tier 3 (JEV motion.intensity 2.85), the
 // rest of the page tier 2 or lower; Lenis, KitMotion and the frame's scrub
@@ -46,7 +48,7 @@ export const LANDING_LEDGER: RecipeEntry[] = [
   "stat-row.chart",
   "bento.lead-right",
   "faq.split",
-  "cta-band.split",
+  "custom.close",
   "footer.inline",
 ];
 

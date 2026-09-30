@@ -5,6 +5,7 @@
 export const AUTHOR_URL = "https://github.com/adefebrian";
 export const REPO_URL = "https://github.com/adefebrian/mengai";
 export const RELEASES_URL = `${REPO_URL}/releases`;
+export const ISSUES_URL = `${REPO_URL}/issues`;
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 export const DOWNLOAD_URL = RELEASES_URL;
 export const WEB_APP_URL = "/app";

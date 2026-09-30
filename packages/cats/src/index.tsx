@@ -14,3 +14,4 @@ export { Cat } from "./cat";
 export { CatCard } from "./card";
 export { Office, type OfficeClock } from "./office/office";
 export { ROSTER, lookFor, rosterCat, rosterCrew, type RosterCat } from "./roster";
+export { DeliveryTracker } from "./tracker/tracker";

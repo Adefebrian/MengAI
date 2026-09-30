@@ -1,0 +1,827 @@
+/*
+ * DeliveryTracker (tracker.tsx). JAL Core tokens for the chrome; the art
+ * keeps the cat family's flat palette (coats from cats.css, a slate
+ * scooter, a cardboard parcel, the pass and return stamp colours on a
+ * glyph). No gradient, no shadow, no side line, no pseudo-element bar.
+ * Motion is transform and opacity only, on the duration tokens and the one
+ * --ease-standard curve (linear only for the idle bob loop). Nothing moves
+ * under reduced motion or data-motion="still".
+ *
+ * The root is a size container: below 640px of room (or data-compact) the
+ * route strip runs over the driver's two lines; from 640 the driver is a
+ * card over the route and the stop names show; from 1152 they sit side by
+ * side. The host may set --tracker-inline: the inline padding of the
+ * driver lines in the narrow layout, when the route strip runs full bleed.
+ */
+
+.tracker {
+  --tk-scooter: #56799a;
+  --tk-seat: #3b3b3b;
+  --tk-parcel: #d6ab7c;
+  --tk-tape: #b98552;
+  --tk-pass: #3f8f5a;
+  --tk-return: #b7791f;
+  --tk-pin: calc(var(--space-24px) + var(--space-4px));
+  container: tracker / inline-size;
+  box-sizing: border-box;
+  display: block;
+  min-width: 0;
+  inline-size: 100%;
+}
+
+.tracker-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "route"
+    "driver";
+  row-gap: var(--space-8px);
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------
+ * Driver: the courier, the stop, the estimate, the status line
+ * ------------------------------------------------------------------- */
+.tracker-driver {
+  grid-area: driver;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-width: 0;
+  padding-inline: var(--tracker-inline, 0);
+}
+
+.tracker-avatar {
+  display: none;
+}
+
+.tracker-words {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.tracker-stage {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+.tracker-stage-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tracker-step,
+.tracker-state,
+.tracker-eta {
+  flex: none;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-regular);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+
+.tk-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.tracker-eta {
+  margin-inline-start: auto;
+  padding-inline-start: var(--space-4px);
+  font-variant-numeric: tabular-nums;
+}
+
+.tracker-state[data-state="returned"] {
+  color: var(--color-warning);
+}
+
+.tracker-round {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4px);
+  padding: 0 var(--space-6px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-warning);
+  white-space: nowrap;
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-4);
+}
+
+.tracker-round svg {
+  display: block;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tracker-now {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Back to live takes its own column only while a stop is read, so the words reach the edge otherwise. */
+.tracker[data-selecting] .tracker-driver {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.tracker-live {
+  flex: none;
+}
+
+/* ---------------------------------------------------------------------
+ * Route: the road, the stops, the courier
+ * ------------------------------------------------------------------- */
+/* The lane over the pins holds the courier; the road runs through the pin centres. */
+.tracker-route {
+  --tk-lane: var(--space-20px);
+  --tk-cw: calc(var(--space-40px) + var(--space-4px));
+  --tk-road-y: calc(var(--tk-lane) + var(--tk-pin) / 2);
+  grid-area: route;
+  position: relative;
+  min-width: 0;
+}
+
+/* The selected stop's tonal fill, sliding from stop to stop (mu.R13). */
+.tracker-pick {
+  position: absolute;
+  top: calc(var(--tk-lane) - var(--space-4px));
+  bottom: 0;
+  left: 0;
+  inline-size: calc(100% / var(--tk-n));
+  background: var(--color-layer-2);
+  border-radius: var(--radius-8);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(var(--tk-sel) * 100%));
+}
+
+.tracker[data-selecting] .tracker-pick {
+  opacity: 1;
+}
+
+/* The road runs from the first stop to the last; the part behind the courier is ink (mu.R36). */
+.tracker-road {
+  position: absolute;
+  top: calc(var(--tk-road-y) - var(--space-6px) / 2);
+  left: calc(50% / var(--tk-n));
+  right: calc(50% / var(--tk-n));
+  display: block;
+  block-size: var(--space-6px);
+  overflow: hidden;
+  background: var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+
+.tracker-road-fill {
+  display: block;
+  block-size: 100%;
+  background: var(--color-ink-muted);
+  transform-origin: 0 50%;
+  transform: scaleX(var(--tk-fill));
+}
+
+.tracker-stops {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--tk-n), minmax(0, 1fr));
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tracker-item {
+  display: flex;
+  min-width: 0;
+}
+
+/* A stop is a button over its column. Out-ranks the base button in ui.css. */
+button.tracker-stop {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-4px);
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: auto;
+  min-block-size: var(--control-h);
+  max-inline-size: none;
+  margin: 0;
+  padding: var(--tk-lane) 0 var(--space-4px);
+  font: inherit;
+  font-weight: var(--weight-regular);
+  color: inherit;
+  white-space: normal;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-8);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: none;
+}
+
+@media (hover: hover) {
+  button.tracker-stop:enabled:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+  button.tracker-stop:enabled:hover .tk-pin-disc {
+    fill: var(--state-hover);
+  }
+}
+
+button.tracker-stop:enabled:active {
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+
+button.tracker-stop:enabled:active .tk-pin-disc {
+  fill: var(--state-pressed);
+}
+
+button.tracker-stop:enabled:active .tracker-pin {
+  transform: scale(0.92);
+}
+
+button.tracker-stop:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.tracker-pin {
+  position: relative;
+  display: block;
+  flex: none;
+  inline-size: var(--tk-pin);
+  block-size: var(--tk-pin);
+  transition:
+    transform var(--dur-100) var(--ease-standard),
+    opacity var(--dur-150) var(--ease-standard);
+}
+
+/* The courier stands on the stop it is at, so that pin steps aside as the
+   courier rolls onto it (the curve covers most of the way in the first
+   third of the drive), and the stop it leaves shows again once it is
+   clear. A drive back turns first, so both wait for the turn. */
+.tracker-item[aria-current="step"] .tracker-pin {
+  opacity: 0;
+}
+.tracker[data-motion="live"] .tracker-item[aria-current="step"] .tracker-pin {
+  transition:
+    transform var(--dur-100) var(--ease-standard),
+    opacity var(--dur-100) var(--ease-standard) var(--dur-150);
+}
+.tracker[data-motion="live"] .tracker-item[data-leaving] .tracker-pin {
+  transition:
+    transform var(--dur-100) var(--ease-standard),
+    opacity var(--dur-150) var(--ease-standard) var(--dur-100);
+}
+.tracker[data-motion="live"][data-dir="back"] .tracker-item[aria-current="step"] .tracker-pin {
+  transition:
+    transform var(--dur-100) var(--ease-standard),
+    opacity var(--dur-100) var(--ease-standard) var(--dur-300);
+}
+.tracker[data-motion="live"][data-dir="back"] .tracker-item[data-leaving] .tracker-pin {
+  transition:
+    transform var(--dur-100) var(--ease-standard),
+    opacity var(--dur-150) var(--ease-standard) calc(var(--dur-150) + var(--dur-100));
+}
+
+/* The pin art is one aria-hidden layer over its box (no hit target of its own). */
+.tk-pin-art {
+  position: absolute;
+  inset: 0;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tk-pin-disc {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+}
+
+.tk-pin-glyph {
+  color: var(--color-ink-subtle);
+}
+
+.tk-glyph path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tk-glyph-dot {
+  fill: currentColor;
+}
+
+.tracker-item[data-state="done"] .tk-pin-disc {
+  stroke: var(--color-ink-muted);
+}
+.tracker-item[data-state="done"] .tk-pin-glyph {
+  color: var(--color-ink-muted);
+}
+.tracker-item[data-state="returned"] .tk-pin-disc {
+  stroke: var(--tk-return);
+}
+.tracker-item[data-state="returned"] .tk-pin-glyph {
+  color: var(--color-ink-muted);
+}
+.tracker-stop[aria-pressed="true"] .tk-pin-disc {
+  stroke: var(--color-ink);
+  stroke-width: 2;
+}
+
+.tk-stamp circle {
+  fill: var(--tk-pass);
+  stroke: var(--color-surface);
+  stroke-width: 1.5;
+}
+.tk-stamp-return circle {
+  fill: var(--tk-return);
+}
+.tk-stamp path {
+  fill: none;
+  stroke: var(--color-surface);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tracker-label {
+  display: none;
+}
+
+/* The courier: one cell wide, moved a whole stop at a time by transform. */
+.tracker-courier-track {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  inline-size: calc(100% / var(--tk-n));
+  pointer-events: none;
+  transform: translateX(calc(var(--tk-at) * 100%));
+}
+
+.tracker-courier {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - var(--tk-road-y) - var(--space-6px) / 2);
+  display: block;
+  inline-size: min(var(--tk-cw), 100%);
+  aspect-ratio: 6 / 5;
+  transform: translateX(-50%);
+}
+
+.tk-courier-svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------
+ * The courier art (in its 120 x 100 box)
+ * ------------------------------------------------------------------- */
+.tk-courier.cat {
+  --tk-sw: 4;
+  --cat-sw: var(--tk-sw);
+}
+.tk-head {
+  --cat-sw: calc(var(--tk-sw) / 0.55);
+}
+
+.tk-tire {
+  fill: var(--cat-line);
+}
+.tk-hub {
+  fill: var(--color-layer-2);
+}
+.tk-spoke {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.tk-shell,
+.tk-column,
+.tk-fender,
+.tk-board {
+  fill: var(--tk-scooter);
+  stroke: var(--cat-line);
+  stroke-width: var(--cat-sw);
+  stroke-linejoin: round;
+}
+.tk-seat {
+  fill: var(--tk-seat);
+  stroke: var(--cat-line);
+  stroke-width: var(--cat-sw);
+  stroke-linejoin: round;
+}
+.tk-bar {
+  fill: none;
+  stroke: var(--cat-line);
+  stroke-width: calc(var(--cat-sw) * 1.4);
+  stroke-linecap: round;
+}
+.tk-basket {
+  fill: var(--color-surface);
+  stroke: var(--cat-line);
+  stroke-width: var(--cat-sw);
+  stroke-linejoin: round;
+}
+.tk-parcel {
+  fill: var(--tk-parcel);
+  stroke: var(--cat-line);
+  stroke-width: var(--cat-sw);
+  stroke-linejoin: round;
+}
+.tk-parcel-tape {
+  fill: var(--tk-tape);
+}
+.tk-ring {
+  fill: none;
+  stroke: var(--color-ink-subtle);
+  stroke-width: 3;
+  opacity: 0.4;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.tk-puff {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 100% 50%;
+}
+.tk-puff circle {
+  fill: var(--color-layer-2);
+  stroke: var(--color-border-strong);
+  stroke-width: 2;
+}
+.tk-drop {
+  opacity: 0;
+}
+.tk-drop-stamp circle {
+  fill: var(--tk-pass);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+.tk-drop-stamp path {
+  fill: none;
+  stroke: var(--color-surface);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tk-print {
+  fill: var(--cat-print);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tk-flip {
+  transform-box: view-box;
+  transform-origin: 60px 50px;
+}
+.tk-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.tk-tail {
+  transform-box: view-box;
+  transform-origin: 34px 60px;
+}
+
+/* The U-turn: facing back while it drives back, then round again. */
+.tracker[data-dir="back"] .tk-flip {
+  transform: scaleX(-1);
+}
+
+/* Parked at the last stop: the scooter rolls back, the parcel is on the ground. */
+.tracker[data-done] .tk-park {
+  transform: translateX(-12px);
+}
+.tracker[data-done] .tk-basket-parcel {
+  opacity: 0;
+}
+.tracker[data-done] .tk-drop {
+  opacity: 1;
+}
+.tracker[data-done] .tk-ring {
+  opacity: 0;
+}
+
+/* In the wind: tail and ears swept back while it drives. */
+.tracker[data-drive] .tk-tail {
+  transform: rotate(-16deg);
+}
+.tracker[data-drive] .tk-courier {
+  --cat-ear-status: 22;
+}
+
+/* ---------------------------------------------------------------------
+ * Live motion (never under still or reduced motion)
+ * ------------------------------------------------------------------- */
+.tracker[data-motion="live"] .tracker-courier-track,
+.tracker[data-motion="live"] .tracker-road-fill {
+  transition: transform var(--dur-400) var(--ease-standard);
+}
+.tracker[data-motion="live"][data-dir="back"] .tracker-courier-track,
+.tracker[data-motion="live"][data-dir="back"] .tracker-road-fill {
+  transition-delay: var(--dur-150);
+}
+.tracker[data-motion="live"] .tracker-pick {
+  transition:
+    transform var(--dur-200) var(--ease-standard),
+    opacity var(--dur-150) var(--ease-standard);
+}
+.tracker[data-motion="live"] .tk-flip {
+  transition: transform var(--dur-150) var(--ease-standard);
+}
+.tracker[data-motion="live"] .tk-tail {
+  transition: transform var(--dur-200) var(--ease-standard);
+}
+.tracker[data-motion="live"] .tk-park {
+  transition: transform var(--dur-300) var(--ease-standard) var(--dur-400);
+}
+.tracker[data-motion="live"] .tk-ring {
+  transition: opacity var(--dur-150) var(--ease-standard);
+}
+
+/* Idle while the run is live: a small bob on the pulse clock, the ring breathing (mu.R39). */
+.tracker[data-motion="live"][data-idle] .tk-bob {
+  animation: tk-bob var(--loop-pulse) linear infinite;
+}
+.tracker[data-motion="live"][data-idle] .tk-ring {
+  animation: tk-ring var(--loop-pulse) var(--ease-standard) infinite alternate;
+}
+
+/* The drive: the wheels turn, one puff. */
+.tracker[data-motion="live"][data-drive] .tk-spin {
+  animation: tk-spin var(--dur-400) var(--ease-standard) both;
+}
+.tracker[data-motion="live"][data-drive] .tk-puff {
+  animation: tk-puff var(--dur-400) var(--ease-standard) both;
+}
+.tracker[data-motion="live"][data-dir="back"] .tk-spin,
+.tracker[data-motion="live"][data-dir="back"] .tk-puff {
+  animation-delay: var(--dur-150);
+}
+
+/* The arrival, once: after the drive the rider hops, the parcel leaves the basket and lands, paw prints pop. */
+.tracker[data-motion="live"][data-arrive] .tk-rider {
+  animation: tk-hop var(--dur-600) var(--ease-standard) var(--dur-400) both;
+}
+.tracker[data-motion="live"][data-arrive] .tk-basket-parcel {
+  animation: tk-lift var(--dur-300) var(--ease-standard) var(--dur-600) both;
+}
+.tracker[data-motion="live"][data-arrive] .tk-drop {
+  animation: tk-drop var(--dur-400) var(--ease-standard) calc(var(--dur-400) + var(--dur-300)) both;
+}
+.tracker[data-motion="live"][data-arrive] .tk-print {
+  animation: tk-print var(--dur-600) var(--ease-standard) calc(var(--dur-600) + var(--tk-i) * var(--stagger-item)) both;
+}
+
+@keyframes tk-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-2px);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+  75% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes tk-ring {
+  from {
+    opacity: 0.2;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+}
+@keyframes tk-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes tk-puff {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+@keyframes tk-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-12px);
+  }
+  70% {
+    transform: translateY(0);
+  }
+  85% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes tk-lift {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+@keyframes tk-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes tk-print {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * From 640px of room: the driver card over the route, the stop names
+ * ------------------------------------------------------------------- */
+@container tracker (min-width: 640px) {
+  .tracker:not([data-compact]) .tracker-body {
+    grid-template-areas:
+      "driver"
+      "route";
+    row-gap: var(--space-12px);
+  }
+  .tracker:not([data-compact]) .tracker-driver {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--space-16px);
+    padding: var(--space-12px) var(--space-16px);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-12);
+  }
+  .tracker:not([data-compact])[data-selecting] .tracker-driver {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .tracker:not([data-compact]) .tracker-avatar {
+    display: block;
+    flex: none;
+  }
+  .tracker:not([data-compact]) .tracker-now {
+    display: -webkit-box;
+    min-block-size: calc(2 * var(--line-n1));
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .tracker:not([data-compact]) .tracker-route {
+    --tk-lane: calc(var(--space-32px) + var(--space-4px));
+    --tk-cw: calc(var(--space-48px) + var(--space-12px));
+    --tk-road-y: calc(var(--tk-lane) + var(--tk-pin) / 2);
+  }
+  .tracker:not([data-compact]) .tk-courier.cat {
+    --tk-sw: 3;
+  }
+  .tracker:not([data-compact]) .tracker-label {
+    display: block;
+    box-sizing: border-box;
+    max-inline-size: 100%;
+    padding-inline: var(--space-4px);
+    font-size: var(--text-n1);
+    line-height: var(--line-n1);
+    color: var(--color-ink-subtle);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tracker:not([data-compact]) .tracker-item[data-state="done"] .tracker-label {
+    color: var(--color-ink-muted);
+  }
+  .tracker:not([data-compact]) .tracker-item[aria-current="step"] .tracker-label {
+    font-weight: var(--weight-semibold);
+    color: var(--color-ink);
+  }
+  .tracker:not([data-compact]) .tracker-item[data-state="returned"] .tracker-label {
+    color: var(--color-warning);
+  }
+}
+
+/* From 1152px of room: the driver card beside the route, both wide enough for their words. */
+@container tracker (min-width: 1152px) {
+  .tracker:not([data-compact]) .tracker-body {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    grid-template-areas: "driver route";
+    align-items: center;
+    column-gap: var(--space-24px);
+  }
+}
+
+[dir="rtl"] .tracker-road-fill {
+  transform-origin: 100% 50%;
+}
+[dir="rtl"] .tracker-courier-track,
+[dir="rtl"] .tracker-pick {
+  left: auto;
+  right: 0;
+}
+[dir="rtl"] .tracker-courier-track {
+  transform: translateX(calc(var(--tk-at) * -100%));
+}
+[dir="rtl"] .tracker-pick {
+  transform: translateX(calc(var(--tk-sel) * -100%));
+}
+[dir="rtl"] .tk-flip {
+  transform: scaleX(-1);
+}
+[dir="rtl"] .tracker[data-dir="back"] .tk-flip {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tracker,
+  .tracker * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.tracker[data-motion="still"] .tracker-courier-track,
+.tracker[data-motion="still"] .tracker-road-fill,
+.tracker[data-motion="still"] .tracker-pin,
+.tracker[data-motion="still"] .tk-flip,
+.tracker[data-motion="still"] .tk-park {
+  transition: none;
+}

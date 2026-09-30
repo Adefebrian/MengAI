@@ -1,22 +1,25 @@
-// The close's proof (critic fix round 2: the close shows the page's own
-// world): the studio story from the lifecycle section at its last scene.
-// The goal reads Shipped, every stage is done, and the crew stands in a row
-// with Oyen first, holding the shipped card. When the card scrolls into
-// view the crew celebrates once, one cat after another (JEV
-// ui.component_recipe close kit.cta_split_sequence 1.00); under reduced
-// motion the cats rest in their still poses.
+// The close's proof (round C: a slim centered strip under the close's
+// buttons, JEV ui.region_gate close_proof divided_section and
+// ui.component_recipe core.strip_line_then_crew): the studio story from the
+// lifecycle section at its last scene. One centered line says the goal
+// shipped, one muted line gives every stage done and the clock, and the
+// crew stands in a centered row under it with Oyen first, holding the
+// shipped card. When the strip scrolls into view the crew celebrates once,
+// one cat after another (JEV ui.component_recipe close
+// kit.cta_split_sequence 1.00, carried); under reduced motion the cats
+// rest in their still poses.
 import { Cat } from "@mengai/cats";
 import { usePrefersReducedMotion } from "@mengai/ui";
-import { Meter, StatusPill } from "@mengai/ui/src/product";
+import { StatusPill } from "@mengai/ui/src/product";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { STUDIO, catOf } from "../story/lifecycle";
 
-/** The crew on the shipped card, in the order they stand: Oyen first. */
+/** The crew in the shipped strip, in the order they stand: Oyen first. */
 export const SHIPPED_CREW = ["oyen", "cemong", "serabi", "tempe", "onde", "risol"];
 /** Between two cats' celebrations, in ms (--stagger-item doubled, so each hop reads). */
 const HOP_MS = 120;
 
-/** The crew row's cats: 64 px when six fit side by side at that size, else 48 (three to a row on a narrow card). */
+/** The crew row's cats: 64 px when six fit side by side at that size, else 48 (three to a row on a narrow strip). */
 function useCrewSize(ref: RefObject<HTMLElement | null>): { size: 48 | 64; cols: 3 | 6 } {
   const [fit, setFit] = useState<{ size: 48 | 64; cols: 3 | 6 }>({ size: 48, cols: 3 });
   useLayoutEffect(() => {
@@ -66,22 +69,24 @@ function useCelebrations(ref: RefObject<HTMLElement | null>, count: number): num
 export function ShippedView() {
   const ref = useRef<HTMLDivElement>(null);
   const keys = useCelebrations(ref, SHIPPED_CREW.length);
-  const list = useRef<HTMLUListElement>(null);
-  const { size, cols } = useCrewSize(list);
+  const { size, cols } = useCrewSize(ref);
   const last = STUDIO.steps[STUDIO.steps.length - 1]!;
   const stages = STUDIO.stages.length;
   return (
     <div ref={ref} className="lp-shipped">
-      <div className="lp-shipped-head">
+      <div className="lp-shipped-line">
         <StatusPill tone="success" icon="checkCircle" variant="pill">
           Shipped
         </StatusPill>
-        <span className="kit-num lp-view-muted">{last.clock}</span>
-        <span className="lp-view-muted">Sample, the studio story above</span>
+        <p className="lp-shipped-goal">{STUDIO.goal}</p>
       </div>
-      <p className="lp-shipped-goal">{STUDIO.goal}</p>
-      <Meter label="Stages done" value={1} valueText={`${stages} of ${stages}`} />
-      <ul ref={list} className="lp-crew" data-cols={cols} aria-label="The crew that shipped it">
+      <p className="lp-shipped-meta">
+        <span className="kit-num">
+          {stages} of {stages}
+        </span>{" "}
+        stages done at <span className="kit-num">{last.clock}</span>. Sample, the studio story above.
+      </p>
+      <ul className="lp-crew" data-cols={cols} data-size={size} aria-label="The crew that shipped it">
         {SHIPPED_CREW.map((id, i) => {
           const c = catOf(STUDIO, id);
           const lead = id === "oyen";
