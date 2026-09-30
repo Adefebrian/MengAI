@@ -8,9 +8,12 @@
 // any .git folder at any depth, including submodule and worktree gitdirs)
 // and denies creating, removing or renaming any .git entry, so hooks cannot
 // be staged under another name and swapped in. Network is allowed only when
-// the request says so. Paths reach the profile as -D parameters, never as
-// interpolated text, so a path can never inject profile rules; the git rules
-// are fixed regexes with no path in them.
+// the request says so, and outbound TCP to the engine's own port is denied
+// either way (ExecRequest.denyTcpPorts, rules from lib/engine-guard.ts), so a
+// command cannot drive the no-auth local API. Paths reach the profile as -D
+// parameters, never as interpolated text, so a path can never inject profile
+// rules; the git rules are fixed regexes with no path in them, and ports are
+// validated integers.
 //
 // The shared exec core (runner-plain.ts) also refuses a symlinked root and
 // re-checks every root's realpath right before spawn and right after exit.
@@ -22,6 +25,7 @@ import { existsSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { engineDenyRules } from "../../lib/engine-guard";
 import type { ExecRequest, ExecResult, Runner } from "../ports/runner";
 import { HOME_TOOL_BINS, prepareExec, ProcessGroupPool, RunnerError, type PreparedExec } from "./runner-plain";
 
@@ -139,6 +143,8 @@ export function buildSeatbeltProfile(input: {
   dataDir: string;
   home: string;
   readPaths?: string[];
+  /** engine ports: outbound TCP to them is denied on every address, after any network allow */
+  denyTcpPorts?: number[];
 }): SeatbeltProfile {
   const params: Record<string, string> = {};
   const add = (prefix: string, values: string[]) =>
@@ -184,6 +190,8 @@ export function buildSeatbeltProfile(input: {
     '(allow file-read* file-write* (regex #"^/private/var/folders/[^/]+/[^/]+/T/xcrun_db"))',
   ];
   if (input.network) lines.push("(allow network*)", "(allow system-socket)", mach(MACH_NETWORK));
+  // last: nothing above can reopen the engine port
+  lines.push(...engineDenyRules(input.denyTcpPorts ?? []));
   return { profile: lines.join("\n"), params };
 }
 
@@ -222,7 +230,7 @@ export function createSeatbeltRunner(opts: SeatbeltRunnerOptions): Runner {
     const realHome = await realOrSelf(home);
     const dataDir = await realOrSelf(opts.dataDir);
     const readPaths = await Promise.all((opts.extraReadPaths ?? []).map(realOrSelf));
-    const { profile, params } = buildSeatbeltProfile({ writable: prep.writable, network: req.network === true, dataDir, home: realHome, readPaths });
+    const { profile, params } = buildSeatbeltProfile({ writable: prep.writable, network: req.network === true, dataDir, home: realHome, readPaths, denyTcpPorts: req.denyTcpPorts });
     const argv = [sandboxExec, "-p", profile];
     for (const [k, v] of Object.entries(params)) argv.push("-D", `${k}=${v}`);
     argv.push("--", shell, "-c", req.command);

@@ -7,12 +7,16 @@
 // port, and is ready once an HTTP GET answers; 90 s without an answer fails
 // with the log tail. A static preview is a tiny Bun.serve on 127.0.0.1.
 // Stop kills the whole process group (SIGTERM, then SIGKILL); the kill
-// switch and engine shutdown stop every preview.
+// switch and engine shutdown stop every preview. Installs and dev servers run
+// under sandbox-exec with the engine port guard (lib/engine-guard.ts): no
+// outbound TCP to the engine's own port, no LaunchServices, no Apple events;
+// everything else (network, their files, their own port) works as before.
 import type { PreviewDTO, PreviewStatus } from "@mengai/shared";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute } from "node:path";
 import type { ModuleContext } from "../../core/module";
+import { createEngineSandbox, enginePorts as hostPorts, PREVIEW_RULES } from "../../lib/engine-guard";
 import { HttpError, notFound, unavailable } from "../../lib/http";
 import { redact } from "../../lib/redact";
 import { detectPreview, type Detection, type PackageTool } from "./detect";
@@ -20,7 +24,7 @@ import { previewEnv, previewPath } from "./env";
 import { LogRing, parseLocalUrl } from "./output";
 import type { FolderOpener, PortFree, PreviewFetch, PreviewLimits, PreviewOptions, PreviewProcess, PreviewService, PreviewSpawner, StaticServe, StaticServer } from "./ports";
 import { serveStatic } from "./static";
-import { bunSpawner, createOpener, portFree, revealArgv } from "./system";
+import { createBunSpawner, createOpener, portFree, revealArgv } from "./system";
 
 export const PREVIEW_LIMITS: PreviewLimits = {
   maxActive: 3,
@@ -99,7 +103,9 @@ const defaultFetch: PreviewFetch = (url, init) =>
 
 export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = {}): PreviewService {
   const limits: PreviewLimits = { ...PREVIEW_LIMITS, ...opts.limits };
-  const spawn: PreviewSpawner = opts.spawn ?? bunSpawner;
+  const log = ctx.logger.child({ module: "preview" });
+  const guard = createEngineSandbox({ label: "live preview", ports: () => hostPorts(ctx.config.allowedHosts), extraRules: PREVIEW_RULES, logger: log });
+  const spawn: PreviewSpawner = opts.spawn ?? createBunSpawner((argv) => guard.wrap(argv));
   const probeFetch: PreviewFetch = opts.fetch ?? defaultFetch;
   const isFree: PortFree = opts.portFree ?? portFree;
   const serve: StaticServe = opts.serveStatic ?? serveStatic;
@@ -110,7 +116,6 @@ export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = 
   const which =
     opts.which ??
     ((command: string, path: string) => Bun.which(command, { PATH: path }) ?? (command === "bun" && basename(process.execPath) === "bun" ? process.execPath : null));
-  const log = ctx.logger.child({ module: "preview" });
 
   const entries = new Map<string, Entry>();
   const reserved = new Set<number>();
@@ -123,12 +128,7 @@ export function createPreviewService(ctx: ModuleContext, opts: PreviewOptions = 
 
   /** the engine's own ports (from the Host allowlist): a printed URL pointing there is ignored */
   function enginePorts(): Set<number> {
-    const out = new Set<number>();
-    for (const host of ctx.config.allowedHosts) {
-      const port = Number(/:(\d+)$/.exec(host)?.[1]);
-      if (Number.isInteger(port) && port > 0) out.add(port);
-    }
-    return out;
+    return new Set(hostPorts(ctx.config.allowedHosts));
   }
 
   /** one start or stop at a time per project */

@@ -11,6 +11,7 @@ import { join } from "node:path";
 import type { AgentRole, ConnectorDTO, CreateConnectorBody, UpdateConnectorBody } from "@mengai/shared";
 import { assertSafeUrl, UnsafeUrlError } from "../../core/adapters/llm-openai";
 import type { ModuleContext } from "../../core/module";
+import { createEngineSandbox, enginePorts, MCP_RULES } from "../../lib/engine-guard";
 import { conflict, forbidden, HttpError, notFound } from "../../lib/http";
 import { clip, keyHint, redact, registerSecret } from "../../lib/redact";
 import { callOperation, fetchOpenApi, genericTools, parseOpenApi, toolsFromOpenApi, type ImportedTool } from "./http";
@@ -19,7 +20,7 @@ import type { ConnectorCallResult, ConnectorsService, ConnectorToolDef, LookupFn
 import { createConnectorsRepo, type ConnectorRow, type StoredTool } from "./repo";
 import { classify, LABEL_RE, localName, namespaced, toolAlias, toolName, uniqueNames } from "./risk";
 import { argsSchema } from "./schema";
-import { bunSpawner, CommandError, parseCommand, scrubbedEnv, secretEnv, secretValues } from "./stdio";
+import { CommandError, createStdioSpawner, parseCommand, scrubbedEnv, secretEnv, secretValues } from "./stdio";
 
 export interface ConnectorsOptions {
   spawn?: Spawner;
@@ -56,7 +57,9 @@ const errText = (e: unknown) => clip(redact(e instanceof Error ? e.message : Str
 export function createConnectorsService(ctx: ModuleContext, opts: ConnectorsOptions = {}): ConnectorsService {
   const repo = createConnectorsRepo(ctx.db);
   const log = ctx.logger.child({ module: "connectors" });
-  const spawn = opts.spawn ?? bunSpawner;
+  // stdio MCP servers never reach the engine's own port (lib/engine-guard.ts)
+  const sandbox = createEngineSandbox({ label: "MCP server", ports: () => enginePorts(ctx.config.allowedHosts), extraRules: MCP_RULES, logger: log });
+  const spawn = opts.spawn ?? createStdioSpawner((argv) => sandbox.wrap(argv));
   const limits = {
     connect: opts.connectTimeoutMs ?? CONNECTOR_LIMITS.connectTimeoutMs,
     call: opts.callTimeoutMs ?? CONNECTOR_LIMITS.callTimeoutMs,

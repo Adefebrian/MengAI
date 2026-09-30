@@ -1,6 +1,8 @@
 // Assembles the Hono app. Order matters and is fixed here:
 //   request id + client ip, access log, secure headers, local guard (Host,
-//   exact Origin allowlist with a 403, JSON-only mutations; local mode),
+//   exact Origin allowlist with a 403, writes only with an allowlisted
+//   Origin except the kill switch, no Origin-less cross-site loads except
+//   the health probe, JSON-only mutations; local mode, refusals logged),
 //   CORS allowlist, body cap, kv rate limit (fails open), control token
 //   marker, Origin + CSRF check (server mode), session guard, JSON error
 //   handler, then every module at /api/<mountPath>, GET /api/session,
@@ -63,7 +65,7 @@ export function createApp(opts: CreateAppOptions): Hono {
   app.use("*", requestContext({ trustProxy: opts.trustProxy ?? 0 }));
   app.use("*", accessLog(logger));
   app.use("*", securityHeaders(config.mode));
-  app.use("*", localGuard(config));
+  app.use("*", localGuard(config, logger));
   app.use("*", corsAllowlist(config));
   app.use("*", bodyCap());
   app.use("*", rateLimit({ kv, logger, ...opts.limits }));
@@ -167,7 +169,8 @@ export function createSpaHandler(webDir: string | null) {
     const rel = normalize(path).replace(/^([/\\])+/, "");
     const target = resolve(root, rel);
     const inside = target === root || target.startsWith(root + sep);
-    const hidden = rel.split("/").some((seg) => seg.startsWith("."));
+    // dot segments stay hidden, except a leading .well-known (robots style files such as tdmrep.json)
+    const hidden = rel.split("/").some((seg, i) => seg.startsWith(".") && !(i === 0 && seg === ".well-known"));
     if (inside && !hidden && rel && (await isFile(target))) {
       const file = Bun.file(target);
       const immutable = rel.startsWith("fonts/");

@@ -194,7 +194,9 @@ export async function syncDir(src: string, dest: string, opts: { keep?: string[]
     if (!keep.has(entry)) await rm(join(dest, entry), { recursive: true, force: true });
   }
   let copied = 0;
-  for await (const rel of new Bun.Glob("**/*").scan({ cwd: src, onlyFiles: true, dot: false })) {
+  for await (const rel of new Bun.Glob("**/*").scan({ cwd: src, onlyFiles: true, dot: true })) {
+    // dotfiles stay out of the bundle, except a leading .well-known folder (tdmrep.json)
+    if (rel.split("/").some((seg, i) => seg.startsWith(".") && !(i === 0 && seg === ".well-known"))) continue;
     if (opts.skip?.(rel)) continue;
     const to = join(dest, rel);
     await mkdir(join(to, ".."), { recursive: true });

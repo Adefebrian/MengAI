@@ -2,6 +2,8 @@
 // streamable HTTP MCP server and a fake HTTP API (Bun.serve on 127.0.0.1),
 // OpenAPI import, the SSRF guard, secrets in the vault and the redactor,
 // scrubbed env, timeouts, restart limits, the kill switch and the routes.
+// On macOS a stdio server runs under the engine port guard: it cannot reach
+// the engine's own port but still reaches other ports.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,6 +12,7 @@ import type { ConnectorDTO } from "@mengai/shared";
 import { Hono } from "hono";
 import type { ModuleContext } from "../../core/module";
 import { systemClock } from "../../core/ports/clock";
+import { sandboxUnavailable } from "../../lib/engine-guard";
 import { HttpError } from "../../lib/http";
 import { captureEvents, createTestDb, memoryKv, memoryVault, silentLogger } from "../../testing";
 import { createConnectorsModule } from "./index";
@@ -18,6 +21,7 @@ import { classify } from "./risk";
 import { parseCommand, secretEnv } from "./stdio";
 
 const FIXTURE = join(import.meta.dir, "fixtures", "fake-mcp.ts");
+const REACH_FIXTURE = join(import.meta.dir, "fixtures", "reach-mcp.ts");
 const STDIO = `${process.execPath} ${FIXTURE}`;
 const TOKEN = "tok_fake_0123456789abcdef";
 
@@ -193,6 +197,28 @@ describe("MCP over stdio (local mode)", () => {
       expect(refused.output).toContain("kill switch");
       expect((await mod.service.test(dto.id)).status).toBe("connected");
       expect((await mod.service.call("fake.echo", { text: "y" })).ok).toBe(true);
+    } finally {
+      await mod.close?.();
+    }
+  }, 20_000);
+
+  test.skipIf(sandboxUnavailable() !== null)("runs under the engine port guard: the engine port is refused, other ports work", async () => {
+    const hits: string[] = [];
+    const engine = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (r) => (hits.push(new URL(r.url).pathname), new native.Response("engine")) });
+    const other = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new native.Response("other") });
+    servers.push(engine, other);
+    const { ctx } = await makeCtx("local");
+    ctx.config.allowedHosts.push(`127.0.0.1:${engine.port}`, `localhost:${engine.port}`);
+    const mod = createConnectorsModule(ctx, {}, { connectTimeoutMs: 10_000 });
+    try {
+      const dto = await mod.service.create({ kind: "mcp_stdio", label: "reach", target: `${process.execPath} ${REACH_FIXTURE} ${engine.port} ${other.port}` });
+      expect(dto.status).toBe("connected");
+      expect(dto.tools.map((t) => t.description)).toEqual(["engine=blocked other=200"]);
+      expect(hits).toEqual([]);
+      // a missing program under the guard still saves an error with the reason, never a 5xx
+      const missing = await mod.service.create({ kind: "mcp_stdio", label: "missing", target: "definitely-not-a-program-mengai --flag" });
+      expect(missing.status).toBe("error");
+      expect(missing.error).toContain("definitely-not-a-program-mengai");
     } finally {
       await mod.close?.();
     }

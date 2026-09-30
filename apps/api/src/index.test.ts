@@ -1,5 +1,7 @@
 // Platform tests: config, hardening, auth flows through the full app, the
 // no-auth local engine (Host check, exact Origin allowlist with a 403,
+// writes only with an allowlisted Origin except the kill switch, Origin-less
+// cross-site loads refused except the health probe, refusals logged,
 // JSON-only mutations, CORS and Private Network Access, cross-origin SSE),
 // SSE through the app, kill switch, and the kv / vault / blob / logger
 // adapters.
@@ -22,6 +24,7 @@ import { bootstrap, type Platform } from "./core/bootstrap";
 import { buildConfig, defaultLocalDataDir, localOrigins, type BootConfig } from "./core/config";
 import { createKillSwitch } from "./core/killswitch";
 import type { AppConfig, MountedModule } from "./core/module";
+import type { Logger } from "./core/ports/logger";
 import { readyLine, startLocal } from "./local";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "./testing";
 
@@ -382,11 +385,11 @@ describe("local mode", () => {
   const BASE = `http://${HOST}`;
   const errCode = async (res: Response) => ((await res.json()) as { error: { code: string } }).error.code;
 
-  async function localPlatform(extra: Record<string, string> = {}) {
+  async function localPlatform(extra: Record<string, string> = {}, logger: Logger = silentLogger) {
     const dataDir = await tempDir();
     const boot = buildConfig(parseEnv({ MENGAI_MODE: "local", MENGAI_DATA_DIR: dataDir, MENGAI_SITE_ORIGINS: SITE, MENGAI_UI_ORIGIN: UI, ...extra }));
     boot.app.allowedHosts.push(HOST, "localhost:4321");
-    const platform = await bootstrap({ boot, logger: silentLogger, overrides: { db: await createTestDb(), vault: memoryVault() } });
+    const platform = await bootstrap({ boot, logger, overrides: { db: await createTestDb(), vault: memoryVault() } });
     return { boot, platform, app: platform.app, base: BASE };
   }
 
@@ -570,6 +573,85 @@ describe("local mode", () => {
     await platform.close();
   });
 
+  test("owner writes need an allowlisted Origin: a native client without one is refused, the kill switch is the exception", async () => {
+    const lines: Array<{ level: string; msg: string; fields?: Record<string, unknown> }> = [];
+    const capture: Logger = { log: (level, msg, fields) => void lines.push({ level, msg, fields }), child: () => capture };
+    const { platform, app } = await localPlatform({}, capture);
+    let killed = 0;
+    platform.killswitch.register("probe", async () => ++killed);
+    // what a prompt-injected process would try with curl: approve, raise limits, change keys, delete
+    const writes: Array<[string, string, unknown]> = [
+      ["PATCH", "/api/settings", { motion: "off" }],
+      ["POST", "/api/projects", { name: "Injected" }],
+      ["PUT", "/api/routing", {}],
+      ["POST", "/api/providers", { name: "x" }],
+      ["DELETE", "/api/projects/some-id", undefined],
+      ["POST", "/api/trading/orders/some-id/approve", {}],
+      ["POST", "/api/nope", {}],
+      ["POST", "/api/killswitch/", {}],
+    ];
+    for (const [method, path, body] of writes) {
+      const res = await local(app, path, { method, body: body ?? (method === "DELETE" ? undefined : {}) });
+      expect(`${method} ${path} ${res.status}`).toBe(`${method} ${path} 403`);
+      expect(await errCode(res)).toBe("origin_required");
+      expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    }
+    expect(((await (await local(app, "/api/settings")).json()) as { motion: string }).motion).not.toBe("off");
+    expect(((await (await local(app, "/api/projects")).json()) as unknown[]).length).toBe(0);
+    // the same writes from the app window or an allowlisted site pass
+    expect((await local(app, "/api/settings", { method: "PATCH", origin: BASE, body: { motion: "off" } })).status).toBe(200);
+    expect((await local(app, "/api/projects", { origin: SITE, body: { name: "Owner" } })).status).toBeLessThan(300);
+    // reads without an Origin still work (curl, the desktop shell)
+    expect((await local(app, "/api/settings")).status).toBe(200);
+    // the kill switch needs no Origin (stopping is the safe direction), control token or not
+    const stop = await local(app, "/api/killswitch", { body: {} });
+    expect(stop.status).toBe(200);
+    expect(killed).toBe(1);
+    // refusals are logged with the reason and the route, never the body
+    const refused = lines.filter((l) => l.msg === "local request refused");
+    expect(refused[0]).toMatchObject({ level: "warn", fields: { reason: "origin_required", method: "PATCH", route: "/api/settings" } });
+    expect(JSON.stringify(refused)).not.toContain("Injected");
+    // throttled per reason: one line, the rest counted for the next one
+    expect(refused.filter((l) => l.fields?.reason === "origin_required")).toHaveLength(1);
+    await platform.close();
+  });
+
+  test("no Origin plus Sec-Fetch-Site cross-site or same-site is a page on another site: refused, except the health probe", async () => {
+    const { platform, app } = await localPlatform();
+    let killed = 0;
+    platform.killswitch.register("probe", async () => ++killed);
+    // <img>, <script>, a GET form, a preview page on another loopback port (same-site)
+    const probes: Array<[string, Record<string, string>]> = [
+      ["/api/settings", { "sec-fetch-dest": "image", "sec-fetch-mode": "no-cors" }],
+      ["/api/assets/a1/file", { "sec-fetch-dest": "image", "sec-fetch-mode": "no-cors" }],
+      ["/api/events?runId=r1", { "sec-fetch-dest": "script", "sec-fetch-mode": "no-cors" }],
+      ["/api/projects", { "sec-fetch-dest": "document", "sec-fetch-mode": "navigate" }],
+      ["/", { "sec-fetch-dest": "iframe", "sec-fetch-mode": "navigate" }],
+    ];
+    for (const site of ["cross-site", "same-site", "Cross-Site"]) {
+      for (const [path, headers] of probes) {
+        const res = await local(app, path, { headers: { ...headers, "sec-fetch-site": site } });
+        expect(`${site} ${path} ${res.status}`).toBe(`${site} ${path} 403`);
+        expect(await errCode(res)).toBe("cross_site");
+      }
+      // a no-Origin kill switch that a browser page sent is refused too
+      expect((await local(app, "/api/killswitch", { body: {}, headers: { "sec-fetch-site": site } })).status).toBe(403);
+      // the website's no-cors probe: GET and HEAD /api/health only
+      const health = await local(app, "/api/health", { headers: { "sec-fetch-site": site, "sec-fetch-mode": "no-cors", "sec-fetch-dest": "empty" } });
+      expect(health.status).toBe(200);
+      expect(health.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+      expect((await local(app, "/api/health", { method: "HEAD", headers: { "sec-fetch-site": site } })).status).toBe(200);
+    }
+    expect(killed).toBe(0);
+    // the engine's own pages and typed URLs pass
+    for (const site of ["same-origin", "none"]) {
+      expect((await local(app, "/api/settings", { headers: { "sec-fetch-site": site } })).status).toBe(200);
+    }
+    // an allowlisted site's CORS request carries its Origin and is not affected
+    expect((await local(app, "/api/settings", { origin: SITE, headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" } })).status).toBe(200);
+    await platform.close();
+  });
+
   test("SSE streams cross-origin to an allowlisted site with Last-Event-ID replay", async () => {
     const { platform, app } = await localPlatform();
     const bus = platform.modules.events.service;
@@ -698,6 +780,28 @@ describe("SPA", () => {
     expect((await req(app, "/../../etc/passwd")).headers.get("content-type")).not.toContain("text/plain");
     const api = await req(app, "/api/unknown");
     expect(api.headers.get("content-type")).toContain("application/json");
+    await platform.close();
+  });
+
+  test("serves a leading .well-known folder but keeps every other dot path hidden", async () => {
+    const webDir = await tempDir();
+    await writeFile(join(webDir, "index.html"), "<!doctype html><title>MengAI</title>");
+    await mkdir(join(webDir, ".well-known"));
+    await writeFile(join(webDir, ".well-known", "tdmrep.json"), "[]");
+    await writeFile(join(webDir, ".env"), "SECRET=x");
+    await mkdir(join(webDir, "a"));
+    await mkdir(join(webDir, "a", ".well-known"));
+    await writeFile(join(webDir, "a", ".well-known", "x.json"), "{}");
+    const { platform } = await serverPlatform({ WEB_DIR: webDir });
+    const app = platform.app;
+    const tdm = await req(app, "/.well-known/tdmrep.json");
+    expect(tdm.status).toBe(200);
+    expect(await tdm.text()).toBe("[]");
+    // a dot file is never served; the extensionless path falls back to the app shell
+    const env = await req(app, "/.env");
+    expect(await env.text()).not.toContain("SECRET");
+    expect(env.headers.get("content-type")).toContain("text/html");
+    expect((await req(app, "/a/.well-known/x.json")).status).toBe(404);
     await platform.close();
   });
 });

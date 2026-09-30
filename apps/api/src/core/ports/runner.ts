@@ -11,6 +11,8 @@ export interface ExecRequest {
   env?: Record<string, string>;
   network: boolean;
   writablePaths: string[];
+  /** local engine ports the command may never connect to, network on or off (the Seatbelt runner denies them; lib/engine-guard.ts) */
+  denyTcpPorts?: number[];
   signal?: AbortSignal;
 }
 

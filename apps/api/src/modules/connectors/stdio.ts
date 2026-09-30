@@ -4,9 +4,11 @@
 // secret, runs in its own process group under the data dir, and is killed
 // as a group on close and by the kill switch.
 //
-// Not a sandbox: an MCP server the owner adds runs with the owner's user
-// rights, like any program they start. The Seatbelt jail the agent shell uses
-// is exec-only today (see the report).
+// Not a full jail: an MCP server the owner adds runs with the owner's user
+// rights, like any program they start. On macOS it runs under sandbox-exec
+// with the engine port guard (lib/engine-guard.ts): it can never connect to
+// the engine's own port (the no-auth local API) and cannot start apps
+// through LaunchServices; network, files and Apple events work as before.
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import type { SpawnedProcess, Spawner } from "./ports";
@@ -127,13 +129,24 @@ export function scrubbedEnv(opts: { tmpdir: string; extra: Record<string, string
   };
 }
 
-/** Bun.spawn in its own process group; kill() signals the whole group. */
-export const bunSpawner: Spawner = (argv, opts) => {
+/**
+ * Bun.spawn in its own process group; kill() signals the whole group. wrap
+ * turns the argv into the sandboxed one (sandbox-exec execs the server, so
+ * the pid and the group stay the same; it resolves the program on env.PATH).
+ */
+export function createStdioSpawner(wrap: (argv: string[]) => string[] = (argv) => argv): Spawner {
+  return (argv, opts) => spawnGroup(argv, wrap(argv), opts);
+}
+
+/** Unguarded: only for callers that apply their own sandbox. */
+export const bunSpawner: Spawner = createStdioSpawner();
+
+function spawnGroup(original: string[], argv: string[], opts: { env: Record<string, string>; cwd: string }): SpawnedProcess {
   let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
   try {
     proc = Bun.spawn(argv, { cwd: opts.cwd, env: opts.env, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: true });
   } catch (e) {
-    throw new CommandError(`could not start ${argv[0]}: ${e instanceof Error ? e.message : String(e)}`);
+    throw new CommandError(`could not start ${original[0]}: ${e instanceof Error ? e.message : String(e)}`);
   }
   const pid = proc.pid;
   const handle: SpawnedProcess = {
@@ -162,4 +175,4 @@ export const bunSpawner: Spawner = (argv, opts) => {
     },
   };
   return handle;
-};
+}

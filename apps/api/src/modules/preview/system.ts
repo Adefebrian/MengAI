@@ -1,12 +1,24 @@
 // The real ports behind the preview service: Bun.spawn in its own process
-// group, a transient listen to test a port, and the OS file manager. The
-// file manager gets an argv array (no shell) and a small env: PATH, HOME,
-// LANG plus the desktop session variables xdg-open needs on Linux.
+// group (under the engine port guard, lib/engine-guard.ts), a transient
+// listen to test a port, and the OS file manager. The file manager gets an
+// argv array (no shell) and a small env: PATH, HOME, LANG plus the desktop
+// session variables xdg-open needs on Linux.
 import { createServer } from "node:net";
 import type { FolderOpener, PortFree, PreviewSpawner } from "./ports";
 
-/** Bun.spawn with setsid, so kill() reaches every child the dev server starts. */
-export const bunSpawner: PreviewSpawner = (argv, opts) => {
+/**
+ * Bun.spawn with setsid, so kill() reaches every child the dev server starts.
+ * wrap turns the argv into the sandboxed one (sandbox-exec execs the target,
+ * so the pid and the process group stay the same).
+ */
+export function createBunSpawner(wrap: (argv: string[]) => string[] = (argv) => argv): PreviewSpawner {
+  return (argv, opts) => spawnGroup(wrap(argv), opts);
+}
+
+/** Unguarded: only for callers that apply their own sandbox. */
+export const bunSpawner: PreviewSpawner = createBunSpawner();
+
+function spawnGroup(argv: string[], opts: { cwd: string; env: Record<string, string> }): ReturnType<PreviewSpawner> {
   const proc = Bun.spawn(argv, { cwd: opts.cwd, env: opts.env, stdin: "ignore", stdout: "pipe", stderr: "pipe", detached: true });
   const pid = proc.pid;
   return {
@@ -30,7 +42,7 @@ export const bunSpawner: PreviewSpawner = (argv, opts) => {
       }
     },
   };
-};
+}
 
 export const portFree: PortFree = (port) =>
   new Promise((resolve) => {

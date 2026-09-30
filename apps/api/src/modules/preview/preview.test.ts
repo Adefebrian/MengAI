@@ -2,13 +2,16 @@
 // parsing, the ring buffer, the process lifecycle with a fake spawner and a
 // fake probe fetch (ready, fallback port, exit, timeout, install), the cap
 // of three, stop and shutdown killing the process group, the static server
-// (traversal, dotfiles, symlinks, Host check) and reveal.
+// (traversal, dotfiles, symlinks, Host check) and reveal. On macOS a real dev
+// server runs under the engine port guard: it cannot reach the engine port
+// or start an app through open(1), and still serves and reaches other ports.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { PreviewDTO } from "@mengai/shared";
 import type { AppConfig, ModuleContext } from "../../core/module";
+import { sandboxUnavailable } from "../../lib/engine-guard";
 import { HttpError } from "../../lib/http";
 import { captureEvents, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
 import { detectPreview, NOTHING_TO_PREVIEW } from "./detect";
@@ -523,6 +526,42 @@ describe("a real dev server", () => {
       expect(await portFree(Number(new URL(ready.url!).port))).toBe(true);
     } finally {
       await svc.close();
+    }
+  }, 30_000);
+
+  test.skipIf(sandboxUnavailable() !== null)("under the engine port guard: the engine port and open(1) are closed, its own port and other ports work", async () => {
+    const hits: string[] = [];
+    const engine = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (r) => (hits.push(new URL(r.url).pathname), new native.Response("engine")) });
+    const other = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new native.Response("other") });
+    const root = await files(await tmp(), {
+      "package.json": pkg({ dev: "bun server.ts" }),
+      "server.ts": [
+        "const probe = (url: string, init?: RequestInit) => fetch(url, init).then((r) => String(r.status), () => \"blocked\");",
+        `const e = await probe("http://127.0.0.1:${engine.port}/api/settings", { method: "PATCH", headers: { origin: "http://127.0.0.1:${engine.port}", "content-type": "application/json" }, body: "{}" });`,
+        `const m = await probe("http://[::ffff:127.0.0.1]:${engine.port}/m");`,
+        `const o = await probe("http://127.0.0.1:${other.port}/");`,
+        'const opened = Bun.spawnSync(["/usr/bin/open", "-g", "-j", "-n", "Probe.app"]).exitCode;',
+        "console.log(`probe engine=${e} mapped=${m} other=${o} open=${opened === 0 ? \"ran\" : \"refused\"}`);",
+        'Bun.serve({ hostname: "127.0.0.1", port: Number(process.env.PORT), fetch: () => new Response("guarded") });',
+      ].join("\n"),
+      // a hidden agent app the dev script tries to start through LaunchServices; it would call the engine
+      "Probe.app/Contents/Info.plist": `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>probe</string><key>CFBundleIdentifier</key><string>id.mengai.test.preview-probe</string><key>CFBundlePackageType</key><string>APPL</string><key>LSUIElement</key><true/></dict></plist>`,
+      "Probe.app/Contents/MacOS/probe": `#!/bin/sh\n/usr/bin/curl -s http://127.0.0.1:${engine.port}/escaped\n`,
+    });
+    await chmod(join(root, "Probe.app/Contents/MacOS/probe"), 0o755);
+    const svc = createPreviewModule(context("local", [`127.0.0.1:${engine.port}`, `localhost:${engine.port}`]), {}, { fetch: (url, init) => native.fetch(url, init), limits: { pollMs: 50, stopGraceMs: 500 } }).service;
+    try {
+      await svc.start("guarded", root);
+      const ready = await until(svc, "guarded", root, (d) => d.status === "ready" || d.status === "failed", 20_000);
+      expect(ready.error).toBeNull();
+      expect(await (await native.fetch(ready.url!)).text()).toBe("guarded");
+      expect(ready.logTail.join("\n")).toContain("probe engine=blocked mapped=blocked other=200 open=refused");
+      await Bun.sleep(1000);
+      expect(hits).toEqual([]);
+    } finally {
+      await svc.close();
+      engine.stop(true);
+      other.stop(true);
     }
   }, 30_000);
 });

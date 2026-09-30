@@ -145,6 +145,17 @@ describe("seatbelt", () => {
     expect(Object.values(p.params)).toContain("/data");
     const withNet = buildSeatbeltProfile({ writable: ["/w"], network: true, dataDir: "/data", home: "/Users/o" });
     expect(withNet.profile).toContain("(allow network*)");
+    expect(withNet.profile).not.toContain("remote tcp");
+  });
+
+  test("profile denies the engine port last, after any network allow, on every address", () => {
+    for (const network of [true, false]) {
+      const p = buildSeatbeltProfile({ writable: ["/w"], network, dataDir: "/data", home: "/Users/o", denyTcpPorts: [4190, 0, 70000] });
+      const lines = p.profile.split("\n");
+      expect(lines.at(-1)).toBe('(deny network-outbound (remote tcp "*:4190"))');
+      expect(lines.filter((l) => l.includes("remote tcp"))).toHaveLength(1);
+      if (network) expect(lines.indexOf("(allow network*)")).toBeLessThan(lines.length - 1);
+    }
   });
 
   test("fails closed when sandbox-exec cannot start", async () => {
@@ -192,4 +203,34 @@ describe("seatbelt", () => {
     const timed = await runner.exec(req("sleep 30", { timeoutMs: 200 }));
     expect(timed.timedOut).toBe(true);
   });
+
+  test.skipIf(!sandboxWorks)("a crew command cannot reach the engine port, network on or off; other loopback ports and the internet still work", async () => {
+    const { Response: NativeResponse } = (await import(String("undici"))) as { Response: typeof Response };
+    const hits: string[] = [];
+    const engine = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (r) => (hits.push(new URL(r.url).pathname), new NativeResponse("engine")) });
+    const other = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new NativeResponse("other") });
+    try {
+      const data = await tmp("data");
+      const runner = createSeatbeltRunner({ dataDir: data });
+      const P = engine.port!;
+      const net = { network: true, denyTcpPorts: [P] };
+      for (const url of [`http://127.0.0.1:${P}/api/settings`, `http://localhost:${P}/x`, `http://[::ffff:127.0.0.1]:${P}/x`, `http://0.0.0.0:${P}/x`]) {
+        const r = await runner.exec(req(`curl -sS -g -m 5 -X PATCH -H 'Origin: http://127.0.0.1:${P}' '${url}'`, net));
+        expect(`${url} ${r.exitCode}`).toBe(`${url} 7`);
+      }
+      const viaBun = await runner.exec(req(`"${process.execPath}" -e 'fetch("http://127.0.0.1:${P}/b").then(() => console.log("reached"), () => console.log("blocked"))'`, net));
+      expect(viaBun.stdout.trim()).toBe("blocked");
+      const offline = await runner.exec(req(`curl -sS -m 5 http://127.0.0.1:${P}/off`, { network: false, denyTcpPorts: [P] }));
+      expect(offline.exitCode).not.toBe(0);
+      expect(hits).toEqual([]);
+      const loopback = await runner.exec(req(`curl -sS -m 5 http://127.0.0.1:${other.port}/`, net));
+      expect(loopback.stdout).toBe("other");
+      const external = Bun.spawnSync(["/usr/bin/curl", "-sS", "-m", "8", "-o", "/dev/null", "https://example.com/"]).exitCode === 0;
+      if (external) expect((await runner.exec(req("curl -sS -m 8 -o /dev/null -w '%{http_code}' https://example.com/", net))).stdout).toBe("200");
+      else console.warn("seatbelt engine port test: no external network, external host check skipped");
+    } finally {
+      engine.stop(true);
+      other.stop(true);
+    }
+  }, 60_000);
 });

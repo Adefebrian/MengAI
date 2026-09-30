@@ -36,6 +36,7 @@ import {
   type ToolsService,
   type WorkspaceService,
 } from "../../core/services";
+import { enginePorts } from "../../lib/engine-guard";
 import { clip, redact, redactDeep } from "../../lib/redact";
 import { toJson } from "../../lib/sql";
 import { errorMeaning } from "../trading";
@@ -436,6 +437,8 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
         maxOutputBytes: SHELL_OUTPUT_CAP,
         network: await networkAllowed(),
         writablePaths: [root],
+        // the no-auth engine API is never reachable from a crew command (read live: known once listening)
+        denyTcpPorts: enginePorts(ctx.config.allowedHosts),
         signal: call.signal,
       });
       const status = res.timedOut

@@ -12,11 +12,26 @@
 //     site origins (MENGAI_SITE_ORIGINS, https). Anything else is a 403, not
 //     just a missing CORS header. Never every localhost port: the crew's own
 //     preview apps run on 127.0.0.1 ports and must not drive the engine.
+//   - owner writes need a browser origin: every POST, PUT, PATCH and DELETE
+//     must carry an allowlisted Origin (403 origin_required). Browsers send
+//     Origin on every non-GET request, same origin included. The one
+//     exception is POST /api/killswitch: stopping is the safe direction and
+//     the desktop shell presses it without an Origin
+//   - a request without an Origin whose Sec-Fetch-Site is cross-site or
+//     same-site is a browser subresource from another site (image, script,
+//     GET form, a preview page on another loopback port): 403 cross_site,
+//     except GET /api/health, which the website probes with no-cors
 //   - POST, PUT, PATCH and DELETE must be Content-Type application/json, which
 //     forces a CORS preflight and blocks form posts
 //   - CORS echoes allowlisted origins only (Vary: Origin, no credentials) and
 //     answers Private Network Access preflights
-// A request with no Origin is a local native client (the desktop shell, curl).
+// A request with no Origin is a local native client (the desktop shell,
+// curl): it may read, and press the kill switch, but not write. The crew's
+// own processes (shell commands, live previews, stdio MCP servers) cannot
+// open a connection to the engine port at all (lib/engine-guard.ts), since a
+// native process can forge any header. Refusals are logged as warnings with
+// the reason (throttled per reason), never with bodies or header values
+// beyond the Origin, the Host and Sec-Fetch-Site (clipped).
 //
 // Server mode (owner login, not used by the website) keeps cookie sessions:
 // ALLOWED_ORIGINS get CORS with credentials, and every mutating request needs
@@ -37,6 +52,7 @@ import { cors } from "hono/cors";
 import { matchedRoutes } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { errorBody, HttpError } from "../lib/http";
+import { KILLSWITCH_PATH } from "./auth";
 import type { AppConfig } from "./module";
 import type { Kv } from "./ports/kv";
 import type { Logger } from "./ports/logger";
@@ -290,31 +306,80 @@ export function requestHost(c: Context): string {
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+/** Sec-Fetch-Site values that mean another site made the browser send this request */
+const OTHER_SITE = new Set(["cross-site", "same-site"]);
+/** the only write a native client (no Origin) may send: the kill switch */
+export const NO_ORIGIN_WRITE_PATH = KILLSWITCH_PATH;
+const REFUSAL_LOG_EVERY_MS = 60_000;
 
 /** application/json, parameters allowed (charset); nothing else counts as JSON here. */
 export function isJsonContentType(value: string | null | undefined): boolean {
   return (value ?? "").split(";")[0]!.trim().toLowerCase() === "application/json";
 }
 
+/** True when a request without an Origin may still write: only POST /api/killswitch. */
+export function noOriginWriteAllowed(method: string, path: string): boolean {
+  return method === "POST" && path === NO_ORIGIN_WRITE_PATH;
+}
+
+/** True for the opaque "is the engine running" probe the website sends. */
+export function isHealthProbe(method: string, path: string): boolean {
+  return (method === "GET" || method === "HEAD") && path === HEALTH_PATH;
+}
+
 /**
- * Local mode only, before CORS and routing (see the header comment):
- * 403 bad_host for a Host outside allowedHosts (an empty list rejects
- * everything), 403 bad_origin for any Origin off the allowlist on every
- * method, 415 unsupported_media_type for a mutating request that is not JSON.
+ * Local mode only, before CORS and routing (see the header comment), in
+ * this order: 403 bad_host for a Host outside allowedHosts (an empty list
+ * rejects everything), 403 bad_origin for any Origin off the allowlist on
+ * every method, 403 origin_required for a write without an Origin (except
+ * the kill switch), 403 cross_site for a request without an Origin that
+ * another site made (except the health probe), 415 unsupported_media_type
+ * for a mutating request that is not JSON.
  */
-export function localGuard(config: AppConfig): MiddlewareHandler {
+export function localGuard(config: AppConfig, logger?: Logger): MiddlewareHandler {
+  const lastLog = new Map<string, { at: number; suppressed: number }>();
+  const refuse = (c: Context, status: 403 | 415, code: string, message: string, detail: Record<string, unknown> = {}) => {
+    if (logger) {
+      // detection without flooding: the first refusal per reason, then one a minute with the count in between
+      const now = Date.now();
+      const seen = lastLog.get(code);
+      if (!seen || now - seen.at >= REFUSAL_LOG_EVERY_MS) {
+        logger.log("warn", "local request refused", {
+          reason: code,
+          requestId: c.get("requestId"),
+          clientIp: c.get("clientIp"),
+          method: c.req.method,
+          route: routePattern(c),
+          suppressed: seen?.suppressed ?? 0,
+          ...detail,
+        });
+        lastLog.set(code, { at: now, suppressed: 0 });
+      } else seen.suppressed++;
+    }
+    return c.json(errorBody(code, message), status);
+  };
   return async (c, next) => {
     if (config.mode !== "local") return next();
     const host = requestHost(c);
     if (!config.allowedHosts.includes(host)) {
-      return c.json(errorBody("bad_host", "Host not allowed"), 403);
+      return refuse(c, 403, "bad_host", "Host not allowed", { host: host.slice(0, 100) });
     }
+    const method = c.req.method;
     const origin = c.req.header("origin");
     if (origin !== undefined && !localOriginAllowed(config, origin)) {
-      return c.json(errorBody("bad_origin", "This site is not allowed to call MengAI on this machine"), 403);
+      return refuse(c, 403, "bad_origin", "This site is not allowed to call MengAI on this machine", { origin: origin.slice(0, 100) });
     }
-    if (!SAFE_METHODS.has(c.req.method) && !isJsonContentType(c.req.header("content-type"))) {
-      return c.json(errorBody("unsupported_media_type", "Send JSON: Content-Type must be application/json"), 415);
+    if (origin === undefined) {
+      if (!SAFE_METHODS.has(method) && !noOriginWriteAllowed(method, c.req.path)) {
+        return refuse(c, 403, "origin_required", "Changes come from the MengAI app or an allowed site: this request has no Origin");
+      }
+      const site = (c.req.header("sec-fetch-site") ?? "").trim().toLowerCase();
+      if (OTHER_SITE.has(site) && !isHealthProbe(method, c.req.path)) {
+        return refuse(c, 403, "cross_site", "Another site cannot load this from MengAI on this machine", { secFetchSite: site });
+      }
+    }
+    if (!SAFE_METHODS.has(method) && !isJsonContentType(c.req.header("content-type"))) {
+      return refuse(c, 415, "unsupported_media_type", "Send JSON: Content-Type must be application/json");
     }
     return next();
   };

@@ -383,6 +383,17 @@ describe("execute", () => {
     expect((await off.tools.execute(call("shell_run", { command: "ls", cwd: "../.." }), tc())).ok).toBe(false);
   });
 
+  test("shell_run tells the runner to deny the engine's own port, read live from the Host allowlist", async () => {
+    const runner = recordingRunner();
+    const { tools } = await build({ runner, settings: fakeSettings({ allowNetworkTools: true }) });
+    await tools.execute(call("shell_run", { command: "ls" }), tc());
+    expect(runner.reqs[0]!.denyTcpPorts).toEqual([]);
+    // the engine fills the allowlist once it listens; the next command picks it up
+    ctx.config.allowedHosts.push("127.0.0.1:4190", "localhost:4190");
+    await tools.execute(call("shell_run", { command: "curl http://127.0.0.1:4190/api/settings" }), tc());
+    expect(runner.reqs[1]!.denyTcpPorts).toEqual([4190]);
+  });
+
   test("shell_run end to end with the plain runner redacts output", async () => {
     const { tools } = await build({ runner: createPlainRunner() });
     const r = await tools.execute(call("shell_run", { command: "echo AKIAABCDEFGHIJKLMNOP; echo oops >&2; exit 3" }), tc());
