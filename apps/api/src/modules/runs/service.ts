@@ -2,7 +2,6 @@
 // RunEngine per live run; runs that are not live (paused by a restart) are
 // rebuilt from the tables on the first call that needs them.
 import {
-  DEFAULT_CHAT_MODEL,
   ROLE_LABEL,
   type AgentDTO,
   type AgentMindDTO,
@@ -240,14 +239,16 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
       if (plan.usdPerToken !== null) {
         cost = plan.tokens * plan.usdPerToken;
       } else {
-        let model: string = DEFAULT_CHAT_MODEL;
+        // Provider agnostic: price with the model the balanced tier resolves to;
+        // with no provider yet there is no model to price, so the cost stays 0.
+        let model: string | null = null;
         try {
           model = (await deps.llm.resolve({ tier: "balanced" })).model;
         } catch {
-          // no provider yet: price with the default model
+          model = null;
         }
         const inputTokens = Math.round(plan.tokens * HEURISTIC.inputShare);
-        cost = await deps.usage
+        cost = model === null ? 0 : await deps.usage
           .cost(model, {
             inputTokens,
             outputTokens: plan.tokens - inputTokens,
