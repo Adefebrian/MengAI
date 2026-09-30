@@ -1,16 +1,20 @@
-// TradingService: the owner's trading settings, the paper broker, and the
-// gate every live order passes. Order flow:
+// TradingService: the owner's trading settings, the paper broker, the venue
+// desk, and the gate every live order passes. Order flow:
 //   trader cat: propose (proposed) -> risk manager cat: review
 //   paper: approve fills at the quote the trader read (or the last price from
-//          a connector price tool); a limit order that is not marketable stays
-//          open (approved) until a later price crosses it
+//          a learned venue or a connector price tool); a limit order that is
+//          not marketable stays open (approved) until a later price crosses it
 //   live:  approve keeps it proposed for the owner (POST .../decision), or,
 //          with autoTrade on, sends it through the gate right away; the gate
 //          checks the kill switch, live mode, the allowed symbols, maxOrderUsd
 //          and the daily loss limit, then one connector tool places it
+// A ready venue (venues.ts) routes orders without the cat naming a tool: its
+// learned price tool prices paper orders, its learned order tool places live
+// ones in the venue's own symbol form. Fills record wins and losses on the
+// venue's crew skills; a venue error becomes a crew lesson.
 // The kill switch cancels every open order and stops trading until the
 // owner saves the settings again. Texts state facts, never advice.
-import type { PositionDTO, TradingSettings } from "@mengai/shared";
+import type { AgentRole, PositionDTO, TradingSettings } from "@mengai/shared";
 import type { ModuleContext } from "../../core/module";
 import { conflict, HttpError, notFound } from "../../lib/http";
 import { clip, redact } from "../../lib/redact";
@@ -18,90 +22,29 @@ import { applyFill, cents, EMPTY_BOOK, limitFill, unrealized } from "./broker";
 import { dailyLoss, dayStart, liveGate, normalizeSettings } from "./gates";
 import { TradingError, type OrderQuery, type ProposeInput, type ReviewInput, type TradingService, type TradingVenue, type VenueTool } from "./ports";
 import { createTradingRepo, orderDto, type OrderRow, type PositionRow } from "./repo";
+import { normSymbol, parsePrice } from "./symbols";
+import { createDesk } from "./venues";
+
+export { normSymbol, parsePrice, SYMBOL_RE, toVenueSymbol, venueArgs } from "./symbols";
 
 export interface TradingDeps {
-  /** the connectors service: price tools and the venue tool of live orders */
+  /** the connectors service: price tools, the venue tool of live orders, and the connectors of trading venues */
   venue?: TradingVenue | null;
 }
 
-export const SYMBOL_RE = /^[A-Z0-9][A-Z0-9._/:-]{0,23}$/;
 const MAX_QTY = 1e9;
 const PRICE_TOOL = /(^|[._-])(price|prices|ticker|quote|last)([._-]|$)/i;
+const FILL_KEYS = ["fillPrice", "fill_price", "avgPrice", "avg_price", "average", "averagePrice", "executedPrice", "filled_avg_price", "price"];
 
 /** fill() mutates the row, so read the status through a call (no stale narrowing) */
 const filled = (o: OrderRow): boolean => o.status === "filled";
 const errText = (e: unknown) => clip(redact(e instanceof Error ? e.message : String(e)), 300);
 
-export function normSymbol(raw: string): string {
-  const s = String(raw ?? "").trim().toUpperCase();
-  if (!SYMBOL_RE.test(s)) throw new TradingError(`${clip(s, 30) || "the symbol"} is not a valid symbol (letters, digits and . _ / : -)`);
-  return s;
-}
-
-/** The first positive price in a tool's output: JSON fields first, then the first decimal number. */
-export function parsePrice(text: string, keys: readonly string[] = ["price", "last", "lastPrice", "last_price", "close", "mark", "markPrice", "c"]): number | null {
-  const t = text.trim();
-  const fromObj = (o: unknown, depth: number): number | null => {
-    if (!o || typeof o !== "object" || depth > 2) return null;
-    if (Array.isArray(o)) {
-      for (const v of o.slice(0, 5)) {
-        const r = fromObj(v, depth + 1);
-        if (r !== null) return r;
-      }
-      return null;
-    }
-    const rec = o as Record<string, unknown>;
-    for (const k of keys) {
-      const v = rec[k];
-      const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
-      if (Number.isFinite(n) && n > 0) return n;
-    }
-    for (const v of Object.values(rec)) {
-      const r = fromObj(v, depth + 1);
-      if (r !== null) return r;
-    }
-    return null;
-  };
-  const start = t.search(/[[{]/);
-  if (start >= 0) {
-    try {
-      const r = fromObj(JSON.parse(t.slice(start)), 0);
-      if (r !== null) return r;
-    } catch {
-      // not JSON
-    }
-  }
-  const m = /(?:^|[^\d.])(\d{1,12}(?:,\d{3})*(?:\.\d+)?)(?![\d.])/.exec(t.replace(/^HTTP \d{3}[^\n]*\n/, ""));
-  const n = m ? Number(m[1]!.replace(/,/g, "")) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/** Arguments for a venue tool, mapped onto the names its schema uses. */
-export function venueArgs(tool: VenueTool, o: OrderRow): Record<string, unknown> {
-  const props = Object.keys(((tool.schema as { properties?: Record<string, unknown> }).properties ?? {}) as Record<string, unknown>);
-  const value = (name: string): unknown => {
-    const n = name.toLowerCase().replace(/[^a-z]/g, "");
-    if (["symbol", "ticker", "pair", "instrument", "market", "asset"].includes(n)) return o.symbol;
-    if (n === "side") return o.side;
-    if (["qty", "quantity", "amount", "size", "units", "volume"].includes(n)) return o.qty;
-    if (["type", "ordertype"].includes(n)) return o.type;
-    if (["price", "limitprice", "limit"].includes(n)) return o.limitPrice ?? undefined;
-    if (["clientorderid", "clientid", "clientoid"].includes(n)) return o.id;
-    return undefined;
-  };
-  if (props.length === 0) return { symbol: o.symbol, side: o.side, qty: o.qty, type: o.type, ...(o.limitPrice !== null ? { price: o.limitPrice } : {}), client_order_id: o.id };
-  const out: Record<string, unknown> = {};
-  for (const p of props) {
-    const v = value(p);
-    if (v !== undefined) out[p] = v;
-  }
-  return out;
-}
-
-export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {}): TradingService {
+export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {}): TradingService & { close(): Promise<void> } {
   const repo = createTradingRepo(ctx.db);
   const log = ctx.logger.child({ module: "trading" });
   const last = new Map<string, { price: number; source: string; at: number }>();
+  const desk = createDesk({ ctx, repo, venue: deps.venue ?? null, settings: async () => (await repo.settings()).value, log });
 
   async function publishOrder(o: OrderRow): Promise<void> {
     try {
@@ -150,17 +93,14 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
     o.filledAt = now;
     o.realizedUsd = r.realized;
     o.error = null;
-  }
-
-  async function venueTools(): Promise<VenueTool[]> {
-    if (!deps.venue) return [];
-    try {
-      return await deps.venue.tools({});
-    } catch (e) {
-      log.log("warn", "venue tool list failed", { error: errText(e) });
-      return [];
+    if (o.venueId) {
+      desk.observe(o.venueId, { kind: "filled", symbol: o.symbol, side: o.side, qty: o.qty, price });
+      // a fill that realized no loss is a win for the venue's skills
+      await desk.outcome(o.venueId, r.realized >= 0);
     }
   }
+
+  const venueTools = () => desk.tools();
 
   async function setPrice(symbol: string, price: number, source: string, runId: string | null): Promise<void> {
     const now = ctx.clock.now();
@@ -184,13 +124,16 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
     }
   }
 
-  async function lookupPrice(symbol: string, signal?: AbortSignal): Promise<{ price: number; source: string } | null> {
+  async function lookupPrice(symbol: string, signal?: AbortSignal, runId?: string | null): Promise<{ price: number; source: string } | null> {
+    // a learned venue first: its own price tool in its own symbol form
+    const learned = await desk.price(symbol, { signal, runId });
+    if (learned) return { price: learned.price, source: learned.source };
     const tools = (await venueTools()).filter((t) => !t.money && t.risk === "read" && PRICE_TOOL.test(t.name.slice(t.name.indexOf(".") + 1)));
     for (const t of tools.slice(0, 3)) {
       const props = Object.keys(((t.schema as { properties?: Record<string, unknown> }).properties ?? {}) as Record<string, unknown>);
       const key = props.find((p) => /^(symbol|ticker|pair|instrument|market|asset)$/i.test(p)) ?? (props.length ? null : "symbol");
       if (!key) continue;
-      const r = await deps.venue!.call(t.name, { [key]: symbol }, { signal, timeoutMs: 20_000 });
+      const r = await desk.call(t.name, { [key]: symbol }, { signal, timeoutMs: 20_000 });
       if (!r.ok) continue;
       const price = parsePrice(r.output);
       if (price !== null) return { price, source: t.name };
@@ -202,18 +145,23 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
     const now = ctx.clock.now();
     o.decidedAt = now;
     const tool = (await venueTools()).find((t) => t.name === o.venueTool);
-    if (!deps.venue || !tool) {
+    if (!tool) {
       o.status = "failed";
       o.error = `the venue tool ${o.venueTool ?? "(none)"} is not available`;
       return;
     }
-    const r = await deps.venue.call(tool.name, venueArgs(tool, o), { signal, timeoutMs: 30_000 });
+    const row = await desk.row(o.venueId);
+    const r = await desk.call(tool.name, desk.orderArgs(row, tool, o), { signal, timeoutMs: 30_000 });
     if (!r.ok) {
       o.status = "failed";
       o.error = clip(redact(r.output), 300);
+      if (o.venueId) {
+        await desk.outcome(o.venueId, false, ["orders"]);
+        await desk.lesson(tool.name, r.output, o.runId);
+      }
       return;
     }
-    const price = parsePrice(r.output, ["fillPrice", "fill_price", "avgPrice", "avg_price", "average", "averagePrice", "executedPrice", "filled_avg_price", "price"]);
+    const price = parsePrice(r.output, FILL_KEYS);
     if (price !== null) await fill(o, price);
     else {
       o.status = "approved";
@@ -236,7 +184,7 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
     return o;
   }
 
-  const service: TradingService = {
+  const service: TradingService & { close(): Promise<void> } = {
     async settings() {
       return (await repo.settings()).value;
     },
@@ -244,6 +192,8 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
     async saveSettings(s) {
       const value = normalizeSettings(s);
       await repo.saveSettings(value, ctx.clock.now());
+      // a live ccxt venue carries the max order size as its own cap
+      desk.track(desk.syncSettings(value));
       return value;
     },
 
@@ -265,7 +215,7 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
         if (!(Number.isFinite(opts.price) && opts.price > 0)) throw new TradingError("quote must be a positive price");
         found = { price: opts.price, source: "the quote the crew read" };
       } else {
-        found = await lookupPrice(sym, opts.signal);
+        found = await lookupPrice(sym, opts.signal, opts.runId ?? null);
         if (!found) {
           const known = last.get(sym);
           if (known) return { symbol: sym, price: known.price, source: `${known.source} (last seen)` };
@@ -286,13 +236,25 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
       if (type === "limit" && !(limitPrice !== null && Number.isFinite(limitPrice) && limitPrice > 0)) throw new TradingError("a limit order needs a positive limit_price");
       const reason = clip(redact(String(input.reason ?? "")), 300);
       if (reason.length < 3) throw new TradingError("give a one line reason for the order");
-      const mode = input.live === true ? "live" : "paper";
       let venue: VenueTool | null = null;
+      let venueId: string | null = null;
       if (input.venue) {
         const want = input.venue.trim();
         venue = (await venueTools()).find((t) => t.name === want || t.alias === want) ?? null;
         if (!venue) throw new TradingError(`the venue tool ${clip(want, 60)} is not connected`, "not_found");
         if (!venue.money) throw new TradingError(`${venue.name} does not place orders; name the connector tool that does`);
+      }
+      // live when asked; without an answer, live only when the owner set live mode and a live venue is ready
+      let mode: "paper" | "live" = input.live === true ? "live" : "paper";
+      if (input.live === undefined && !venue && (await repo.settings()).value.mode === "live" && (await desk.hasLiveVenue())) mode = "live";
+      if (!venue) {
+        const route = await desk.route(mode);
+        if (route) {
+          venueId = route.row.id;
+          if (mode === "live") venue = route.orderTool;
+        }
+      } else {
+        venueId = await desk.venueOf(venue.connectorId);
       }
       // one live idea, one proposal: an identical order still waiting is returned as is, nothing new is published
       const same = (await repo.openOrders()).find(
@@ -345,8 +307,10 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
         riskAgentId: null,
         realizedUsd: 0,
         error: null,
+        venueId,
       };
       await repo.insertOrder(o, now);
+      desk.observe(venueId, { kind: "proposed", symbol, side: o.side, qty: o.qty, price: quote });
       await publishOrder(o);
       return orderDto(o);
     },
@@ -441,6 +405,21 @@ export function createTradingService(ctx: ModuleContext, deps: TradingDeps = {})
       }
       if (n) log.log("warn", "kill switch cancelled open orders", { orders: n });
       return n;
+    },
+
+    // ------------------------------------------------------------ venues
+    venues: () => desk.list(),
+    createVenue: (body) => desk.create(body),
+    updateVenue: (id, body) => desk.update(id, body),
+    removeVenue: (id) => desk.remove(id),
+    learnVenue: (id) => desk.learn(id),
+    venueNotes: (role: AgentRole) => desk.notes(role),
+    useMemory: (m) => desk.useMemory(m),
+    connectSimulator: (sim, opts) => desk.connectSimulator(sim, opts),
+    idle: () => desk.idle(),
+    async close() {
+      await desk.idle();
+      desk.close();
     },
   };
   return service;

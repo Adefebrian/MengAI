@@ -63,6 +63,8 @@ export interface RunsServiceImpl extends RunsService {
   mind(runId: string, agentId: string): Promise<AgentMindDTO>;
   /** aborts live work without changing statuses; the next boot pauses those runs */
   close(): Promise<void>;
+  /** hands an in-process simulated trading venue to the desk through the tools bridge (the fund demo); null without one */
+  connectSimulator(sim: object): Promise<unknown>;
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -482,6 +484,10 @@ export function createRunsService(ctx: ModuleContext, deps: RunsDeps): RunsServi
       closed = true;
       for (const e of engines.values()) e.shutdown();
       engines.clear();
+    },
+
+    async connectSimulator(sim) {
+      return deps.tools.connectSimulator ? deps.tools.connectSimulator(sim) : null;
     },
   };
   return service;

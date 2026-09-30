@@ -35,8 +35,14 @@
 //   and it waits for the owner (the trading gate holds it in paper mode)
 // - the compliance officer checks the reports for advice language and
 //   secrets, and the CIO writes the P&L report (a record, not advice)
+// - before the fund day starts, a simulated exchange (Paw Exchange) connects
+//   as a trading venue and the data engineer's learning pass leaves the crew
+//   shared skills (price tool, symbol form, order parameters, limits); every
+//   cat reads them in its memory layer, the data engineer checks the venue
+//   once and the trader prices both paper orders through it, and the two
+//   fills count as wins on the venue's skills
 // The tracker walks every fund stage: thesis, research, backtest, risk
-// review, paper trade, live trade, report. No network, no connector.
+// review, paper trade, live trade, report. No network, no real exchange.
 // No model is called and no key is needed. Each reply waits 2.2 to 4.2 s and
 // each meeting holds 6 to 10 s, so the crew is visibly alive. The runtime JEV
 // is scripted too (the demo judge rides on the router).
@@ -52,6 +58,7 @@
 import { AGENT_ROLES, type AgentRole, type ProviderModel } from "@mengai/shared";
 import { STRATEGY_SYSTEM, ScriptedProvider, type ScriptedTurn } from "../modules/evals";
 import { CEO_SYSTEM, REFLEXION_SYSTEM, ROLE_HEADER_RE, ROLE_SYSTEM, packetQuestion, type CompanyPace, type JudgeHint } from "../modules/runs";
+import type { VenueSimulator } from "../modules/trading";
 import { LlmError, type ChatRequest, type ChatResult, type JevAnswer, type Judge, type LlmProvider, type LlmRouter, type Logger } from "./ports";
 import type { ProjectsService, RunsService } from "./services";
 
@@ -318,6 +325,8 @@ interface TurnInfo {
   planning: boolean;
   /** a hedge fund run (the plan guide or the P&L report spec says so) */
   fund: boolean;
+  /** the memory layer carries the crew's skill for the demo venue */
+  venue: boolean;
 }
 
 function textOf(content: ChatRequest["messages"][number]["content"]): string {
@@ -347,9 +356,11 @@ function readTurn(req: ChatRequest, charters: ReadonlyArray<readonly [string, Ag
   let round = 1;
   let planning = false;
   let fund = false;
+  let venue = false;
   for (const m of req.messages) {
     if (m.role !== "user") continue;
     const text = textOf(m.content);
+    if (text.includes(DEMO_VENUE_NOTE)) venue = true;
     if (!text.startsWith("Your task: ")) continue;
     title = text.slice("Your task: ".length).split("\n")[0]!.trim();
     const r = /\(round (\d+) of/.exec(text);
@@ -358,7 +369,7 @@ function readTurn(req: ChatRequest, charters: ReadonlyArray<readonly [string, Ag
     fund = text.includes("Company: hedge fund") || text.includes("P&L report");
   }
   const step = req.messages.filter((m) => m.role === "assistant").length;
-  return { role, roleTitle, coached: /\nRole strategy v\d+ /.test(req.system), title, step, round, planning, fund };
+  return { role, roleTitle, coached: /\nRole strategy v\d+ /.test(req.system), title, step, round, planning, fund, venue };
 }
 
 function leadSteps(planning: boolean, security: boolean): Step[] {
@@ -799,15 +810,24 @@ function quantSteps(title: string): Step[] {
   ];
 }
 
-function dataSteps(): Step[] {
+function dataSteps(venue: boolean): Step[] {
+  const check: Step[] = venue
+    ? [
+        {
+          say: `${DEMO_VENUE.title} is connected and my learning pass left the crew a skill: prices from ${DEMO_VENUE.label}.get_ticker, symbols like BTC/USD. Checking it once.`,
+          calls: [call("get_quote", { symbol: FUND_TRADES.symbol })],
+        },
+      ]
+    : [];
   return [
+    ...check,
     { say: "Network tools are off in the demo, so the bars come from the desk's sample file.", calls: [call("fs_write", { path: "data/btc-usd-daily.csv", content: FUND_CSV })] },
     { say: "Counting rows and looking for gaps.", calls: [call("fs_read", { path: "data/btc-usd-daily.csv" })] },
     { calls: [finish("data/btc-usd-daily.csv: 8 daily bars, 2026-08-01 to 2026-08-08, no gaps, header present.", ["data/btc-usd-daily.csv"])] },
   ];
 }
 
-function traderSteps(title: string): Step[] {
+function traderSteps(title: string, venue: boolean): Step[] {
   const { symbol, buy, sell, live } = FUND_TRADES;
   if (title === FUND_TITLE.live) {
     return [
@@ -816,6 +836,16 @@ function traderSteps(title: string): Step[] {
         calls: [call("propose_order", { symbol, side: "buy", qty: live.qty, type: "limit", limit_price: live.limit, quote: live.quote, live: true, reason: "Add on a pullback to the breakout level, within the paper limits" })],
       },
       { calls: [finish(`Proposed one live limit buy of ${live.qty} ${symbol} at ${live.limit}; it waits for the risk review and the owner.`)] },
+    ];
+  }
+  if (venue) {
+    return [
+      { say: `The data engineer's skill for ${DEMO_VENUE.title} says get_quote reads ${DEMO_VENUE.label}.get_ticker and takes ${symbol}. Reading the venue.`, calls: [call("get_quote", { symbol })] },
+      { say: "Close above the 20 day high at the venue's price. Buying on paper at that quote.", calls: [call("propose_order", { symbol, side: "buy", qty: buy.qty, type: "market", quote: buy.quote, reason: "Close above the 20 day high" })] },
+      { say: "Logging it.", calls: [call("fs_write", { path: "trades/log.csv", content: FUND_LOG })] },
+      { say: "Reading the venue again.", calls: [call("get_quote", { symbol })] },
+      { say: "Up 1.4 percent at the venue. Taking part off, as the thesis says.", calls: [call("propose_order", { symbol, side: "sell", qty: sell.qty, type: "market", quote: sell.quote, reason: "Take part off at the +1.4 percent band" })] },
+      { calls: [finish(`Two paper orders for ${symbol} priced through ${DEMO_VENUE.title} (buy ${buy.qty} at ${buy.quote}, sell ${sell.qty} at ${sell.quote}); trades/log.csv lists both.`, ["trades/log.csv"])] },
     ];
   }
   return [
@@ -858,8 +888,8 @@ function complianceSteps(): Step[] {
 
 const FUND_SCRIPTS: Record<string, (t: TurnInfo) => Step[]> = {
   "Quant researcher": (t) => quantSteps(t.title),
-  "Data engineer": () => dataSteps(),
-  Trader: (t) => traderSteps(t.title),
+  "Data engineer": (t) => dataSteps(t.venue),
+  Trader: (t) => traderSteps(t.title, t.venue),
   "Risk manager": (t) => riskSteps(t.title),
   "Compliance officer": () => complianceSteps(),
 };
@@ -992,6 +1022,70 @@ export function createDemoRouter(opts: DemoRouterOptions): LlmRouter & CompanyPa
   };
 }
 
+// ------------------------------------------------------------------- venue
+/** The fund demo's simulated exchange: learned like a real venue, it never takes an order. */
+export const DEMO_VENUE = { label: "paw", title: "Paw Exchange" } as const;
+/** How the memory layer names the demo venue's skill (the scripted cats look for it) */
+export const DEMO_VENUE_NOTE = `for the ${DEMO_VENUE.title} venue`;
+
+/**
+ * Paw Exchange: markets, a ticker, balances and an order tool that refuses
+ * (paper only). BTC/USD trades at the paper buy quote until the trader's
+ * first proposal, then at the sell quote, so the demo day prices both paper
+ * orders through the venue at the numbers the report states.
+ */
+export function createDemoExchange(): VenueSimulator {
+  const markets = [
+    { symbol: "BTC/USD", base: "BTC", quote: "USD" },
+    { symbol: "ETH/USD", base: "ETH", quote: "USD" },
+    { symbol: "SOL/USD", base: "SOL", quote: "USD" },
+  ];
+  const tape = [FUND_TRADES.buy.quote, FUND_TRADES.sell.quote];
+  let proposed = 0;
+  const last = (s: string) => (s === "BTC/USD" ? tape[Math.min(proposed, tape.length - 1)]! : s === "ETH/USD" ? 2410 : 148.2);
+  return {
+    label: DEMO_VENUE.label,
+    title: DEMO_VENUE.title,
+    tools: [
+      { local: "list_markets", description: "List the markets on Paw Exchange.", risk: "read", money: false, schema: { type: "object", properties: {} } },
+      { local: "get_ticker", description: "Last price of one market.", risk: "read", money: false, schema: { type: "object", properties: { symbol: { type: "string", description: "a market like BTC/USD" } }, required: ["symbol"] } },
+      { local: "get_balance", description: "Balances of the desk account.", risk: "read", money: false, schema: { type: "object", properties: {} } },
+      {
+        local: "create_order",
+        description: "Place an order.",
+        risk: "sensitive",
+        money: true,
+        schema: {
+          type: "object",
+          properties: {
+            symbol: { type: "string" },
+            side: { type: "string", enum: ["buy", "sell"] },
+            amount: { type: "number", description: "amount in the base currency" },
+            type: { type: "string", enum: ["market", "limit"] },
+            price: { type: "number" },
+          },
+          required: ["symbol", "side", "amount", "type"],
+        },
+      },
+    ],
+    async call(local, args) {
+      if (local === "list_markets") return { ok: true, output: JSON.stringify({ markets }) };
+      if (local === "get_ticker") {
+        const s = String(args.symbol ?? "").toUpperCase();
+        if (!markets.some((m) => m.symbol === s)) return { ok: false, output: `unknown market ${s}: markets look like BTC/USD` };
+        const px = last(s);
+        return { ok: true, output: JSON.stringify({ symbol: s, last: px, bid: px - 5, ask: px + 5 }) };
+      }
+      if (local === "get_balance") return { ok: true, output: JSON.stringify({ USD: { free: 100_000 }, BTC: { free: 0 } }) };
+      if (local === "create_order") return { ok: false, output: "Paw Exchange is simulated and takes no orders; the paper broker fills them" };
+      return { ok: false, output: `no tool ${local}` };
+    },
+    observe(e) {
+      if (e.kind === "proposed" && e.symbol === FUND_TRADES.symbol) proposed++;
+    },
+  };
+}
+
 // -------------------------------------------------------------------- seed
 export interface DemoSeed {
   projectId: string;
@@ -1003,7 +1097,8 @@ export interface DemoSeed {
 /** First boot in demo mode: one demo project and one running demo run. Null when projects already exist. */
 export async function seedDemo(deps: {
   projects: Pick<ProjectsService, "list" | "create">;
-  runs: Pick<RunsService, "create">;
+  /** connectSimulator: the fund demo's venue reaches the trading desk through the runs and tools services */
+  runs: Pick<RunsService, "create"> & { connectSimulator?(sim: object): Promise<unknown> };
   logger: Logger;
   /** also start the hedge fund demo (default true) */
   fund?: boolean;
@@ -1014,6 +1109,14 @@ export async function seedDemo(deps: {
   deps.logger.log("info", "demo crew started", { projectId: project.id, runId: run.id });
   let fund: DemoSeed["fund"] = null;
   if (deps.fund !== false) {
+    // the venue connects and is learned before the fund day starts
+    if (deps.runs.connectSimulator) {
+      try {
+        await deps.runs.connectSimulator(createDemoExchange());
+      } catch (e) {
+        deps.logger.log("warn", "demo venue did not connect", { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
     const fp = await deps.projects.create({ name: FUND_DEMO_PROJECT_NAME });
     const fr = await deps.runs.create({ projectId: fp.id, goal: FUND_DEMO_GOAL, company: "fund" });
     deps.logger.log("info", "demo fund started", { projectId: fp.id, runId: fr.id });

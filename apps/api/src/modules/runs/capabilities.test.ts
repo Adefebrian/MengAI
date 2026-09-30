@@ -162,3 +162,40 @@ describe("POST /api/runs", () => {
     expect(createRunSchema.safeParse({ projectId: "p1", goal: "Run a desk", company: "bank" }).success).toBe(false);
   });
 });
+
+describe("venue skills in the memory layer", () => {
+  test("every cat whose role may use a ready venue gets its note first in the memory layer on every step; a new skill version reaches the next step", async () => {
+    let version = 1;
+    const asked: string[] = [];
+    const venueNotes = async (role: string) => {
+      asked.push(role);
+      return role === "designer" ? [] : [{ venueId: "v1", version, text: `Crew skill v${version} for the Paw venue: get_quote reads paw.get_ticker.` }];
+    };
+    const tools = Object.assign(fakeTools(), { venueNotes });
+    const h = await harness({
+      toolsService: tools,
+      script: (info) => {
+        if (info.role === "lead") {
+          if (info.n === 0) return { calls: [{ name: "create_tasks", args: { tasks: [{ title: "Price it", spec: "x", role: "engineer" }, { title: "Draw it", spec: "y", role: "designer" }] } }, { name: "finish", args: { summary: "planned" } }] };
+          return finish("report");
+        }
+        if (info.role === "engineer" && info.n === 0) {
+          // the data engineer relearns the venue while this cat works: v2 from its next step
+          version = 2;
+          return { calls: [{ name: "fs_list", args: { path: "." } }] };
+        }
+        return finish(`${info.role} done`);
+      },
+    });
+    const run = await h.svc.create({ projectId: "p1", goal: "Trade on the venue" });
+    await h.untilStatus(run.id, "done");
+    const eng = h.context.builds.filter((b) => b.role === "engineer").map((b) => b.lessons[0]);
+    expect(eng.map((l) => l?.text)).toEqual(["Crew skill v1 for the Paw venue: get_quote reads paw.get_ticker.", "Crew skill v2 for the Paw venue: get_quote reads paw.get_ticker."]);
+    expect(eng[1]).toMatchObject({ id: "venue:v1:v2", scope: "global", role: null, tags: ["venue"] });
+    // a role without the venue in scope gets no note
+    expect(h.context.builds.filter((b) => b.role === "designer").every((b) => b.lessons.every((l) => !l.id.startsWith("venue:")))).toBe(true);
+    expect(new Set(asked)).toEqual(new Set(["lead", "engineer", "designer"]));
+    // venue notes are not lessons: never marked used
+    expect(h.memory.log.used.some((id) => id.startsWith("venue:"))).toBe(false);
+  });
+});

@@ -29,13 +29,13 @@ const SYMBOL = { type: "string", description: "Ticker, e.g. BTC-USD or AAPL", ma
 export const TRADING_SPECS: Record<TradingToolName, ToolSpec> = {
   get_quote: {
     name: "get_quote",
-    description: "Last price of a symbol from the owner's connector price tool.",
+    description: "Last price of a symbol from the connected venue (its learned price tool) or a connector price tool.",
     parameters: { type: "object", properties: { symbol: SYMBOL }, required: ["symbol"] },
   },
   propose_order: {
     name: "propose_order",
     description:
-      "Propose an order. Paper by default; live only proposes it for the risk manager and then the owner's gate. Give the quote you read and a one line reason. Facts, never advice.",
+      "Propose an order. Paper unless the owner runs live; live waits for the risk manager, then the owner's limits or the owner. A connected venue routes it. Give the quote you read and a one line reason. Facts, never advice.",
     parameters: {
       type: "object",
       properties: {
@@ -46,7 +46,7 @@ export const TRADING_SPECS: Record<TradingToolName, ToolSpec> = {
         limit_price: { type: "number", minimum: 0 },
         quote: { type: "number", minimum: 0, description: "the last price you read" },
         live: { type: "boolean" },
-        venue: { type: "string", maxLength: 100, description: "live only: the connector tool that places orders" },
+        venue: { type: "string", maxLength: 100, description: "live only, optional: the connector tool that places orders (default: the venue's learned order tool)" },
         reason: { type: "string", maxLength: 300 },
       },
       required: ["symbol", "side", "qty", "reason"],

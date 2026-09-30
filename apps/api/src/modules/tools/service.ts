@@ -6,7 +6,8 @@
 // the connector tools a task loaded, and the trading tools a company grants.
 // Destructive and sensitive connector tools go through the approval path the
 // engine passes in; order placement and fund movement only through the
-// trading gate.
+// trading gate. A connector tool that fails during a run becomes a crew-wide
+// lesson (once per tool and error shape), so every cat learns from it.
 import {
   activityForTool,
   ROLE_TOOLS,
@@ -37,19 +38,21 @@ import {
 } from "../../core/services";
 import { clip, redact, redactDeep } from "../../lib/redact";
 import { toJson } from "../../lib/sql";
+import { errorMeaning } from "../trading";
 import { runWithFileOrigin } from "../workspace";
 import { createToolCallsRepo } from "./repo";
 import { CONTROL_TOOLS, OPERATOR_TOOLS, READ_ONLY_TOOLS, TOOL_SPECS, UNAVAILABLE_TOOLS } from "./specs";
 import { validateArgs, type JsonSchema } from "./validate";
 import { fetchReadable, type Lookup } from "./web";
 import { argsLine, connectorSpec, dotted, FIND_TOOLS, FIND_TOOLS_SPEC, isTradingTool, searchTools, TRADING_ORDER, TRADING_SPECS, type TradingToolName } from "./capabilities";
-import type { BridgeTool, CapabilityContext, ConnectorsBridge, TaskSpecsInput, TradingBridge } from "./ports";
+import type { BridgeTool, CapabilityContext, ConnectorsBridge, SharedSkillMemory, SimulatedVenue, TaskSpecsInput, TradingBridge, VenueNoteView } from "./ports";
 
 export interface ToolsDeps {
   workspace: WorkspaceService;
   /** null keeps shell_run out of every spec (for example server mode with the shell off) */
   runner: Runner | null;
-  memory: MemoryService;
+  /** the memory module's service; its crew-wide skill side is handed to the trading desk */
+  memory: MemoryService & Partial<SharedSkillMemory>;
   assets: AssetsService;
   security: SecurityService;
   /** null outside local mode: operator tools are omitted and refused */
@@ -79,6 +82,10 @@ export interface ToolsServiceImpl extends ToolsService {
    * for its role, then the connector tools this task loaded (in load order).
    */
   taskSpecs(input: TaskSpecsInput): Promise<ToolSpec[]>;
+  /** memory layer notes of the ready trading venues this role may use (empty without trading) */
+  venueNotes(role: AgentRole): Promise<VenueNoteView[]>;
+  /** attaches an in-process simulated venue to the trading desk (the fund demo); null without trading */
+  connectSimulator(sim: SimulatedVenue): Promise<unknown>;
 }
 
 export const SHELL_TIMEOUT_MS = 120_000;
@@ -90,6 +97,8 @@ export const MAX_OUTPUT_CHARS = 256_000;
 const MAX_LIST_LINES = 400;
 /** tasks whose loaded connector tools are remembered (oldest dropped first) */
 const LOADED_TASKS = 1000;
+/** tool and error shapes already turned into a lesson in this process */
+const LESSON_KEYS = 500;
 
 type Args = Record<string, unknown>;
 interface Outcome {
@@ -134,9 +143,15 @@ function renderAx(root: AxNode, maxLines: number): string[] {
   return lines;
 }
 
+function hasSharedSkills(m: (MemoryService & Partial<SharedSkillMemory>) | null | undefined): m is MemoryService & SharedSkillMemory {
+  return !!m && typeof m.sharedSkills === "function" && typeof m.skillOutcome === "function" && typeof m.deleteSharedSkills === "function";
+}
+
 export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: ToolsOptions = {}): ToolsServiceImpl {
   const repo = createToolCallsRepo(ctx.db);
   const log = ctx.logger.child({ module: "tools" });
+  // the capability bridge: the trading desk writes venue skills and lessons into the crew memory
+  if (deps.trading?.useMemory && hasSharedSkills(deps.memory)) deps.trading.useMemory(deps.memory);
 
   const offered = (name: ToolName): boolean => {
     if (UNAVAILABLE_TOOLS.has(name)) return false;
@@ -190,6 +205,29 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     }
   }
 
+  const lessonKeys = new Set<string>();
+  /** a failed connector call during a run: one crew-wide lesson per tool and error shape */
+  async function toolLesson(t: BridgeTool, output: string, call: Call): Promise<void> {
+    const first = redact(output).replace(/^error:\s*/i, "").split("\n")[0]!.trim();
+    if (!first || !deps.memory) return;
+    const key = `${t.name}|${first.replace(/[0-9a-f]{8,}|\d+(\.\d+)?/gi, "#").slice(0, 120)}`;
+    if (lessonKeys.has(key)) return;
+    lessonKeys.add(key);
+    if (lessonKeys.size > LESSON_KEYS) lessonKeys.delete(lessonKeys.values().next().value!);
+    try {
+      await deps.memory.record({
+        text: `${t.alias} failed with "${clip(first, 140)}": ${errorMeaning(first)}.`,
+        tags: [t.connectorLabel, "tool-error"],
+        role: null,
+        projectId: null,
+        runId: call.runId,
+        scope: "global",
+      });
+    } catch (e) {
+      log.log("warn", "tool error lesson failed", { error: redact(String(e)) });
+    }
+  }
+
   async function findTools(a: Args, call: Call): Promise<Outcome> {
     const tools = await connectorTools(call.role);
     if (!tools.length) return done("no connector tools are available to your role", "find_tools: none available");
@@ -222,6 +260,7 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     }
     markLoaded(call.runId, call.taskId, t.name);
     const r = await deps.connectors!.call(t.name, args, { signal: call.signal });
+    if (!r.ok && !call.signal?.aborted) await toolLesson(t, r.output, call);
     return { ok: r.ok, output: r.output, summary: `${t.name} ${r.ok ? "answered" : "failed"}` };
   }
 
@@ -249,7 +288,8 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
           qty: n(a.qty)!,
           type: (s(a.type) as "market" | "limit" | undefined) ?? (n(a.limit_price) !== undefined ? "limit" : "market"),
           limitPrice: n(a.limit_price) ?? null,
-          live: a.live === true,
+          // absent: the desk decides (live only in the owner's live mode with a live venue ready)
+          live: typeof a.live === "boolean" ? a.live : undefined,
           venue: s(a.venue) ?? null,
           quote: n(a.quote) ?? null,
           reason: s(a.reason)!,
@@ -634,6 +674,20 @@ export function createToolsService(ctx: ModuleContext, deps: ToolsDeps, opts: To
     },
 
     detail: (runId, callId) => repo.get(runId, callId),
+
+    async venueNotes(role) {
+      if (!deps.trading?.venueNotes) return [];
+      try {
+        return await deps.trading.venueNotes(role);
+      } catch (e) {
+        log.log("warn", "venue notes failed", { error: redact(String(e)) });
+        return [];
+      }
+    },
+
+    async connectSimulator(sim) {
+      return deps.trading?.connectSimulator ? deps.trading.connectSimulator(sim) : null;
+    },
   };
   return service;
 }

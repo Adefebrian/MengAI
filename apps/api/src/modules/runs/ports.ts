@@ -91,6 +91,14 @@ export interface CompanyCatalog {
 /** The capability side of the tools service (connectors and trading); absent in older wiring and tests. */
 export interface CapabilityTools {
   taskSpecs?(input: { role: AgentRole; runId: string; taskId: string | null; grants?: readonly string[] }): Promise<ToolSpec[]>;
+  /**
+   * The crew's learned trading venue skills for a role: one note per ready
+   * venue the role may use. The text changes only with the skill version, so
+   * the memory layer (and the prompt prefix after it) stays cached.
+   */
+  venueNotes?(role: AgentRole): Promise<Array<{ venueId: string; version: number; text: string }>>;
+  /** attaches an in-process simulated venue to the trading desk (the fund demo; structural) */
+  connectSimulator?(sim: object): Promise<unknown>;
 }
 
 /** What the engine adds to every tool call (the tools module's CapabilityContext, structurally). */

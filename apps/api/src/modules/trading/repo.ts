@@ -1,9 +1,11 @@
-// trading_settings, orders and positions. One owner ("owner") like the rest
-// of the schema; amounts are USD doubles, quantities doubles.
+// trading_settings, orders, positions and trading_venues. One owner
+// ("owner") like the rest of the schema; amounts are USD doubles,
+// quantities doubles.
 import { DEFAULT_TRADING, type OrderDTO, type OrderStatus, type TradingSettings } from "@mengai/shared";
 import type { Db, Row } from "../../core/ports/db";
-import { json, num, numOrNull, toJson } from "../../lib/sql";
+import { b01, bool, json, num, numOrNull, toJson } from "../../lib/sql";
 import type { Book } from "./broker";
+import type { VenueProfile } from "./learn";
 
 export interface OrderRow extends OrderDTO {
   /** the quote the order was proposed at */
@@ -14,6 +16,34 @@ export interface OrderRow extends OrderDTO {
   riskAgentId: string | null;
   realizedUsd: number;
   error: string | null;
+  /** the trading venue that priced (paper) or placed (live) the order */
+  venueId: string | null;
+}
+
+/** One trading venue. Secrets never land here: they stay with the connector in the vault. */
+export interface VenueRow {
+  id: string;
+  connectorId: string;
+  /** the venue created the connector (removing the venue removes it) */
+  ownsConnector: boolean;
+  preset: string;
+  label: string;
+  /** the connector label at creation: the name key of the venue's crew skills */
+  skillKey: string;
+  /** the command or URL before the mode flags */
+  target: string;
+  mode: "paper" | "live";
+  testnet: boolean;
+  enabled: boolean;
+  status: "connected" | "learning" | "ready" | "error" | "disabled";
+  error: string | null;
+  profile: VenueProfile | null;
+  /** non-secret setup from the wizard (the exchange id) */
+  settings: { exchange?: string | null };
+  skillVersion: number;
+  learnedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface PositionRow extends Book {
@@ -50,6 +80,31 @@ function orderFromRow(r: Row): OrderRow {
     riskAgentId: str(r.risk_agent_id),
     realizedUsd: num(r.realized_usd),
     error: str(r.error),
+    venueId: str(r.venue_id),
+  };
+}
+
+function venueFromRow(r: Row): VenueRow {
+  const profile = json<VenueProfile | null>(r.profile, null);
+  return {
+    id: String(r.id),
+    connectorId: String(r.connector_id),
+    ownsConnector: bool(r.owns_connector),
+    preset: String(r.preset),
+    label: String(r.label),
+    skillKey: String(r.skill_key),
+    target: String(r.target ?? ""),
+    mode: String(r.mode) === "live" ? "live" : "paper",
+    testnet: bool(r.testnet),
+    enabled: bool(r.enabled),
+    status: String(r.status) as VenueRow["status"],
+    error: str(r.error),
+    profile: profile && typeof profile === "object" && (profile as { v?: unknown }).v === 1 ? profile : null,
+    settings: json<VenueRow["settings"]>(r.settings, {}),
+    skillVersion: num(r.skill_version),
+    learnedAt: numOrNull(r.learned_at),
+    createdAt: num(r.created_at),
+    updatedAt: num(r.updated_at),
   };
 }
 
@@ -105,8 +160,8 @@ export function createTradingRepo(db: Db) {
     },
 
     async insertOrder(o: OrderRow, now: number): Promise<void> {
-      await db.query`insert into orders (id, run_id, agent_id, symbol, side, qty, type, limit_price, quote, mode, status, venue, venue_tool, reason, risk_note, risk_verdict, risk_agent_id, fill_price, realized_usd, error, created_at, decided_at, filled_at, updated_at)
-        values (${o.id}, ${o.runId}, ${o.agentId}, ${o.symbol}, ${o.side}, ${o.qty}, ${o.type}, ${o.limitPrice}, ${o.quote}, ${o.mode}, ${o.status}, ${o.venue}, ${o.venueTool}, ${o.reason}, ${o.riskNote}, ${o.riskVerdict}, ${o.riskAgentId}, ${o.fillPrice}, ${o.realizedUsd}, ${o.error}, ${o.createdAt}, ${o.decidedAt}, ${o.filledAt}, ${now})`;
+      await db.query`insert into orders (id, run_id, agent_id, symbol, side, qty, type, limit_price, quote, mode, status, venue, venue_tool, venue_id, reason, risk_note, risk_verdict, risk_agent_id, fill_price, realized_usd, error, created_at, decided_at, filled_at, updated_at)
+        values (${o.id}, ${o.runId}, ${o.agentId}, ${o.symbol}, ${o.side}, ${o.qty}, ${o.type}, ${o.limitPrice}, ${o.quote}, ${o.mode}, ${o.status}, ${o.venue}, ${o.venueTool}, ${o.venueId}, ${o.reason}, ${o.riskNote}, ${o.riskVerdict}, ${o.riskAgentId}, ${o.fillPrice}, ${o.realizedUsd}, ${o.error}, ${o.createdAt}, ${o.decidedAt}, ${o.filledAt}, ${now})`;
     },
     async saveOrder(o: OrderRow, now: number): Promise<void> {
       await db.query`update orders set status = ${o.status}, risk_note = ${o.riskNote}, risk_verdict = ${o.riskVerdict}, risk_agent_id = ${o.riskAgentId},
@@ -151,6 +206,32 @@ export function createTradingRepo(db: Db) {
     },
     async mark(symbol: string, price: number, now: number): Promise<void> {
       await db.query`update positions set last_price = ${price}, updated_at = ${now} where owner_id = 'owner' and symbol = ${symbol}`;
+    },
+
+    async venues(): Promise<VenueRow[]> {
+      return (await db.query`select * from trading_venues where owner_id = 'owner' order by created_at, id`).map(venueFromRow);
+    },
+    async venue(id: string): Promise<VenueRow | null> {
+      const rows = await db.query`select * from trading_venues where id = ${id} and owner_id = 'owner'`;
+      return rows[0] ? venueFromRow(rows[0]) : null;
+    },
+    async venueByConnector(connectorId: string): Promise<VenueRow | null> {
+      const rows = await db.query`select * from trading_venues where connector_id = ${connectorId} and owner_id = 'owner'`;
+      return rows[0] ? venueFromRow(rows[0]) : null;
+    },
+    async insertVenue(v: VenueRow): Promise<void> {
+      await db.query`insert into trading_venues (id, connector_id, owns_connector, preset, label, skill_key, target, mode, testnet, enabled, status, error, profile, settings, skill_version, learned_at, created_at, updated_at)
+        values (${v.id}, ${v.connectorId}, ${b01(v.ownsConnector)}, ${v.preset}, ${v.label}, ${v.skillKey}, ${v.target}, ${v.mode}, ${b01(v.testnet)}, ${b01(v.enabled)}, ${v.status}, ${v.error},
+          ${toJson(v.profile ?? {})}, ${toJson(v.settings)}, ${v.skillVersion}, ${v.learnedAt}, ${v.createdAt}, ${v.updatedAt})`;
+    },
+    async saveVenue(v: VenueRow): Promise<void> {
+      await db.query`update trading_venues set label = ${v.label}, target = ${v.target}, mode = ${v.mode}, testnet = ${b01(v.testnet)}, enabled = ${b01(v.enabled)},
+        status = ${v.status}, error = ${v.error}, profile = ${toJson(v.profile ?? {})}, settings = ${toJson(v.settings)}, skill_version = ${v.skillVersion},
+        learned_at = ${v.learnedAt}, updated_at = ${v.updatedAt}
+        where id = ${v.id} and owner_id = 'owner'`;
+    },
+    async removeVenue(id: string): Promise<void> {
+      await db.query`delete from trading_venues where id = ${id} and owner_id = 'owner'`;
     },
   };
 }

@@ -322,6 +322,20 @@ export async function skillsFor(db: Db, role: AgentRole | null): Promise<SkillDT
   return rows.map(toSkill);
 }
 
+/** Role-less (crew-wide) skills whose name starts with the prefix, oldest first. The table is small: filtered here, no LIKE escaping. */
+export async function sharedSkills(db: Db, prefix: string): Promise<SkillDTO[]> {
+  const rows = await db.query`select * from skills where owner_id = 'owner' and role is null order by created_at asc, id asc`;
+  return rows.map(toSkill).filter((s) => s.name.startsWith(prefix));
+}
+
+/** One use of a skill by name; a win also counts a win. False when no skill has the name. */
+export async function skillOutcome(db: Db, name: string, win: boolean, now: number): Promise<boolean> {
+  const rows = win
+    ? await db.query`update skills set uses = uses + 1, wins = wins + 1, updated_at = ${now} where owner_id = 'owner' and name = ${name} returning id`
+    : await db.query`update skills set uses = uses + 1, updated_at = ${now} where owner_id = 'owner' and name = ${name} returning id`;
+  return rows.length > 0;
+}
+
 export async function deleteSkill(db: Db, id: string): Promise<boolean> {
   const rows = await db.query`delete from skills where id = ${id} returning id`;
   return rows.length > 0;

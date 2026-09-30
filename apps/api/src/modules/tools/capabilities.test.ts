@@ -208,7 +208,9 @@ describe("trading tools", () => {
     expect((await tools.execute(call("get_quote", { symbol: "BTC-USD" }), tc("engineer", g))).output).toBe("BTC-USD last price 101.50 (source: exch.get_price)");
     const p = await tools.execute(call("propose_order", { symbol: "BTC-USD", side: "buy", qty: 0.1, quote: 101.5, reason: "breakout" }), tc("engineer", g));
     expect(p.output).toBe("order ord-1 proposed: paper buy 0.1 BTC-USD market. It waits for the risk manager's review_order.");
-    expect(trading.proposed[0]).toMatchObject({ runId: "run-1", agentId: "agent-1", type: "market", quote: 101.5, live: false });
+    expect(trading.proposed[0]).toMatchObject({ runId: "run-1", agentId: "agent-1", type: "market", quote: 101.5 });
+    // no live flag: the desk decides (paper unless the owner set live mode and a live venue is ready)
+    expect((trading.proposed[0] as { live?: boolean }).live).toBeUndefined();
     const live = await tools.execute(call("propose_order", { symbol: "BTC-USD", side: "buy", qty: 0.1, limit_price: 99, live: true, reason: "add" }), tc("engineer", g));
     expect(live.output).toContain("then the owner's trading gate");
     expect(trading.proposed[1]).toMatchObject({ type: "limit", limitPrice: 99, live: true });
@@ -221,5 +223,57 @@ describe("trading tools", () => {
     expect((await tools.execute(call("propose_order", { symbol: "BTC-USD", side: "hold", qty: 1, reason: "x" }), tc("engineer", g))).output).toContain("must be one of buy, sell");
     expect(tools.isReadOnly("positions")).toBe(true);
     expect(tools.isReadOnly("propose_order")).toBe(false);
+  });
+});
+
+describe("the trading venue bridge", () => {
+  test("binds the crew memory into the desk, passes venue notes and simulators through, and turns a failing connector call into one crew lesson", async () => {
+    const recorded: unknown[] = [];
+    const memory = {
+      async record(i: unknown) {
+        recorded.push(i);
+        return {} as never;
+      },
+      sharedSkills: async () => [],
+      skillOutcome: async () => true,
+      deleteSharedSkills: async () => 0,
+    };
+    let bound: unknown = null;
+    const trading: TradingBridge = {
+      ...fakeTrading(),
+      useMemory: (m) => void (bound = m),
+      venueNotes: async (role) => [{ venueId: "v1", version: 2, text: `note for ${role}` }],
+      connectSimulator: async (sim) => ({ label: sim.label }),
+    };
+    let n429 = 0;
+    const failing: ConnectorsBridge = { tools: async () => TOOLS, call: async () => ({ ok: false, output: `error: HTTP 429 Too Many Requests (retry after ${10 + ++n429} s)` }) };
+    const tools = createToolsModule(ctx, {
+      workspace: null as never,
+      runner: null,
+      memory: memory as never,
+      assets: null as never,
+      security: null as never,
+      automation: null,
+      settings: null as never,
+      projects: null as never,
+      connectors: failing,
+      trading,
+    }).service;
+    expect(bound).toBe(memory);
+    expect(await tools.venueNotes("engineer")).toEqual([{ venueId: "v1", version: 2, text: "note for engineer" }]);
+    const sim = { label: "paw", title: "Paw", tools: [], call: async () => ({ ok: true, output: "" }) };
+    expect(await tools.connectSimulator(sim)).toEqual({ label: "paw" });
+
+    expect((await tools.execute(call("exch__get_price", { symbol: "BTC" }), tc())).ok).toBe(false);
+    // the same error shape again (only the numbers differ) is not a second lesson
+    await tools.execute(call("exch__get_price", { symbol: "ETH" }), tc());
+    expect(recorded).toEqual([
+      { text: 'exch__get_price failed with "HTTP 429 Too Many Requests (retry after 11 s)": rate limited: wait and call less often.', tags: ["exch", "tool-error"], role: null, projectId: null, runId: "run-1", scope: "global" },
+    ]);
+
+    // without the trading desk nothing is passed through
+    const plain = build();
+    expect(await plain.venueNotes("engineer")).toEqual([]);
+    expect(await plain.connectSimulator(sim)).toBeNull();
   });
 });

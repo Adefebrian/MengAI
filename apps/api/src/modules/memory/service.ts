@@ -38,6 +38,15 @@ export interface MemoryModuleService extends MemoryService, MemoryBrain {
   listSkills(f: { role?: AgentRole; before?: Cursor; limit?: number }): Promise<SkillDTO[]>;
   deleteSkill(id: string): Promise<void>;
   /**
+   * Crew-wide skills (role null) by name prefix: the trading desk writes one
+   * set per venue ("venue <key>: prices") and every cat reads them.
+   */
+  sharedSkills(prefix: string): Promise<SkillDTO[]>;
+  /** one use of a skill by name, a win or a loss (the desk records fills); false when no skill has the name */
+  skillOutcome(name: string, win: boolean): Promise<boolean>;
+  /** deletes every crew-wide skill with the prefix; returns how many */
+  deleteSharedSkills(prefix: string): Promise<number>;
+  /**
    * Offers lessons with wins in 2+ projects to DecisionService.promoteLesson
    * and applies the answer. At most LIMITS.promotePerPass JEV calls per pass,
    * one pass at a time (kv lock); a pass that finds the lock held returns [].
@@ -612,6 +621,21 @@ export function createMemoryService(ctx: ModuleContext, deps: MemoryDeps): Memor
     },
     async deleteSkill(id) {
       if (!(await repo.deleteSkill(db, id))) throw notFound("skill");
+    },
+    async sharedSkills(prefix) {
+      const p = String(prefix ?? "");
+      if (!p.trim()) return [];
+      return repo.sharedSkills(db, p);
+    },
+    async skillOutcome(name, win) {
+      return repo.skillOutcome(db, String(name ?? ""), win === true, clock.now());
+    },
+    async deleteSharedSkills(prefix) {
+      const p = String(prefix ?? "");
+      if (!p.trim()) return 0;
+      let n = 0;
+      for (const s of await repo.sharedSkills(db, p)) if (await repo.deleteSkill(db, s.id)) n++;
+      return n;
     },
   };
 }

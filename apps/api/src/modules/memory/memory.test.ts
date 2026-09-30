@@ -474,6 +474,29 @@ describe("memory skills and digests", () => {
     await expect(memory.saveSkill({ name: "x", description: "y", role: null, steps: [] })).rejects.toThrow("at least one step");
   });
 
+  test("crew-wide skills by prefix: the trading desk's venue skills, their wins and losses, and removal", async () => {
+    const { memory } = await setup();
+    const steps = [{ tool: "binance.get_ticker", args: { symbol: "BTC/USDT" } }];
+    await memory.saveSkill({ name: "venue binance: prices", description: "Binance prices: get_quote reads binance.get_ticker.", role: null, steps });
+    await memory.saveSkill({ name: "venue binance: orders", description: "Binance orders: propose_order sends binance.create_order.", role: null, steps });
+    await memory.saveSkill({ name: "venue binance-2: prices", description: "Another venue.", role: null, steps });
+    await memory.saveSkill({ name: "venue binance: private", description: "A role skill is not crew-wide.", role: "engineer", steps });
+    expect((await memory.sharedSkills("venue binance: ")).map((s) => s.name)).toEqual(["venue binance: prices", "venue binance: orders"]);
+    expect(await memory.sharedSkills("  ")).toEqual([]);
+
+    expect(await memory.skillOutcome("venue binance: orders", true)).toBe(true);
+    expect(await memory.skillOutcome("venue binance: orders", false)).toBe(true);
+    expect(await memory.skillOutcome("venue nowhere: orders", true)).toBe(false);
+    // a relearn keeps the track record
+    await memory.saveSkill({ name: "venue binance: orders", description: "Binance orders: relearned.", role: null, steps });
+    expect((await memory.sharedSkills("venue binance: ")).find((s) => s.name === "venue binance: orders")).toMatchObject({ uses: 2, wins: 1, description: "Binance orders: relearned." });
+    // every cat recalls a crew-wide skill
+    expect((await memory.findSkills({ text: "binance prices get_quote", role: "designer" })).map((s) => s.name)).toContain("venue binance: prices");
+
+    expect(await memory.deleteSharedSkills("venue binance: ")).toBe(2);
+    expect((await memory.listSkills({})).map((s) => s.name).sort()).toEqual(["venue binance-2: prices", "venue binance: private"]);
+  });
+
   test("run digests: null when none, newest first, capped near 300 tokens, one per run", async () => {
     const { memory, clock, db } = await setup();
     expect(await memory.runDigest("p1")).toBeNull();

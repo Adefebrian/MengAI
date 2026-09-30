@@ -2,7 +2,11 @@
 // trading services (structural, injected by core/container.ts), and the
 // capability context the runs engine adds to a tool call (company, role key,
 // the trading grants of the cat, and the approval path for sensitive tools).
-import type { AgentRole, CompanyKind, OrderDTO, PositionDTO, Risk } from "@mengai/shared";
+// The tools module is the capability bridge: it hands the trading desk the
+// crew memory at boot, so what the desk learns about a venue lands where
+// every cat reads it.
+import type { AgentRole, CompanyKind, OrderDTO, PositionDTO, Risk, SkillDTO } from "@mengai/shared";
+import type { MemoryService } from "../../core/services";
 
 export interface BridgeTool {
   /** namespaced name ("binance.get_ticker") */
@@ -41,6 +45,35 @@ export interface TradingBridge {
   review(input: { runId: string | null; agentId: string | null; orderId?: string | null; verdict: "approve" | "reject"; note: string; signal?: AbortSignal }): Promise<OrderDTO>;
   positions(mode?: "paper" | "live"): Promise<PositionDTO[]>;
   pendingReview(runId: string | null): Promise<OrderDTO[]>;
+  /** binds the crew memory: venue skills, their wins and losses, venue error lessons */
+  useMemory?(memory: MemoryService & SharedSkillMemory): void;
+  /** memory layer notes of the ready venues this role may use */
+  venueNotes?(role: AgentRole): Promise<VenueNoteView[]>;
+  /** attaches an in-process simulated venue and learns it */
+  connectSimulator?(sim: SimulatedVenue): Promise<unknown>;
+}
+
+/** The crew-wide skill side of the memory module (structural; older wiring may lack it). */
+export interface SharedSkillMemory {
+  sharedSkills(prefix: string): Promise<SkillDTO[]>;
+  skillOutcome(name: string, win: boolean): Promise<boolean>;
+  deleteSharedSkills(prefix: string): Promise<number>;
+}
+
+/** One venue's memory layer note; the text is stable per skill version. */
+export interface VenueNoteView {
+  venueId: string;
+  version: number;
+  text: string;
+}
+
+/** An in-process venue (the trading module's VenueSimulator, structurally). */
+export interface SimulatedVenue {
+  label: string;
+  title: string;
+  tools: Array<{ local: string; description: string; risk: Risk; money: boolean; schema: Record<string, unknown> }>;
+  call(local: string, args: Record<string, unknown>): Promise<{ ok: boolean; output: string }>;
+  observe?(e: { kind: "proposed" | "filled"; symbol: string; side: "buy" | "sell"; qty: number; price: number | null }): void;
 }
 
 export interface ApprovalRequest {

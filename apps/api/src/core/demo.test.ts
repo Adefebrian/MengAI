@@ -22,9 +22,11 @@ import {
   DEMO_QUESTION,
   DEMO_ROLE_TITLE,
   DEMO_SMOKE,
+  DEMO_VENUE,
   FUND_DEMO_GOAL,
   FUND_TITLE,
   FUND_TRADES,
+  createDemoExchange,
   createDemoJudge,
   createDemoRouter,
   demoCharters,
@@ -458,6 +460,31 @@ describe("demo fund: one hedge fund day", () => {
       expect(of("trade.order").length).toBeGreaterThanOrEqual(6);
       expect(of("trade.positions").length).toBeGreaterThan(0);
 
+      // the venue: Paw Exchange connected before the day, the data engineer's learning pass left crew-wide skills
+      const venues = await trading.venues();
+      expect(venues).toHaveLength(1);
+      expect(venues[0]).toMatchObject({ preset: "simulator", label: DEMO_VENUE.title, mode: "paper", testnet: false, status: "ready", error: null });
+      const learned = venues[0]!.learnedSkills;
+      expect(learned.map((k) => k.name).sort()).toEqual(["venue paw: account", "venue paw: limits", "venue paw: orders", "venue paw: prices"]);
+      const shared = (await container.modules.memory.service.listSkills({})).filter((k) => k.name.startsWith("venue paw: "));
+      expect(shared).toHaveLength(4);
+      expect(shared.every((k) => k.role === null)).toBe(true);
+      expect(shared.find((k) => k.name === "venue paw: prices")!.description).toContain("get_quote reads paw.get_ticker (symbol like BTC/USD)");
+      expect(shared.find((k) => k.name === "venue paw: orders")!.description).toContain("amount in base units");
+      // the two paper fills priced through the venue count as wins on its price and order skills
+      expect(learned.find((k) => k.name === "venue paw: orders")).toMatchObject({ uses: 2, wins: 2 });
+      expect(learned.find((k) => k.name === "venue paw: prices")).toMatchObject({ uses: 2, wins: 2 });
+
+      // the data engineer checks the venue once and the trader reads it before each paper order, with the skill in its memory layer
+      const quotes = of("tool.result").filter((e) => e.data.tool === "get_quote");
+      expect(quotes.map((e) => e.data.summary)).toEqual([
+        `BTC-USD last price 61200.00 (source: paw.get_ticker)`,
+        `BTC-USD last price 61200.00 (source: paw.get_ticker)`,
+        `BTC-USD last price 62050.00 (source: paw.get_ticker)`,
+      ]);
+      const traders = new Set(snap.agents.filter((a) => a.roleTitle === "Trader").map((a) => a.id));
+      expect(of("agent.say").some((e) => traders.has(e.agentId ?? "") && e.data.text.includes(`skill for ${DEMO_VENUE.title}`))).toBe(true);
+
       // every trading call is audited like any tool call
       const calls = of("tool.call").map((e) => e.data.tool);
       expect(calls.filter((t) => t === "propose_order")).toHaveLength(3);
@@ -494,5 +521,20 @@ describe("demo fund: one hedge fund day", () => {
     const trader = "You are the Trader cat on a MengAI crew, a Engineer specialist.\n- Trade.";
     const first = demoTurn({ model: "m", system: trader, messages: [{ role: "user", content: `Your task: ${FUND_TITLE.paper}` }] }, roles).toolCalls![0]!;
     expect(first).toMatchObject({ name: "propose_order", arguments: { side: "buy", quote: FUND_TRADES.buy.quote } });
+    // with the venue skill in the memory layer the trader reads the venue first
+    const memory = { role: "user" as const, content: "Goal: x\n\nLessons from earlier work (apply when relevant):\n- Crew skill v1 for the Paw Exchange venue (paper), learned by the data engineer: Prices: get_quote reads paw.get_ticker." };
+    const read = demoTurn({ model: "m", system: trader, messages: [memory, { role: "user", content: `Your task: ${FUND_TITLE.paper}` }] }, roles);
+    expect(read.toolCalls![0]).toMatchObject({ name: "get_quote", arguments: { symbol: FUND_TRADES.symbol } });
+    expect(read.text).toContain("skill for Paw Exchange");
+  });
+
+  test("Paw Exchange: markets, a ticker that moves after the first proposal, balances, and no orders", async () => {
+    const ex = createDemoExchange();
+    expect(ex.tools.map((t) => `${t.local}:${t.risk}:${t.money}`)).toEqual(["list_markets:read:false", "get_ticker:read:false", "get_balance:read:false", "create_order:sensitive:true"]);
+    expect(JSON.parse((await ex.call("get_ticker", { symbol: "BTC/USD" })).output).last).toBe(FUND_TRADES.buy.quote);
+    expect(await ex.call("get_ticker", { symbol: "BTC-USD" })).toEqual({ ok: false, output: "unknown market BTC-USD: markets look like BTC/USD" });
+    ex.observe!({ kind: "proposed", symbol: FUND_TRADES.symbol, side: "buy", qty: 0.05, price: FUND_TRADES.buy.quote });
+    expect(JSON.parse((await ex.call("get_ticker", { symbol: "BTC/USD" })).output).last).toBe(FUND_TRADES.sell.quote);
+    expect((await ex.call("create_order", { symbol: "BTC/USD", side: "buy", amount: 1, type: "market" })).ok).toBe(false);
   });
 });

@@ -2111,7 +2111,9 @@ export class RunEngine {
       const layers = this.layersFor(a);
       // capability tools join per step: find_tools, the connector tools this task loaded, the company's grants
       const specs = await this.stepSpecs(a, t, baseSpecs);
-      const input = { ...this.contextInput(a, t, specs, brief, lessons, steps, summary, resolved, textOnly > 0), ...layers };
+      // the venue skills the crew learned join the memory layer every step: what one cat learns, every cat reads next step
+      const venue = await this.venueLessons(a);
+      const input = { ...this.contextInput(a, t, specs, brief, venue.length ? [...venue, ...lessons] : lessons, steps, summary, resolved, textOnly > 0), ...layers };
       let build = this.deps.context.build(input);
       if (build.needsCompaction && steps.length > 1) {
         await this.setAgent(a, { statusText: VOICE.compacting });
@@ -2281,6 +2283,32 @@ export class RunEngine {
     } catch (e) {
       this.log.log("warn", "capability tools failed, using the registry tools", { error: redact(errMsg(e)) });
       return base;
+    }
+  }
+
+  /** The ready trading venues' crew skills for this cat's role, as memory layer entries (never marked used: they are not lessons). */
+  private async venueLessons(a: LiveAgent): Promise<LessonDTO[]> {
+    if (!this.deps.tools.venueNotes) return [];
+    try {
+      const notes = await this.deps.tools.venueNotes(a.dto.role);
+      return notes.map((n) => ({
+        id: `venue:${n.venueId}:v${n.version}`,
+        scope: "global" as const,
+        role: null,
+        projectId: null,
+        text: n.text,
+        tags: ["venue"],
+        status: "active" as const,
+        uses: 0,
+        wins: 0,
+        losses: 0,
+        score: 1,
+        createdAt: 0,
+        lastUsedAt: null,
+      }));
+    } catch (e) {
+      this.log.log("warn", "venue notes failed", { error: redact(errMsg(e)) });
+      return [];
     }
   }
 
