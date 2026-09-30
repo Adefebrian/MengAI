@@ -1,6 +1,8 @@
 // Providers (/app/providers): bring your own key. Connected providers as
 // rows with a real connection test (JEV core.list.actions), the add form
-// beside them (card, the key field never echoes and clears after save),
+// beside them (card, the key field never echoes and clears after save; the
+// base URL comes prefilled from the preset and stays editable, custom
+// endpoints start empty), the JEV judge as its own key-only card,
 // then model routing per tier, per role and for media (divided section of
 // three settings tables on one column grid, closed by one save row).
 import {
@@ -89,7 +91,7 @@ function ProviderRow({ p, now, onChange, onRemove }: { p: ProviderDTO; now: numb
         onClose={() => setConfirm(false)}
         alert
         title={`Remove ${p.label}?`}
-        description="The key is deleted from the vault. Tiers routed to it fall back to the default model."
+        description="The key is deleted from the vault. Tiers routed to it go back to Automatic."
         footer={
           <>
             <button type="button" className="btn-ghost" onClick={() => setConfirm(false)}>
@@ -120,24 +122,33 @@ function ProviderRow({ p, now, onChange, onRemove }: { p: ProviderDTO; now: numb
 
 function AddProvider({ presets, onAdded }: { presets: ProviderPreset[]; onAdded: (p: ProviderDTO) => void }) {
   const { api } = useApp();
-  const [presetId, setPresetId] = useState("openai");
+  const [presetId, setPresetId] = useState(presets[0]?.id ?? "openai");
   const [label, setLabel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
+  // prefilled from the preset and editable; custom presets have no URL, so the owner types it
+  const [baseUrl, setBaseUrl] = useState(presets[0]?.baseUrl ?? "");
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [models, setModels] = useState("");
   const [ok, setOk] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
   const save = useAction();
   const preset = presets.find((x) => x.id === presetId) ?? presets[0];
+  const custom = !preset?.baseUrl;
 
+  // presets arrive filtered (a new array each render), so only a preset change refills the URL
   useEffect(() => {
-    setBaseUrl("");
+    setBaseUrl(presets.find((x) => x.id === presetId)?.baseUrl ?? "");
+    setUrlError(null);
     setModels("");
   }, [presetId]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setOk(null);
+    if (!baseUrl.trim()) {
+      setUrlError(custom ? "Paste your endpoint's base URL, for example https://llm.example.com/v1." : `Put the base URL back, or pick ${preset?.label ?? "the preset"} again to refill it.`);
+      return;
+    }
     if (preset?.keyRequired && !key) {
       setKeyError(`${preset.label} needs an API key. Paste it once; it is never shown again.`);
       return;
@@ -160,6 +171,7 @@ function AddProvider({ presets, onAdded }: { presets: ProviderPreset[]; onAdded:
       setKey("");
       setLabel("");
       setModels("");
+      setBaseUrl(preset?.baseUrl ?? "");
       setOk(p.hasKey ? `${p.label} added. The key is in the vault, ends in ${p.keyHint}, and will not be shown again.` : `${p.label} added, no key needed.`);
       onAdded(p);
     });
@@ -185,7 +197,20 @@ function AddProvider({ presets, onAdded }: { presets: ProviderPreset[]; onAdded:
         </SelectField>
         <div className="field-row">
           <TextField label="Name" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={preset?.label ?? "My provider"} hint="How it shows up here" />
-          <TextField label="Base URL" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={preset?.baseUrl ?? "https://"} hint="Leave empty for the preset" spellCheck={false} />
+          <TextField
+            label="Base URL"
+            type="url"
+            inputMode="url"
+            value={baseUrl}
+            onChange={(e) => {
+              setBaseUrl(e.target.value);
+              if (urlError) setUrlError(null);
+            }}
+            placeholder={custom ? "https://your-endpoint/v1" : preset?.baseUrl}
+            hint={custom ? "Required. The URL of your own endpoint." : "Prefilled. Edit it for a proxy or a regional endpoint."}
+            error={urlError}
+            spellCheck={false}
+          />
         </div>
         <TextField
           label="API key"
@@ -218,6 +243,160 @@ function AddProvider({ presets, onAdded }: { presets: ProviderPreset[]; onAdded:
         </div>
         <FormStatus ok={ok} error={save.error} />
       </form>
+    </section>
+  );
+}
+
+/**
+ * JEV is not a model provider: it judges the crew's soft calls (which roles
+ * to hire, which prompt version wins, when a loop is done). So it gets a
+ * key-only card: paste the key, it connects and tests itself. The row is
+ * still a provider row with the jev preset, so the vault and the judge
+ * adapter stay the same.
+ */
+function JevCard({ preset, row, onSaved, onRemoved }: { preset: ProviderPreset; row: ProviderDTO | undefined; onSaved: (p: ProviderDTO) => void; onRemoved: (id: string) => void }) {
+  const { api } = useApp();
+  const [key, setKey] = useState("");
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const save = useAction();
+  const test = useAction();
+  const remove = useAction();
+  const showForm = !row || editing;
+
+  const check = async (p: ProviderDTO) => {
+    const r = await api.call("POST /api/providers/:id/test", { params: { id: p.id } });
+    onSaved({ ...p, lastTestOk: r.ok, lastTestError: r.error, lastTestAt: Date.now() });
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!key.trim()) {
+      setKeyError("Paste your JEV key. It is never shown again.");
+      return;
+    }
+    void save.run(async () => {
+      const p = row
+        ? await api.call("PATCH /api/providers/:id", { params: { id: row.id }, body: { apiKey: key.trim() } })
+        : await api.call("POST /api/providers", { body: { preset: preset.id, apiKey: key.trim() } });
+      setKey("");
+      setEditing(false);
+      onSaved(p);
+      await check(p);
+    });
+  };
+
+  const status =
+    !row
+      ? { tone: "neutral", icon: "clock" as const, text: "Not connected. The crew still decides, and marks those calls unverified." }
+      : row.lastTestOk === true
+        ? { tone: "success", icon: "checkCircle" as const, text: "Connected. Oyen checks the soft calls with JEV." }
+        : row.lastTestOk === false
+          ? { tone: "danger", icon: "xCircle" as const, text: row.lastTestError ?? "JEV did not answer" }
+          : { tone: "neutral", icon: "clock" as const, text: "Key saved, not tested yet" };
+
+  return (
+    <section className="app-region app-card prov-add" data-container="card" aria-labelledby="jev-h">
+      <div className="app-region-head">
+        <div className="app-region-text">
+          <h2 className="app-h2" id="jev-h">
+            JEV judge
+          </h2>
+          <p className="app-region-meta">
+            JEV settles the crew's soft calls: who to hire, which prompt version wins, when a loop is done. Only a key, nothing else to set.{" "}
+            <a href={preset.docsUrl} target="_blank" rel="noreferrer">
+              Get a key
+            </a>
+          </p>
+        </div>
+      </div>
+      <div className="prov-meta">
+        {row?.hasKey ? (
+          <span>
+            Key ending <span className="num">{row.keyHint}</span>
+          </span>
+        ) : null}
+        <span className="prov-test" data-tone={status.tone} aria-live="polite">
+          <ProductIcon name={status.icon} size={16} />
+          <span>{test.error ?? status.text}</span>
+        </span>
+      </div>
+      {showForm ? (
+        <form className="app-form" onSubmit={submit} noValidate autoComplete="off">
+          <TextField
+            label="JEV API key"
+            type="password"
+            value={key}
+            onChange={(e) => {
+              setKey(e.target.value);
+              if (keyError) setKeyError(null);
+            }}
+            autoComplete="new-password"
+            spellCheck={false}
+            placeholder="Paste the key once"
+            error={keyError}
+            hint="Goes to the vault on your machine. Only the last 4 characters come back."
+          />
+          <div className="app-form-actions">
+            <button type="submit" aria-busy={save.busy || undefined}>
+              <ProductIcon name="checkCircle" size={20} />
+              <span>{row ? "Save new key" : "Connect JEV"}</span>
+            </button>
+            {row ? (
+              <button type="button" className="btn-ghost" onClick={() => { setEditing(false); setKey(""); setKeyError(null); }}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
+          <FormStatus error={save.error} />
+        </form>
+      ) : (
+        <div className="app-form-actions">
+          <button type="button" className="btn-secondary" aria-busy={test.busy || undefined} onClick={() => row && test.run(() => check(row))}>
+            Test
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => setEditing(true)}>
+            Replace key
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => setConfirm(true)} aria-label="Remove the JEV key">
+            <ProductIcon name="trash" size={20} />
+            <span>Remove</span>
+          </button>
+        </div>
+      )}
+      {row ? (
+        <Sheet
+          open={confirm}
+          onClose={() => setConfirm(false)}
+          alert
+          title="Remove the JEV key?"
+          description="The key is deleted from the vault. The crew keeps working and marks its soft calls unverified."
+          footer={
+            <>
+              <button type="button" className="btn-ghost" onClick={() => setConfirm(false)}>
+                Keep it
+              </button>
+              <button
+                type="button"
+                className="app-btn-destructive"
+                aria-busy={remove.busy || undefined}
+                onClick={() =>
+                  remove.run(async () => {
+                    await api.call("DELETE /api/providers/:id", { params: { id: row.id } });
+                    setConfirm(false);
+                    onRemoved(row.id);
+                  })
+                }
+              >
+                Remove key
+              </button>
+            </>
+          }
+        >
+          <FormStatus error={remove.error} />
+        </Sheet>
+      ) : null}
     </section>
   );
 }
@@ -512,7 +691,14 @@ export function ProvidersScreen() {
   const providers = useResource((signal) => api.call("GET /api/providers", { signal }), "providers");
   const presets = useResource((signal) => api.call("GET /api/providers/presets", { signal }), "presets");
   const routing = useResource((signal) => api.call("GET /api/routing", { signal }), "routing");
-  const list = providers.data ?? [];
+  const all = providers.data ?? [];
+  // JEV has its own card; the connected list and routing only show model providers
+  const isJudge = (p: { caps: readonly string[] }) => p.caps.includes("judge");
+  const list = all.filter((p) => !isJudge(p));
+  const jevPreset = presets.data?.find(isJudge);
+  const jevRow = all.find(isJudge);
+  const upsert = (next: ProviderDTO) => providers.setData((prev) => (prev?.some((x) => x.id === next.id) ? prev.map((x) => (x.id === next.id ? next : x)) : [...(prev ?? []), next]));
+  const drop = (id: string) => providers.setData((prev) => (prev ?? []).filter((x) => x.id !== id));
 
   useEffect(() => {
     if (window.location.hash === "#routing") requestAnimationFrame(() => document.getElementById("routing")?.scrollIntoView({ block: "start" }));
@@ -541,8 +727,8 @@ export function ProvidersScreen() {
                     key={p.id}
                     p={p}
                     now={now}
-                    onChange={(next) => providers.setData((prev) => (prev ?? []).map((x) => (x.id === next.id ? next : x)))}
-                    onRemove={(id) => providers.setData((prev) => (prev ?? []).filter((x) => x.id !== id))}
+                    onChange={upsert}
+                    onRemove={drop}
                   />
                 ))}
               </ul>
@@ -550,7 +736,8 @@ export function ProvidersScreen() {
           </Region>
         </div>
         <div className="app-split-side">
-          {presets.data ? <AddProvider presets={presets.data} onAdded={(p) => providers.setData((prev) => [...(prev ?? []), p])} /> : <SkeletonRows rows={4} label="Loading presets" />}
+          {presets.data ? <AddProvider presets={presets.data.filter((p) => !isJudge(p))} onAdded={upsert} /> : <SkeletonRows rows={4} label="Loading presets" />}
+          {jevPreset && providers.data ? <JevCard preset={jevPreset} row={jevRow} onSaved={upsert} onRemoved={drop} /> : null}
         </div>
       </div>
       <Region container="divided" title="Model routing" id="routing" meta="Which model each tier, each role and each kind of media uses.">
