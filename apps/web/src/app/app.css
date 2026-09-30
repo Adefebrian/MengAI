@@ -2964,27 +2964,83 @@ a.queue-row:focus-visible {
   column-gap: var(--space-24px);
 }
 
-/* =============================================================== GATE */
-.gate {
-  box-sizing: border-box;
-  display: grid;
-  place-items: start center;
-  min-block-size: 100dvh;
-  padding: var(--space-48px) var(--space-16px);
+/* ========================================================= ONBOARDING */
+/* The runtime gate inside the shell: Oyen beside the head, the steps in
+   plain spacing, the address or the pasted link in one card. */
+.onboard-head {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-24px);
 }
-.gate-card {
-  box-sizing: border-box;
-  display: grid;
-  gap: var(--space-16px);
-  inline-size: 100%;
-  max-inline-size: 480px;
-  padding: var(--space-24px);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-16);
-}
-.gate-cat {
+.onboard-cat {
   display: inline-flex;
+}
+@media (max-width: 639px) {
+  .onboard-head {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-12px);
+  }
+}
+.onboard-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-16px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.onboard-step {
+  display: grid;
+  grid-template-columns: var(--space-24px) minmax(0, 1fr);
+  column-gap: var(--space-12px);
+  align-items: start;
+  min-width: 0;
+}
+.onboard-num {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink-muted);
+}
+.onboard-text {
+  display: grid;
+  gap: var(--space-2px);
+  min-width: 0;
+}
+.onboard-title {
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.onboard-desc {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.onboard-steps code {
+  font-size: var(--text-n1);
+  color: var(--color-ink);
+}
+@media (max-width: 639px) {
+  .onboard-steps .app-form-actions > :is(a, button) {
+    flex: 1 1 100%;
+  }
+}
+.onboard-looking {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6px);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.onboard-looking > :first-child {
+  flex: 0 0 auto;
+  padding-top: var(--space-2px);
 }
 
 /* From 640 to 1023px the island holds three destinations and More, like
@@ -3511,6 +3567,126 @@ button.symbol-chip:enabled:active {
   background: var(--state-pressed);
   border-color: var(--color-border-strong);
   color: var(--color-ink);
+}
+
+/* ------------------------------------------------------------- venues */
+.venue-row {
+  align-items: flex-start;
+}
+.venue-state {
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+}
+.venue-state:empty {
+  display: none;
+}
+.venue-skills {
+  display: grid;
+  gap: var(--space-6px);
+  min-width: 0;
+  padding-top: var(--space-4px);
+}
+.venue-skills-head {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+.venue-skill-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.venue-skill {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-12px);
+  align-items: baseline;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+}
+.venue-skill-name {
+  min-width: 0;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.venue-skill-use {
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+@media (max-width: 413px) {
+  .venue-skill {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.venue-form {
+  max-inline-size: none;
+}
+.venue-step-head {
+  display: grid;
+  gap: var(--space-4px);
+  min-width: 0;
+}
+.venue-step-head .app-h3:focus {
+  outline: none;
+}
+.venue-step-head .app-h3:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: var(--space-2px);
+}
+.venue-docs {
+  overflow-wrap: anywhere;
+}
+.venue-done {
+  display: grid;
+  gap: var(--space-6px);
+  min-width: 0;
+}
+.venue-done-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-4px);
+  min-width: 0;
+}
+.auto-needs {
+  display: grid;
+  gap: var(--space-6px);
+  min-width: 0;
+}
+.auto-needs .field-label {
+  margin: 0;
+}
+.auto-needs-list {
+  display: grid;
+  gap: var(--space-4px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.auto-need {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6px);
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+}
+.auto-need-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding-top: var(--space-2px);
+  color: var(--_tone, var(--color-ink-muted));
 }
 
 /* ========================================================= CONNECTORS */

@@ -28,12 +28,12 @@ export interface KeyPromise {
 
 /** One claim per item, a cat line over the fact, beside the app view. */
 export const KEY_PROMISES: KeyPromise[] = [
-  { say: "Your keys stay home.", fact: "Keys live in the macOS Keychain, or sealed with AES-256-GCM on your server, and never reach a log." },
+  { say: "Your keys stay home.", fact: "Keys go from your browser straight to the macOS Keychain on your own machine. This website never sees them, and they never reach a log." },
   { say: "Any bowl will do.", fact: `${NAMED_PROVIDERS.length} presets, or any OpenAI or Anthropic compatible endpoint, local models included.` },
   { say: "We eat what you serve.", fact: "No house model: fast, balanced and deep map to any model id you add." },
-  { say: "Your tools, our paws.", fact: "Your own tools over MCP servers and APIs, their keys in the same keychain." },
-  { say: "Paper first, always.", fact: "A fund trades on paper until you switch live trading on yourself." },
-  { say: "We ask before we pounce.", fact: "Each live order waits for your approval, unless you set hard limits per order and per day." },
+  { say: "Your tools, our paws.", fact: "Exchanges, brokers and your own tools over MCP servers and APIs. One cat learns a tool and every cat uses it at once." },
+  { say: "Paper first, always.", fact: "A fund trades paper on its own until you switch live trading on yourself." },
+  { say: "We ask before we pounce.", fact: "Each live order waits for your approval, unless you turn auto-trade on with hard limits per order, per day and per symbol." },
 ];
 
 export function KeysSection() {

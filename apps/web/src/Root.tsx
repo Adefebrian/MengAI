@@ -1,8 +1,10 @@
 // Top-level route split: "/" is the landing, "/app/*" is the app frame
-// (session gate, then the crew screens). The Mac app opens "/#launch=<token>",
-// so a launch hash on "/" is forwarded to "/app" where AppRoot consumes it.
+// (runtime gate, then the crew screens). The runtime opens "/app#pair=<token>"
+// on the website, or "/#launch=<token>" on its own page; a pairing or launch
+// hash on "/" is forwarded to "/app" where AppRoot consumes it.
 import { useEffect } from "react";
 import { AppRoot, type AppRouteId } from "./app/AppRoot";
+import { hasPairHash } from "./api/runtime";
 import { detectDemo } from "./app/context";
 import { Landing } from "./landing";
 import { navigate, resolveRoute, useLocation } from "./router";
@@ -26,13 +28,10 @@ export function isAppPath(pathname: string): boolean {
   return pathname === "/app" || pathname.startsWith("/app/");
 }
 
-function hasLaunchHash(hash: string): boolean {
-  return new URLSearchParams(hash.replace(/^#/, "")).has("launch");
-}
 
 export function Root() {
   const location = useLocation();
-  const forwardLaunch = !isAppPath(location.pathname) && hasLaunchHash(location.hash);
+  const forwardLaunch = !isAppPath(location.pathname) && hasPairHash(location.hash);
 
   useEffect(() => {
     if (forwardLaunch) navigate("/app" + location.search + location.hash, { replace: true });

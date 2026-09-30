@@ -28,11 +28,17 @@ app.use(
       // to <style>/<link>, never to a style="" attribute).
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:"],
+      // blob: carries the runtime's generated images and clips, read with
+      // the paired bearer token (src/api/client.ts media()).
+      imgSrc: ["'self'", "data:", "blob:"],
+      mediaSrc: ["'self'", "blob:"],
       fontSrc: ["'self'"],
-      // Without the API origin here, the browser blocks every typed `hc` call
-      // in src/client.ts and the app loads but shows no data.
-      connectSrc: ["'self'", apiOrigin],
+      // The app talks to the MengAI runtime on the visitor's own machine
+      // (src/api/runtime.ts: loopback addresses only, 127.0.0.1:4190 by
+      // default). Without these sources the browser blocks every call and
+      // the app loads but never finds the crew. The website itself keeps no
+      // data and has no API of its own.
+      connectSrc: ["'self'", apiOrigin, "http://127.0.0.1:*", "http://localhost:*", "https://127.0.0.1:*", "https://localhost:*"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
       objectSrc: ["'none'"],

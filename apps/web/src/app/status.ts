@@ -3,6 +3,7 @@
 import type { GlyphName, StatusTone } from "@mengai/ui/src/product";
 import type {
   ConnectorDTO,
+  TradingVenueDTO,
   OrderStatus,
   AgentStatus,
   ApprovalStatus,
@@ -121,6 +122,15 @@ export const ORDER_STATUS: Record<OrderStatus, StatusLook> = {
 
 export const CONNECTOR_STATUS: Record<ConnectorDTO["status"], StatusLook> = {
   connected: { tone: "success", icon: "checkCircle", word: "Connected" },
+  error: { tone: "danger", icon: "alertCircle", word: "Error" },
+  disabled: { tone: "neutral", icon: "minusCircle", word: "Off" },
+};
+
+/** A trading venue: connected, then learning its tools, then ready for every cat. */
+export const VENUE_STATUS: Record<TradingVenueDTO["status"], StatusLook> = {
+  connected: { tone: "info", icon: "checkCircle", word: "Connected" },
+  learning: { tone: "info", icon: "layers", word: "Learning" },
+  ready: { tone: "success", icon: "checkCircle", word: "Ready" },
   error: { tone: "danger", icon: "alertCircle", word: "Error" },
   disabled: { tone: "neutral", icon: "minusCircle", word: "Off" },
 };

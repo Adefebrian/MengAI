@@ -29,7 +29,7 @@ export const SAFEGUARDS: Safeguard[] = [
   {
     area: "b",
     title: "Keys stay in the vault",
-    body: "Kept in the macOS Keychain or sealed on your server, and scrubbed from every output before a cat sees it.",
+    body: "Kept in the macOS Keychain on your own machine, never on this website, and scrubbed from every output before a cat sees it.",
   },
   {
     area: "c",

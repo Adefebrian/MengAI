@@ -27,7 +27,7 @@ import {
   type UsageReport,
   type UsageTotals,
 } from "@mengai/shared";
-import type { CreateConnectorBody, RunStage, TradingSettings, UpdateConnectorBody } from "@mengai/shared";
+import type { CreateConnectorBody, CreateTradingVenueBody, RunStage, TradingSettings, UpdateConnectorBody } from "@mengai/shared";
 import { matchPath } from "../router";
 import { createCapabilityState, demoMind } from "./capabilities";
 import { replay } from "../store/runStore";
@@ -337,6 +337,28 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       const c = cap.testConnector(params.id!);
       if (!c) throw new DemoHttpError(404, "not_found", "No connector with that id.");
       return c;
+    }],
+    ["GET /api/trading/venues", () => cap.listVenues()],
+    ["POST /api/trading/venues", ({ body }) => {
+      try {
+        return cap.addVenue(body as CreateTradingVenueBody);
+      } catch {
+        throw new DemoHttpError(400, "bad_preset", "That venue preset is not in this build.");
+      }
+    }],
+    ["PATCH /api/trading/venues/:id", ({ params, body }) => {
+      const v = cap.updateVenue(params.id!, body as Partial<CreateTradingVenueBody> & { enabled?: boolean });
+      if (!v) throw new DemoHttpError(404, "not_found", "No venue with that id.");
+      return v;
+    }],
+    ["DELETE /api/trading/venues/:id", ({ params }) => {
+      cap.removeVenue(params.id!);
+      return { ok: true };
+    }],
+    ["POST /api/trading/venues/:id/learn", ({ params }) => {
+      const v = cap.learnVenue(params.id!);
+      if (!v) throw new DemoHttpError(404, "not_found", "No venue with that id.");
+      return v;
     }],
     ["GET /api/trading/settings", () => cap.getTrading()],
     ["PUT /api/trading/settings", ({ body }) => cap.setTrading(body as TradingSettings)],

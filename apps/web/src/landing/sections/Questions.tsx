@@ -1,6 +1,6 @@
 // Plain answers, with a smile (kit.faq.split). JEV ui.region_gate faq kept
 // (2.00, container rows 0.70); ui.component_recipe kit.faq.split (0.20,
-// low confidence, the top pick kept); tier 0. Eight short pairs as native
+// low confidence, the top pick kept); tier 0. Nine short pairs as native
 // details rows, each answer true to docs/architecture.md and the org rules
 // in the API (a cat is let go after three failures in a row). Round C: the
 // head stays beside the rows as they scroll by (landing.css), and the lead
@@ -38,8 +38,12 @@ export const QUESTIONS: FAQItem[] = [
     a: "No. The cats read, edit and run commands only inside the project folder you pick, never anywhere else on your machine.",
   },
   {
+    q: "Does this website keep my keys or my runs?",
+    a: "No. There are no accounts. The app in your browser talks straight to MengAI on your own machine, so keys, projects and runs never touch this website.",
+  },
+  {
     q: "Is it really open source?",
-    a: "Yes, under Apache-2.0. Run it on your Mac or your own server, read every line, and teach the cats new tricks.",
+    a: "Yes, under Apache-2.0. It runs on your own machine: read every line, and teach the cats new tricks.",
   },
 ];
 

@@ -10,7 +10,7 @@ import { errorMessage } from "../../api/client";
 import { setDemoClock } from "../../demo/demoApi";
 import { DEMO_RUN_ID } from "../../demo/fixture";
 import { playDemo, type DemoPlayer } from "../../demo/player";
-import { createRunStore, emptyRunState, replay, useRunState, type RunState } from "../../store/runStore";
+import { createRunStore, emptyRunState, replay, useRunState, type EventSourceLike, type RunState } from "../../store/runStore";
 import { useApp } from "../context";
 import { isFinished } from "../status";
 
@@ -41,7 +41,7 @@ function withRun(state: RunState, run: Partial<RunDTO>): RunState {
 }
 
 /** Collects the whole event log of a finished run from the stream, then closes it. */
-function useFullLog(url: string | null): MengaiEvent[] | null {
+function useFullLog(url: string | null, open: (url: string) => EventSourceLike): MengaiEvent[] | null {
   const [log, setLog] = useState<MengaiEvent[] | null>(null);
   useEffect(() => {
     if (!url || typeof EventSource === "undefined") {
@@ -49,7 +49,7 @@ function useFullLog(url: string | null): MengaiEvent[] | null {
       return;
     }
     const got: MengaiEvent[] = [];
-    const es = new EventSource(url, { withCredentials: true });
+    const es = open(url);
     let idle: ReturnType<typeof setTimeout> | null = null;
     const done = () => {
       es.close();
@@ -74,7 +74,7 @@ function useFullLog(url: string | null): MengaiEvent[] | null {
       if (idle) clearTimeout(idle);
       es.close();
     };
-  }, [url]);
+  }, [url, open]);
   return log;
 }
 
@@ -138,7 +138,7 @@ export function useRunData(runId: string): RunData {
           store.setState({ ...store.getState(), connection: "closed" });
           return;
         }
-        disconnect = store.connect({ url: (after) => api.url("GET /api/events", { query: { runId, after } }) });
+        disconnect = store.connect({ url: (after) => api.url("GET /api/events", { query: { runId, after } }), factory: (u) => api.stream(u) });
       },
       (err: unknown) => {
         if (!alive || ctrl.signal.aborted) return;
@@ -198,7 +198,8 @@ export function useRunData(runId: string): RunData {
 
   const finished = !!state.run && isFinished(state.run.status);
   const logUrl = finished && !demo ? api.url("GET /api/events", { query: { runId, after: 0 } }) : null;
-  const fullLog = useFullLog(logUrl);
+  const openStream = useCallback((u: string) => api.stream(u), [api]);
+  const fullLog = useFullLog(logUrl, openStream);
   const replayLog = demo ? (finished ? state.log : null) : fullLog;
 
   const now = useCallback(() => (isDemo ? Date.now() - offset.current : Date.now()), [isDemo]);

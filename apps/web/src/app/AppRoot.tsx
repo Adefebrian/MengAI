@@ -1,14 +1,18 @@
-// The /app frame: session gate (launch token, setup, login), then every
-// screen inside the JAL Core AppShell (contained scroll, island header,
-// split bar with New run below 640px). Stop all, the kill switch, sits in
-// the header at every width and is never moved into More.
+// The /app frame: the runtime gate (find MengAI on this machine, pair this
+// browser), then every screen inside the JAL Core AppShell (contained
+// scroll, island header, split bar with New run below 640px). There are no
+// accounts: the page talks to the owner's own runtime, so a runtime that is
+// not running shows the onboarding, and one that is running but not paired
+// shows the pairing screen, both inside the shell. Stop all, the kill
+// switch, sits in the header at every width and is never moved into More.
 import type { OwnerSettings, SessionDTO } from "@mengai/shared";
 import { AppShell, type AppShellDestination } from "@mengai/ui";
-import { EmptyState, Glyph, Notice, ProductIcon, SkeletonRows } from "@mengai/ui/src/product";
+import { Glyph, Notice, ProductIcon, SkeletonRows } from "@mengai/ui/src/product";
 import { MotionConfig } from "motion/react";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
-import { ApiError, createApiClient, errorMessage, type ApiClient } from "../api/client";
-import { consumeLaunchToken } from "../api/launch";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { createApiClient, type ApiClient } from "../api/client";
+import { connectRuntime, runtimeClient, takePairLink, type Connection } from "../api/connect";
+import { clearSessionToken, hasPairHash, originOf, readSessionToken, runtimeLabel, type PairLink } from "../api/runtime";
 import { createDemoFetch } from "../demo/demoApi";
 import { DEMO_LABEL } from "../demo/fixture";
 import { onLinkClick, type Location, type RouteMatch } from "../router";
@@ -18,12 +22,12 @@ import { RunScreen } from "./run/RunScreen";
 import { AboutScreen } from "./screens/About";
 import { ApprovalsScreen } from "./screens/Approvals";
 import { AssetsScreen } from "./screens/Assets";
-import { LocalLaunchScreen, LoginScreen, SetupScreen } from "./screens/Auth";
 import { ConnectorsScreen } from "./screens/Connectors";
 import { EvalsScreen } from "./screens/Evals";
 import { HomeScreen } from "./screens/Home";
 import { MemoryScreen } from "./screens/Memory";
 import { NotFoundScreen } from "./screens/NotFound";
+import { PairScreen, RuntimeOfflineScreen } from "./screens/Onboarding";
 import { ProvidersScreen } from "./screens/Providers";
 import { SecurityScreen } from "./screens/Security";
 import { SettingsScreen } from "./screens/Settings";
@@ -66,7 +70,10 @@ function destinations(pending: number): AppShellDestination[] {
 
 const DEMO_SESSION: SessionDTO = { authenticated: true, mode: "local", needsSetup: false };
 
-type Gate = { kind: "loading" } | { kind: "offline"; message: string } | { kind: "ready"; session: SessionDTO };
+type Gate = { kind: "loading" } | Connection;
+
+/** How often the onboarding and pairing screens look again on their own. */
+const RECHECK_MS = 3000;
 
 /** Plain same-origin link clicks anywhere in the app become router navigation. */
 function interceptLinks(e: MouseEvent<HTMLDivElement>) {
@@ -79,46 +86,92 @@ function interceptLinks(e: MouseEvent<HTMLDivElement>) {
 }
 
 export function AppRoot({ route, location, demo }: { route: RouteMatch<AppRouteId> | null; location: Location; demo: boolean }) {
-  const api = useMemo<ApiClient>(() => (demo ? createApiClient({ fetch: createDemoFetch() }) : createApiClient()), [demo]);
-  const [gate, setGate] = useState<Gate>(demo ? { kind: "ready", session: DEMO_SESSION } : { kind: "loading" });
-  const [nonce, setNonce] = useState(0);
+  const [gate, setGate] = useState<Gate>(demo ? { kind: "ready", base: "", session: DEMO_SESSION } : { kind: "loading" });
+  const [pairing, setPairing] = useState(false);
+  const base = gate.kind === "ready" || gate.kind === "unpaired" ? gate.base : "";
+  const lost = useRef<() => void>(() => {});
+  const api = useMemo<ApiClient>(
+    () => (demo ? createApiClient({ fetch: createDemoFetch() }) : runtimeClient(base, { onUnauthenticated: () => lost.current() })),
+    [demo, base],
+  );
+
+  const apply = useCallback((next: Connection, quiet: boolean) => {
+    setGate((cur) => {
+      // a quiet look again only moves the page when something changed
+      if (quiet && cur.kind === next.kind && next.kind !== "ready") return cur;
+      return next;
+    });
+  }, []);
+
+  const check = useCallback(
+    (opts: { quiet?: boolean; link?: PairLink | null } = {}) => {
+      if (!opts.quiet) setGate((cur) => (cur.kind === "ready" ? cur : { kind: "loading" }));
+      return connectRuntime({ link: opts.link ?? null }).then((c) => apply(c, !!opts.quiet));
+    },
+    [apply],
+  );
+
+  // A session the runtime no longer knows sends the page back to pairing.
+  lost.current = () => setGate((cur) => (cur.kind === "ready" ? { kind: "unpaired", base: cur.base, error: "This browser's pairing ended. Pair it again from the MengAI menu.", health: null } : cur));
 
   useEffect(() => {
     if (demo) {
-      setGate({ kind: "ready", session: DEMO_SESSION });
+      setGate({ kind: "ready", base: "", session: DEMO_SESSION });
       return;
     }
-    let alive = true;
-    setGate({ kind: "loading" });
-    (async () => {
-      try {
-        // A launch token that was already used (a reopened tab, a restored
-        // address) is not an outage: the session cookie still decides.
-        const launched = await consumeLaunchToken(api).catch((err: unknown) => {
-          if (err instanceof ApiError && err.status === 401) return null;
-          throw err;
-        });
-        const session = launched ?? (await api.call("GET /api/session"));
-        if (alive) setGate({ kind: "ready", session });
-      } catch (err) {
-        if (alive) setGate({ kind: "offline", message: errorMessage(err) });
-      }
-    })();
-    return () => {
-      alive = false;
+    void check({ link: takePairLink() });
+  }, [demo, check]);
+
+  // A pairing link opened in this tab later (the menu's Open in browser on an open tab).
+  useEffect(() => {
+    if (demo) return;
+    const onHash = () => {
+      if (!hasPairHash(window.location.hash)) return;
+      void check({ link: takePairLink() });
     };
-  }, [api, demo, nonce]);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [demo, check]);
 
-  const retry = useCallback(() => setNonce((n) => n + 1), []);
-  const onSession = useCallback((session: SessionDTO) => setGate({ kind: "ready", session }), []);
+  // Offline or unpaired, the page keeps looking: every few seconds while
+  // visible, and at once when another tab of this site pairs.
+  const waiting = gate.kind === "offline" || gate.kind === "unpaired";
+  useEffect(() => {
+    if (demo || !waiting) return;
+    const tick = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void check({ quiet: true });
+    }, RECHECK_MS);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key.startsWith("mengai.runtime")) void check({ quiet: true });
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      clearInterval(tick);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [demo, waiting, check]);
 
-  if (gate.kind === "ready" && !gate.session.authenticated) {
-    if (gate.session.mode === "local") return <LocalLaunchScreen onRetry={retry} />;
-    if (gate.session.needsSetup) return <SetupScreen api={api} onDone={onSession} />;
-    return <LoginScreen api={api} onDone={onSession} />;
-  }
+  const retry = useCallback(() => void check(), [check]);
+  const pair = useCallback(
+    (link: PairLink) => {
+      setPairing(true);
+      void check({ link }).finally(() => setPairing(false));
+    },
+    [check],
+  );
+  const forget = useCallback(async () => {
+    const origin = originOf(base);
+    try {
+      if (readSessionToken(origin)) await api.call("POST /api/auth/logout");
+    } catch {
+      // the local copy goes either way
+    }
+    clearSessionToken(origin);
+    await check();
+  }, [api, base, check]);
 
-  return <Frame api={api} demo={demo} gate={gate} route={route} location={location} onRetry={retry} />;
+  return <Frame api={api} demo={demo} gate={gate} route={route} location={location} onRetry={retry} onPair={pair} pairing={pairing} onForget={forget} />;
 }
 
 function Frame({
@@ -128,6 +181,9 @@ function Frame({
   route,
   location,
   onRetry,
+  onPair,
+  pairing,
+  onForget,
 }: {
   api: ApiClient;
   demo: boolean;
@@ -135,6 +191,9 @@ function Frame({
   route: RouteMatch<AppRouteId> | null;
   location: Location;
   onRetry: () => void;
+  onPair: (link: PairLink) => void;
+  pairing: boolean;
+  onForget: () => Promise<void>;
 }) {
   const ready = gate.kind === "ready";
   const [settings, setSettings] = useState<OwnerSettings | null>(null);
@@ -229,6 +288,8 @@ function Frame({
         pendingApprovals: pending,
         refreshApprovals: () => setApprovalsNonce((n) => n + 1),
         notices,
+        runtime: { label: demo ? "Sample data in this page" : runtimeLabel(gate.base), paired: !demo && !!readSessionToken(originOf(gate.base)) },
+        forgetBrowser: onForget,
       }
     : null;
 
@@ -249,7 +310,8 @@ function Frame({
 
   let body: ReactNode;
   if (gate.kind === "loading") body = <LoadingPage />;
-  else if (gate.kind === "offline") body = <OfflinePage message={gate.message} onRetry={onRetry} />;
+  else if (gate.kind === "offline") body = <RuntimeOfflineScreen tried={gate.tried} onRetry={onRetry} still={catsStill} />;
+  else if (gate.kind === "unpaired") body = <PairScreen base={gate.base} error={gate.error} onRetry={onRetry} onPair={onPair} pairing={pairing} still={catsStill} />;
   else body = <Screen route={route} location={location} />;
 
   return (
@@ -284,32 +346,6 @@ function LoadingPage() {
   return (
     <Page>
       <SkeletonRows rows={4} label="Waking the crew" />
-    </Page>
-  );
-}
-
-function OfflinePage({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Page>
-      <h1 className="app-title">MengAI is not reachable</h1>
-      <EmptyState
-        icon="alertCircle"
-        tone="danger"
-        title="Cannot reach the MengAI server"
-        action={
-          <>
-            <button type="button" onClick={onRetry}>
-              <ProductIcon name="refresh" size={20} />
-              <span>Try again</span>
-            </button>
-            <a className="btn btn-secondary" href="/app/runs/demo?demo=1">
-              Watch the sample run
-            </a>
-          </>
-        }
-      >
-        {message} On the Mac app, reopen MengAI from the menu bar. On a server, check that the API process is up.
-      </EmptyState>
     </Page>
   );
 }

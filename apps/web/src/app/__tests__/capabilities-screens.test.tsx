@@ -6,7 +6,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root as ReactRoot } from "react-dom/client";
+import { TRADING_VENUE_PRESETS } from "@mengai/shared";
 import { AppRoot, type AppRouteId } from "../AppRoot";
+import { isSecretField } from "../screens/Trading";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -64,8 +66,72 @@ describe("demo screens for the new backend", () => {
     expect(text).toContain("AAPL");
     expect(text).toContain("+$43.80");
     expect(text).toContain("0 blocks every live order.");
-    expect(el.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe("Paper");
+    expect(el.querySelector('.trading-settings [role="radio"][aria-checked="true"]')?.textContent).toBe("Paper");
+    expect(text).toContain("Live auto-trade needs all three");
     expect(text.includes(LONG_DASH)).toBe(false);
+  });
+
+  test("trading venues: status, mode and the learned skills every cat shares", async () => {
+    const el = await mount("trading", "/app/trading?demo=1");
+    const rows = el.querySelector('.trading-venues [aria-label="Venues"]');
+    expect(rows?.querySelectorAll('[data-kind="venue"]').length).toBe(2);
+    const text = rows?.textContent ?? "";
+    expect(text).toContain("Alpaca, paper account");
+    expect(text).toContain("Ready");
+    expect(text).toContain("3 learned skills, shared by every cat");
+    expect(text).toContain("22 uses, 22 wins");
+    expect(text).toContain("Live on the testnet");
+    expect(text).toContain("Learning");
+    expect(el.querySelector(".trading-venues")?.textContent).toContain("What one cat learns, every cat uses at once.");
+  });
+
+  test("trading wizard: credentials are masked, plain settings are not", () => {
+    expect(isSecretField({ key: "CCXT_MCP_APIKEY", label: "API key" })).toBe(true);
+    expect(isSecretField({ key: "CCXT_MCP_SECRET", label: "API secret" })).toBe(true);
+    expect(isSecretField({ key: "Authorization", label: "Auth header value" })).toBe(true);
+    expect(isSecretField({ key: "CCXT_MCP_EXCHANGE", label: "Exchange id, e.g. binance" })).toBe(false);
+  });
+
+  test("trading wizard: preset, command and secrets, paper or live, then the learning status; secrets never stay on the page", async () => {
+    const el = await mount("trading", "/app/trading?demo=1");
+    const card = () => el.querySelector<HTMLElement>(".venue-add")!;
+    const button = (label: string) => [...card().querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === label)!;
+    const press = async (b: HTMLElement) => {
+      await act(async () => {
+        b.click();
+      });
+    };
+    expect(card().querySelectorAll('[data-name="venue-preset"] [role="radio"]').length).toBe(TRADING_VENUE_PRESETS.length);
+    await press(card().querySelector<HTMLButtonElement>('[data-name="venue-preset"] [data-value="alpaca-mcp"]')!);
+    await press(button("Next"));
+    const command = card().querySelector<HTMLInputElement>("input.num")!;
+    const alpaca = TRADING_VENUE_PRESETS.find((p) => p.id === "alpaca-mcp")!;
+    expect(command.value).toBe(alpaca.target);
+    const secrets = card().querySelectorAll<HTMLInputElement>('input[type="password"]');
+    expect(secrets.length).toBe(alpaca.secrets.filter(isSecretField).length);
+    expect(secrets.length).toBeGreaterThan(0);
+    const setValue = async (input: HTMLInputElement, value: string) => {
+      await act(async () => {
+        const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+        set.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    await setValue(secrets[0]!, "PKTEST1234abcd");
+    await press(button("Next"));
+    expect(card().querySelector('[data-name="venue-mode"] [aria-checked="true"]')?.textContent).toBe("Paper");
+    expect(!!card().querySelector('[role="switch"]')).toBe(alpaca.supportsTestnet);
+    await press(button("Connect and learn"));
+    for (let i = 0; i < 4; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+    }
+    expect(card().textContent).toContain("Venue connected");
+    expect(card().textContent).toContain("Learning");
+    expect(card().querySelectorAll('input[type="password"]').length).toBe(0);
+    expect(el.textContent?.includes("PKTEST1234abcd")).toBe(false);
+    expect(el.querySelectorAll('.trading-venues [data-kind="venue"]').length).toBe(3);
   });
 
   test("settings: the CEO name, the org caps shown as Unlimited, budgets that allow 0", async () => {

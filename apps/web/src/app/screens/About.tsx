@@ -4,7 +4,8 @@
 // divided section, the session in plain spacing (JEV ui.region_gate
 // b_session kept at 2.15; its card primary would sit on the card above, so
 // the next lawful option). The session left Settings, where JEV dropped it
-// (relevance 1.40).
+// (relevance 1.40). There are no accounts: the session is this browser's
+// pairing with the runtime on this machine.
 import { Cat } from "@mengai/cats";
 import { leadCatName } from "@mengai/shared";
 import { KeyValue, ProductIcon } from "@mengai/ui/src/product";
@@ -12,20 +13,16 @@ import { useApp } from "../context";
 import { useAction, useResource } from "../hooks";
 import { FormStatus, Page, Region } from "../ui";
 
-const REPO = "https://github.com/adefebrian/mengai";
-const AUTHOR = "https://github.com/adefebrian";
+const REPO = "https://github.com/Adefebrian/MengAI";
+const AUTHOR = "https://github.com/Adefebrian";
 const LICENSE = `${REPO}/blob/main/LICENSE`;
 
 export function AboutScreen() {
-  const { api, session, catsStill, settings } = useApp();
+  const { api, catsStill, settings, runtime, forgetBrowser, demo } = useApp();
   const ceo = leadCatName(settings?.ceoName);
   const health = useResource((signal) => api.call("GET /api/health", { signal }), "health");
   const out = useAction();
-  const signOut = () =>
-    out.run(async () => {
-      await api.call("POST /api/auth/logout");
-      window.location.assign("/app");
-    });
+  const unpair = () => out.run(forgetBrowser);
   return (
     <Page>
       <header className="app-head about-head">
@@ -42,20 +39,31 @@ export function AboutScreen() {
           label="About this copy"
           items={[
             { label: "Version", value: health.data?.version ?? "Checking", mono: true },
-            { label: "Mode", value: session.mode === "local" ? "Local, on this Mac only" : "Server" },
+            { label: "Runs on", value: demo ? runtime.label : <span className="num">{runtime.label}</span> },
+            { label: "Keeps your data", value: "On this machine only. The website stores nothing." },
             { label: "Built by", value: <a href={AUTHOR} rel="noreferrer" target="_blank">Adefebrian</a> },
             { label: "License", value: <a href={LICENSE} rel="noreferrer" target="_blank">Apache License 2.0</a> },
-            { label: "Source", value: <a href={REPO} rel="noreferrer" target="_blank" className="num">github.com/adefebrian/mengai</a> },
+            { label: "Source", value: <a href={REPO} rel="noreferrer" target="_blank" className="num">github.com/Adefebrian/MengAI</a> },
             { label: "Models", value: "Your own keys, any provider, any model." },
           ]}
         />
       </Region>
-      <Region container="plain" title="Your session" meta={session.mode === "local" ? "Signed in locally through the Mac app. To end it, quit MengAI from the menu bar." : `Signed in as the owner${session.owner ? `, ${session.owner.email}` : ""}.`}>
-        {session.mode === "server" ? (
+      <Region
+        container="plain"
+        title="This browser"
+        meta={
+          demo
+            ? "Sample data only. Nothing here talks to a runtime."
+            : runtime.paired
+              ? `Paired with MengAI at ${runtime.label}. The key stays in this browser; unpair to drop it.`
+              : "Opened by MengAI itself. To end it, quit MengAI from the menu bar."
+        }
+      >
+        {runtime.paired ? (
           <div className="app-form-actions">
-            <button type="button" className="btn-secondary" aria-busy={out.busy || undefined} onClick={signOut}>
+            <button type="button" className="btn-secondary" aria-busy={out.busy || undefined} onClick={unpair}>
               <ProductIcon name="logout" size={20} />
-              <span>Sign out</span>
+              <span>Unpair this browser</span>
             </button>
             <FormStatus error={out.error} />
           </div>

@@ -28,8 +28,8 @@ export function CloseSection() {
             {CLOSE_TITLE}
           </h2>
           <p className="kit-lead">
-            MengAI is open source under <span className="lp-nowrap">Apache-2.0</span>. Run the web app on your own server, or get the Mac app and keep
-            everything on your machine. Every cat runs on the models you pick, on your own key.
+            MengAI is open source under <span className="lp-nowrap">Apache-2.0</span> and runs on your own machine. Get the Mac app, open it, and this
+            website is only the window: it keeps no account, no key and no data. Every cat runs on the models you pick, on your own key.
           </p>
         </div>
         <div className="kit-actions lp-close-actions" data-motion="rise" style={staggerStyle(1)}>

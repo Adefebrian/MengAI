@@ -1,5 +1,6 @@
-// What every app screen shares: the API client (real or the demo server),
-// the session, the owner settings, and the local cat motion choice.
+// What every app screen shares: the API client (the local runtime or the
+// demo server), the session, the runtime it came from, the owner settings,
+// and the local cat motion choice.
 import type { OwnerSettings, SessionDTO } from "@mengai/shared";
 import { createContext, useContext, type ReactNode } from "react";
 import type { ApiClient } from "../api/client";
@@ -29,6 +30,10 @@ export interface AppContextValue {
   refreshApprovals: () => void;
   /** app-wide notices (demo label, Stop all result) that every Page shows first */
   notices: ReactNode;
+  /** the local runtime this page talks to, and whether this browser holds a paired session for it */
+  runtime: { label: string; paired: boolean };
+  /** drop this browser's paired session for the runtime and go back to the pairing screen */
+  forgetBrowser: () => Promise<void>;
 }
 
 export const AppContext = createContext<AppContextValue | null>(null);

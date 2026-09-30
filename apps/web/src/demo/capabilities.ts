@@ -6,6 +6,9 @@
 import {
   DEFAULT_TRADING,
   ROLE_LABEL,
+  TRADING_VENUE_PRESETS,
+  type CreateTradingVenueBody,
+  type TradingVenueDTO,
   type AgentDTO,
   type AgentMindDTO,
   type ConnectorDTO,
@@ -172,11 +175,122 @@ export function createCapabilityState() {
     { symbol: "AAPL", mode: "paper", qty: 10, avgPrice: 181.92, lastPrice: 186.3, unrealizedUsd: 43.8, realizedUsd: 0 },
     { symbol: "TSLA", mode: "paper", qty: 0, avgPrice: 249.6, lastPrice: 241.8, unrealizedUsd: 0, realizedUsd: -22 },
   ];
+  const venues: TradingVenueDTO[] = [
+    {
+      id: "ven-alpaca",
+      connectorId: "cn-broker",
+      preset: "alpaca-mcp",
+      label: "Alpaca, paper account",
+      mode: "paper",
+      testnet: false,
+      status: "ready",
+      error: null,
+      learnedSkills: [
+        { id: "vs-1", name: "Check buying power before sizing an order", uses: 22, wins: 22 },
+        { id: "vs-2", name: "Place a limit order with a stop and a target", uses: 14, wins: 11 },
+        { id: "vs-3", name: "Cancel stale limit orders before the close", uses: 5, wins: 4 },
+      ],
+      createdAt: DEMO_T0 - 2 * D,
+      updatedAt: DEMO_T0 - 5 * H,
+    },
+    {
+      id: "ven-ccxt",
+      connectorId: "cn-market",
+      preset: "ccxt-mcp",
+      label: "Binance testnet through CCXT",
+      mode: "live",
+      testnet: true,
+      status: "learning",
+      error: null,
+      learnedSkills: [{ id: "vs-4", name: "Read the order book depth for a pair", uses: 3, wins: 3 }],
+      createdAt: DEMO_T0 - H,
+      updatedAt: DEMO_T0 - 20 * 60_000,
+    },
+  ];
+  /** When a venue started learning in this page; the demo lands it on ready a few seconds later. */
+  const learning = new Map<string, number>();
+  const LEARN_MS = 4000;
+  // the sample testnet venue lands on ready a little after the page opens
+  learning.set("ven-ccxt", Date.now() + 8000);
+  const LEARNED = ["Read the account balance and open positions", "Place a market order inside the order cap", "Cancel an open order by its id"];
+  const settle = (v: TradingVenueDTO) => {
+    const started = learning.get(v.id);
+    if (v.status !== "learning" || started === undefined || Date.now() - started < LEARN_MS) return v;
+    learning.delete(v.id);
+    const have = new Set(v.learnedSkills.map((k) => k.name));
+    const added = LEARNED.filter((name) => !have.has(name)).map((name, i) => ({ id: `${v.id}-sk-${i + 1}`, name, uses: 0, wins: 0 }));
+    v.learnedSkills = [...v.learnedSkills, ...added];
+    v.status = "ready";
+    v.updatedAt = Date.now();
+    return v;
+  };
   let n = 0;
   return {
     connectors,
     orders,
     positions,
+    listVenues: () => venues.map(settle),
+    addVenue(b: CreateTradingVenueBody): TradingVenueDTO {
+      n += 1;
+      const preset = TRADING_VENUE_PRESETS.find((p) => p.id === b.preset);
+      if (!preset) throw new Error("unknown preset");
+      const secret = Object.values(b.secrets ?? {}).find(Boolean) ?? "";
+      const label = b.label?.trim() || preset.label;
+      const c: ConnectorDTO = {
+        id: `cn-venue-${n}`,
+        kind: preset.connector,
+        label,
+        target: b.target?.trim() || preset.target,
+        hasSecret: !!secret,
+        keyHint: secret ? secret.slice(-4) : null,
+        status: "connected",
+        error: null,
+        tools: BROKER_TOOLS,
+        roles: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      connectors.push(c);
+      const v: TradingVenueDTO = {
+        id: `ven-new-${n}`,
+        connectorId: c.id,
+        preset: preset.id,
+        label,
+        mode: b.mode,
+        testnet: preset.supportsTestnet ? !!b.testnet : false,
+        status: "learning",
+        error: null,
+        learnedSkills: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      learning.set(v.id, Date.now());
+      venues.push(v);
+      return v;
+    },
+    updateVenue(id: string, b: Partial<CreateTradingVenueBody> & { enabled?: boolean }): TradingVenueDTO | null {
+      const v = venues.find((x) => x.id === id);
+      if (!v) return null;
+      if (b.label) v.label = b.label;
+      if (b.mode) v.mode = b.mode;
+      if (b.testnet !== undefined) v.testnet = b.testnet;
+      if (b.enabled !== undefined) v.status = b.enabled ? (v.learnedSkills.length ? "ready" : "connected") : "disabled";
+      v.updatedAt = Date.now();
+      return v;
+    },
+    removeVenue(id: string): void {
+      const i = venues.findIndex((x) => x.id === id);
+      if (i >= 0) venues.splice(i, 1);
+    },
+    learnVenue(id: string): TradingVenueDTO | null {
+      const v = venues.find((x) => x.id === id);
+      if (!v) return null;
+      v.status = "learning";
+      v.error = null;
+      v.updatedAt = Date.now();
+      learning.set(v.id, Date.now());
+      return v;
+    },
     getTrading: () => trading,
     setTrading: (t: TradingSettings) => (trading = t),
     addConnector(b: CreateConnectorBody): ConnectorDTO {
