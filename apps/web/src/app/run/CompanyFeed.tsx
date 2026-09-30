@@ -55,7 +55,7 @@ function names(state: RunState, ids: string[]): string {
   return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }
 
-/** "Kickoff, ended: Kopi and Mochi", or "Ended: ..." when the title already says kickoff. */
+/** "Kickoff, ended: Oyen and Gembul", or "Ended: ..." when the title already says kickoff. */
 function meetingMeta(meeting: MeetingState, live: boolean, who: string): string {
   const named = meeting.title.toLowerCase().startsWith(MEETING_WORD[meeting.kind].toLowerCase());
   const state = live ? "at the table now" : "ended";
@@ -170,7 +170,7 @@ export function CompanyFeed({ state, replaying, onSend }: { state: RunState; rep
   const level = useMotionLevel();
   const off = level === "off";
   const [notes, setNotes] = useState<Array<{ ts: number; text: string }>>([]);
-  const lead = leadOf(state)?.name ?? "Kopi";
+  const lead = leadOf(state)?.name ?? "Oyen";
   const entries = feedEntries(state, notes);
   const listRef = useRef<HTMLOListElement>(null);
   const stick = useRef(true);

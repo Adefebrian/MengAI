@@ -67,7 +67,7 @@ describe.skipIf(!chromePath)("smoke: built SPA renders", () => {
     const heading = await page.$eval("h1", (el) => el.textContent);
     expect(heading).toContain("CSV export");
     const office = await page.$eval(".run-office", (el) => el.textContent ?? "");
-    for (const name of ["Kopi", "Mochi", "Klepon", "Tempe", "Onde", "Cilok"]) expect(office).toContain(name);
+    for (const name of ["Oyen", "Gembul", "Klepon", "Tempe", "Onde", "Cilok"]) expect(office).toContain(name);
     const now = await page.$eval(".status-now", (el) => el.textContent ?? "");
     expect(now.length).toBeGreaterThan(0);
     await page.close();

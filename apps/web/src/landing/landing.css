@@ -6,6 +6,10 @@
    accent (see direction.md in this folder). No gradients, no shadows, no
    side lines, transform and opacity only, reduced motion rests every part. */
 
+/* The motion module's rules (Lenis on the document, the SplitText line
+   masks), once, for this route. */
+@import "../../../../packages/motion/src/motion.css";
+
 /* ---------------------------------------------------------------------
  * Direction knob delta: one accent product-wide. D5 names red-orange; the
  * product accent is teal #0f766e (HSL 175, 5.47:1 on surface), role
@@ -54,76 +58,293 @@
 }
 
 /* ---------------------------------------------------------------------
- * Masthead: the key note under the actions.
+ * Hero frame: the app's run view on sample data (JEV hero_frame card).
+ * One surface with a full hairline; its regions (head, office camera,
+ * feed, status strip) are separated by the frame's own 1 px gap over the
+ * border tone, so every rule is a full hairline between two regions and
+ * no region carries a one-sided border.
  * ------------------------------------------------------------------- */
-.lp .lp-byok {
-  flex: none;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-8px);
+.lp .lp-frame-depth {
+  min-width: 0;
+  transform-origin: 50% 100%;
+}
+
+.lp .lp-frame {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
   margin: 0;
-  max-inline-size: 48ch;
+  min-width: 0;
+  overflow: clip;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-card);
+}
+
+.lp .lp-frame-head,
+.lp .lp-frame-foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-12px);
+  min-width: 0;
+  padding: var(--space-12px) var(--space-16px);
+  background: var(--color-surface);
+}
+
+.lp .lp-frame-title {
+  display: grid;
+  row-gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp .lp-frame-goal {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+  text-wrap: pretty;
+}
+
+.lp .lp-frame-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-4px);
+  margin: 0;
+  min-width: 0;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
 }
 
-.lp .lp-byok > .icon {
-  color: var(--kit-link);
+.lp .lp-frame-sample,
+.lp .lp-frame-wide {
+  display: none;
 }
 
 @media (min-width: 640px) {
-  /* The actions wrap in a row from 640: the note takes its own line. */
-  .lp .lp-byok {
-    flex-basis: 100%;
+  .lp .lp-frame-head,
+  .lp .lp-frame-foot {
+    padding: var(--space-12px) var(--space-20px);
+  }
+  .lp .lp-frame-goal {
+    font-size: var(--text-1);
+    line-height: var(--line-1);
+    letter-spacing: var(--tracking-title);
+  }
+  .lp .lp-frame-sample,
+  .lp .lp-frame-wide {
+    display: inline;
   }
 }
 
-.lp .lp-byok strong {
-  font-weight: var(--weight-medium);
-  color: var(--color-ink);
-}
-
-/* ---------------------------------------------------------------------
- * Hero office: the living office (the Office scene draws its own floor
- * plate, so no frame around it; JEV ui.region_gate plain_spacing), then
- * the story bar under it.
- * ------------------------------------------------------------------- */
-.lp .lp-hero-office {
+.lp .lp-frame-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--kit-gap-inside);
-  margin: 0;
+  gap: 1px;
   min-width: 0;
+  background: var(--color-border);
 }
 
-.lp .lp-story {
+.lp .lp-frame[data-layout="rail"] .lp-frame-body {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+/* The camera: a view onto the Office, cropped like an image in its frame.
+   The view is one labelled image; the Office inside is drawn art in its own
+   layer (aria-hidden, no pointer events), clipped to the view and moved by
+   one transform. */
+.lp .lp-cam {
+  position: relative;
+  min-width: 0;
+  background: var(--color-layer-1);
+}
+
+.lp .lp-cam-clip {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+
+.lp .lp-cam-world {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  will-change: transform;
+  transition: transform var(--dur-600) var(--ease-standard);
+}
+
+/* The company feed: plain spacing (JEV hero_chips), each notice the app's
+   notice anatomy: a status surface inside one full hairline, an icon, a
+   title that names what happened, one line, the office clock. */
+.lp .lp-frame-feed {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-16px);
+  background: var(--color-surface);
+}
+
+.lp .lp-feed {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-12px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  /* one notice's room is kept even while the opening notices arrive */
+  min-block-size: calc(var(--line-0) + 2 * var(--line-n1) + var(--space-4px) + 2 * var(--space-12px) + 2px);
+}
+
+.lp .lp-feed[data-count="2"],
+.lp .lp-feed[data-count="3"] {
+  grid-template-columns: repeat(var(--lp-feed-cols, 2), minmax(0, 1fr));
+}
+
+.lp .lp-feed[data-count="3"] {
+  --lp-feed-cols: 3;
+}
+
+.lp .lp-frame[data-layout="rail"] .lp-feed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lp .lp-note {
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
+  align-items: start;
   column-gap: var(--space-12px);
   min-width: 0;
+  padding: var(--space-12px);
+  background: var(--_note-surface, var(--color-surface));
+  border: 1px solid var(--_note-border, var(--color-border));
+  border-radius: var(--kit-radius-card);
 }
 
-.lp .lp-story-text {
+.lp .lp-note[data-tone="success"] {
+  --_note-fg: var(--color-success);
+  --_note-surface: var(--color-success-surface);
+  --_note-border: var(--color-success-border);
+}
+
+.lp .lp-note[data-tone="info"] {
+  --_note-fg: var(--color-info);
+  --_note-surface: var(--color-info-surface);
+  --_note-border: var(--color-info-border);
+}
+
+.lp .lp-note[data-tone="warning"] {
+  --_note-fg: var(--color-warning);
+  --_note-surface: var(--color-warning-surface);
+  --_note-border: var(--color-warning-border);
+}
+
+.lp .lp-note-icon {
+  display: inline-flex;
+  padding-block-start: var(--space-2px);
+  color: var(--_note-fg, var(--color-ink-muted));
+}
+
+.lp .lp-note-body {
   display: grid;
+  row-gap: var(--space-4px);
   min-width: 0;
 }
 
-.lp .lp-story-caption {
-  font-size: var(--text-0);
-  line-height: var(--line-0);
-  color: var(--color-ink);
-  animation: lp-fade-in var(--dur-300) var(--ease-standard);
+.lp .lp-note-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--space-8px);
+  min-width: 0;
 }
 
-.lp .lp-story-meta {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: var(--space-8px);
+.lp .lp-note-title {
+  min-width: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+.lp .lp-note-clock,
+.lp .lp-note-text {
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);
+}
+
+.lp .lp-note-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The status strip: what just happened, then tasks done and the budget. */
+.lp .lp-frame-foot {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lp .lp-frame-now {
+  margin: 0;
+  min-width: 0;
+  min-block-size: calc(2 * var(--line-0));
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  color: var(--color-ink);
+  text-wrap: pretty;
+}
+
+.lp .lp-frame-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-16px);
+  min-width: 0;
+}
+
+.lp .lp-frame-figure {
+  display: grid;
+  row-gap: var(--space-6px);
+  min-width: 0;
+}
+
+.lp .lp-frame-figure-text {
+  display: grid;
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp .lp-frame-figure-value {
+  color: var(--color-ink);
+}
+
+@media (min-width: 1024px) {
+  .lp .lp-frame-foot {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    column-gap: var(--space-24px);
+  }
+  .lp .lp-frame-now {
+    min-block-size: var(--line-0);
+  }
+  .lp .lp-frame-figure-text {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-8px);
+  }
 }
 
 @keyframes lp-fade-in {
@@ -282,7 +503,6 @@
   font-weight: var(--weight-medium);
   color: var(--color-ink);
   text-wrap: pretty;
-  animation: lp-fade-in var(--dur-200) var(--ease-standard);
 }
 
 @media (min-width: 640px) {
@@ -329,7 +549,6 @@
 .lp .lp-cell-icon {
   display: inline-flex;
   color: var(--color-ink-subtle);
-  animation: lp-fade-in var(--dur-150) var(--ease-standard);
 }
 
 .lp .lp-cell-text {
@@ -496,12 +715,6 @@
   font-size: var(--text-0);
   line-height: var(--line-0);
   color: var(--color-ink);
-}
-
-/* A value the story just changed fades in (opacity only, so it never
-   crosses the evidence line under it on the way in). */
-.lp .lp-head-row[data-fresh] .lp-head-text {
-  animation: lp-fade-in var(--dur-200) var(--ease-standard);
 }
 
 .lp .lp-head-evidence {
@@ -808,7 +1021,9 @@
  * Bento views: in flow inside the tile's visual, so a view sets its own
  * height and nothing inside it is ever cut off.
  * ------------------------------------------------------------------- */
-.lp .kit-bento-visual:has(> .lp-tile-view) {
+/* Specific enough to win over the kit's 240 px media minimum, which loads
+   after this sheet: a live view sets its own height. */
+.lp .kit-bento-tile[data-kind="media"] > .kit-bento-visual:has(> .lp-tile-view) {
   min-block-size: 0;
 }
 
@@ -873,6 +1088,24 @@
   column-gap: var(--space-12px);
   padding-inline-end: var(--kit-inset);
   white-space: pre;
+}
+
+/* Below 640 the file soft-wraps inside the phone's column (critic fix
+   round 2: a long line was cut at the right edge), each line keeping its
+   own indent; from 640 it keeps its lines and scrolls sideways. */
+@media (max-width: 639.98px) {
+  .lp .lp-code {
+    overflow-x: visible;
+  }
+  .lp .lp-code > code {
+    min-inline-size: 0;
+  }
+  .lp .lp-code-line {
+    grid-template-columns: var(--space-32px) minmax(0, 1fr);
+    column-gap: var(--space-8px);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 }
 
 .lp .lp-code-no {
@@ -1013,23 +1246,355 @@
   background: var(--color-ink);
 }
 
-.lp .kit-bento[data-motion-state="pending"] .lp-bar {
+/* The bars wait at zero length off screen and grow when the chart enters,
+   one row after another (the row index times the item stagger). */
+.lp .lp-chart[data-grow="armed"] .lp-bar {
   transform: scaleX(0);
+}
+
+.lp .lp-chart[data-grow] .lp-bar {
+  transition-delay: calc(min(var(--lp-i, 0), 6) * var(--stagger-item));
+}
+
+/* ---------------------------------------------------------------------
+ * Security views: the app's own controls in small, centred in their tile.
+ * ------------------------------------------------------------------- */
+.lp .lp-sec-tile {
+  box-sizing: border-box;
+  align-content: center;
+  padding: var(--kit-inset);
+}
+
+.lp .lp-sec-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  min-width: 0;
+}
+
+.lp .lp-ask-sheet {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  min-width: 0;
+  padding: var(--space-16px);
+  background: var(--_ask-surface);
+  border: 1px solid var(--_ask-border);
+  border-radius: var(--kit-radius-card);
+}
+
+.lp .lp-ask-sheet[data-tone="warning"] {
+  --_ask-fg: var(--color-warning);
+  --_ask-surface: var(--color-warning-surface);
+  --_ask-border: var(--color-warning-border);
+}
+
+.lp .lp-ask-sheet[data-tone="success"] {
+  --_ask-fg: var(--color-success);
+  --_ask-surface: var(--color-success-surface);
+  --_ask-border: var(--color-success-border);
+}
+
+.lp .lp-ask-sheet[data-tone="neutral"] {
+  --_ask-fg: var(--color-ink-muted);
+  --_ask-surface: var(--color-layer-1);
+  --_ask-border: var(--color-border);
+}
+
+.lp .lp-ask-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-8px);
+  margin: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+.lp .lp-ask-icon {
+  display: inline-flex;
+  color: var(--_ask-fg);
+}
+
+.lp .lp-ask-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--space-12px);
+  min-width: 0;
+}
+
+.lp .lp-ask-text {
+  display: grid;
+  row-gap: var(--space-8px);
+  min-width: 0;
+}
+
+.lp .lp-ask-text > p {
+  margin: 0;
+}
+
+.lp .lp-ask-code {
+  box-sizing: border-box;
+  margin: 0;
+  min-width: 0;
+  padding: var(--space-8px) var(--space-12px);
+  overflow-x: auto;
+  font-family: var(--kit-font-mono);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-control);
+  white-space: pre;
+}
+
+.lp .lp-ask-code:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.lp .lp-ask-meta {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-12px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp .lp-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+
+.lp .lp-ask-result {
+  flex: 1 1 16ch;
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+}
+
+/* The kill switch: a 44 px switch row. The base JAL rule paints every
+   enabled button ink on hover and press: this row keeps its own ground in
+   both states and takes the state layer instead. */
+.lp .lp-switch {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  justify-items: start;
+  column-gap: var(--space-12px);
+  inline-size: 100%;
+  min-width: 0;
+  block-size: auto;
+  min-block-size: var(--control-h);
+  padding: var(--space-8px) var(--space-12px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-card);
+  color: var(--color-ink);
+  font-weight: var(--weight-regular);
+  text-align: start;
+  white-space: normal;
+}
+
+.lp .lp-switch:enabled:hover,
+.lp .lp-switch:enabled:active {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-ink);
+  transform: none;
+}
+
+@media (hover: hover) {
+  .lp .lp-switch:enabled:hover {
+    background: var(--state-hover);
+  }
+}
+
+.lp .lp-switch:enabled:active {
+  background: var(--state-pressed);
+}
+
+.lp .lp-switch:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.lp .lp-switch-track {
+  position: relative;
+  display: block;
+  inline-size: calc(var(--space-32px) + var(--space-20px));
+  block-size: var(--space-32px);
+  background: var(--color-layer-2);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+  transition: background-color var(--dur-150) var(--ease-standard), border-color var(--dur-150) var(--ease-standard);
+}
+
+.lp .lp-switch-track::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--space-4px) - 1px);
+  margin-block: auto;
+  inline-size: var(--space-24px);
+  block-size: var(--space-24px);
+  background: var(--color-ink-muted);
+  border-radius: var(--radius-pill);
+  transform: translateX(0) scale(0.667);
+  transition: transform var(--dur-150) var(--ease-standard), background-color var(--dur-150) var(--ease-standard);
+}
+
+.lp .lp-switch[aria-checked="true"] .lp-switch-track {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.lp .lp-switch[aria-checked="true"] .lp-switch-track::after {
+  background: var(--color-surface);
+  transform: translateX(var(--space-20px)) scale(1);
+}
+
+.lp .lp-switch-text {
+  display: grid;
+  min-width: 0;
+}
+
+.lp .lp-kill-state {
+  margin: 0;
+  min-width: 0;
+}
+
+.lp .lp-budget-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+}
+
+/* A label over its value: the narrow tiles stack them. */
+.lp .lp-kv {
+  display: grid;
+  justify-items: start;
+  row-gap: var(--space-4px);
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+}
+
+.lp .lp-kv > .lp-ask-code {
+  display: block;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.lp .lp-audit-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.lp .lp-sec-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------
+ * The close's shipped card: the goal, every stage done, the crew in a row.
+ * ------------------------------------------------------------------- */
+.lp .lp-shipped {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  min-width: 0;
+  padding: var(--kit-inset);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-card);
+}
+
+.lp .lp-shipped-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-4px);
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+}
+
+.lp .lp-shipped-goal {
+  margin: 0;
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-title);
+  color: var(--color-ink);
+  text-wrap: pretty;
+}
+
+.lp .lp-crew {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-12px) var(--space-8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp .lp-crew[data-cols="6"] {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.lp .lp-crew-cat {
+  display: grid;
+  justify-items: center;
+  row-gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp .lp-crew-name {
+  max-inline-size: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
 }
 
 /* ---------------------------------------------------------------------
  * Reduced motion: every part rests at its final state.
  * ------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
-  .lp .lp-story-caption,
-  .lp .lp-track-status,
   .lp .lp-code-line,
-  .lp .lp-timeline > .lp-row,
-  .lp .lp-cell-icon,
-  .lp .lp-head-row[data-fresh] .lp-head-text {
+  .lp .lp-timeline > .lp-row {
     animation: none;
   }
   .lp .lp-bar {
+    transition: none;
+  }
+  .lp .lp-cam-world {
     transition: none;
   }
 }

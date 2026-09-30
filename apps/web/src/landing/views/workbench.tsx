@@ -138,18 +138,26 @@ export function EditorView({ typed }: { typed: number }) {
   );
 }
 
-const EVENTS = [
-  { at: 0, time: "10:12", who: "oyen", what: "planned 6 tasks" },
-  { at: 1, time: "10:13", who: "cemong", what: "opened export.ts" },
-  { at: 8, time: "10:14", who: "cemong", what: "edited export.ts" },
-  { at: 16, time: "10:15", who: "cemong", what: "ran bun test, 12 passed" },
-  { at: 27, time: "10:16", who: "cemong", what: "handed the export to Tempe" },
+/** The live log: every event of the morning, in order; `at` is the typed line it lands on. */
+export const EVENTS = [
+  { at: 0, time: "10:08", who: "oyen", what: "planned 6 tasks" },
+  { at: 0, time: "10:09", who: "klepon", what: "handed Cemong the button sketch" },
+  { at: 0, time: "10:12", who: "cemong", what: "opened export.ts" },
+  { at: 0, time: "10:13", who: "cemong", what: "edited export.ts" },
+  { at: 12, time: "10:14", who: "tempe", what: "asked Oyen to review first" },
+  { at: 16, time: "10:15", who: "oyen", what: "approved Tempe's request" },
+  { at: 22, time: "10:16", who: "cemong", what: "ran bun test, 12 passed" },
+  { at: 25, time: "10:17", who: "cemong", what: "added fileName to export.ts" },
+  { at: 27, time: "10:18", who: "cemong", what: "handed the export to Tempe" },
 ];
 
+/** The log shows its newest rows: the same count as the decision log beside it, so both tiles end on one line. */
+export const LOG_ROWS = 5;
+
 export function TimelineView({ typed }: { typed: number }) {
-  const shown = EVENTS.filter((e) => e.at <= typed);
+  const shown = EVENTS.filter((e) => e.at <= typed).slice(-LOG_ROWS);
   return (
-    <ol className="lp-rows lp-timeline" aria-label="Timeline" style={{ "--lp-rows": String(EVENTS.length) } as CSSProperties}>
+    <ol className="lp-rows lp-timeline" aria-label="Timeline" style={{ "--lp-rows": String(LOG_ROWS) } as CSSProperties}>
       {shown.map((e) => (
         <li key={e.time + e.what} className="lp-row lp-row-time">
           <span className="kit-num lp-view-muted">{e.time}</span>

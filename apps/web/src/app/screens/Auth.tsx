@@ -14,7 +14,7 @@ function Gate({ title, lead, children }: { title: string; lead: string; children
     <main className="gate" id="main">
       <section className="gate-card" aria-labelledby="gate-h">
         <span className="gate-cat">
-          <Cat look={{ coat: "ginger", seed: 1204 }} role="lead" status="waiting" activity="wait" mood="calm" label="Kopi, waiting for you" size={64} still />
+          <Cat look={{ coat: "ginger", seed: 1204 }} role="lead" status="waiting" activity="wait" mood="calm" label="Oyen, the CEO cat, waiting for you" size={64} still />
         </span>
         <h1 className="app-title" id="gate-h">
           {title}

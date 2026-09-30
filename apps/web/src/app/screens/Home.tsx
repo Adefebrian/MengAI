@@ -7,11 +7,12 @@ import { Cat } from "@mengai/cats";
 import {
   ACTIVITY_LABEL,
   AGENT_ROLES,
-  DEFAULT_CHAT_MODEL,
   ROLE_LABEL,
   ROLE_TOOLS,
+  leadCatName,
   type Activity,
   type AgentRole,
+  type CompanyKind,
   type ModelRouting,
   type ProjectDTO,
   type RunDTO,
@@ -19,7 +20,7 @@ import {
   type RunSnapshotDTO,
   type Tier,
 } from "@mengai/shared";
-import { DataRow, DataRows, EmptyState, Meter, ProductIcon, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
+import { DataRow, DataRows, EmptyState, Meter, Notice, ProductIcon, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, navigate } from "../../router";
 import { tokensUsed } from "../../store/runStore";
@@ -27,7 +28,8 @@ import { useApp } from "../context";
 import { fmtAgo, fmtInt, fmtUsd } from "../format";
 import { useAction, useNow, useResource } from "../hooks";
 import { RUN_STATUS, isFinished } from "../status";
-import { FormStatus, Page, PageHead, Region, SelectField, TextArea, TextField } from "../ui";
+import { COMPANY_WORD } from "../run/stages";
+import { FormStatus, Page, PageHead, RadioGroup, Region, SelectField, TextArea, TextField } from "../ui";
 
 const ROLE_JOB: Record<AgentRole, string> = {
   lead: "Turns your goal into a task graph, hands out the work and writes the final report.",
@@ -66,10 +68,10 @@ const TIER_WORD: Record<Tier, string> = { fast: "Fast", balanced: "Balanced", de
 
 function modelFor(routing: ModelRouting | null, tier: Tier): string {
   const hit = routing?.tiers.find((t) => t.tier === tier);
-  return hit?.model ?? DEFAULT_CHAT_MODEL;
+  return hit?.model ?? "Automatic";
 }
 
-function LiveRun({ run, snap, project, still }: { run: RunDTO; snap: RunSnapshotDTO | null; project: ProjectDTO | null; still: boolean }) {
+function LiveRun({ run, snap, project, still, ceo }: { run: RunDTO; snap: RunSnapshotDTO | null; project: ProjectDTO | null; still: boolean; ceo: string }) {
   const look = RUN_STATUS[run.status];
   const used = tokensUsed(run.usage);
   const tasks = snap?.tasks.filter((t) => t.status !== "cancelled") ?? [];
@@ -113,11 +115,11 @@ function LiveRun({ run, snap, project, still }: { run: RunDTO; snap: RunSnapshot
           ))}
         </span>
       ) : (
-        <span className="live-empty">The crew is stretching. Kopi joins as soon as the run starts.</span>
+        <span className="live-empty">The crew is stretching. {ceo} joins as soon as the run starts.</span>
       )}
       <span className="live-foot">
         <span className="live-meter">
-          <Meter label="Budget used" value={run.budgetTokens ? used / run.budgetTokens : 0} valueText={`${fmtInt(used)} of ${fmtInt(run.budgetTokens)} tokens`} />
+          <Meter label="Budget used" value={run.budgetTokens ? used / run.budgetTokens : 0} valueText={run.budgetTokens ? `${fmtInt(used)} of ${fmtInt(run.budgetTokens)} tokens` : `${fmtInt(used)} tokens, no cap`} />
         </span>
         <span className="live-open">
           <span>Open the run</span>
@@ -136,6 +138,8 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
   const [usd, setUsd] = useState<string>("");
   const [estimate, setEstimate] = useState<RunEstimate | null>(null);
   const [goalError, setGoalError] = useState<string | null>(null);
+  const [company, setCompany] = useState<CompanyKind>("studio");
+  const ceo = leadCatName(settings?.ceoName);
   const est = useAction();
   const start = useAction();
   const pick = useAction();
@@ -148,8 +152,12 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
     if (focus) goalRef.current?.focus();
   }, [focus]);
 
-  const budgetTokens = tokens ? Number(tokens.replace(/[^0-9]/g, "")) : (settings?.defaultBudgetTokens ?? 400_000);
-  const budgetUsd = usd ? Number(usd.replace(/[^0-9.]/g, "")) : (settings?.defaultBudgetUsd ?? 5);
+  // 0 is a real choice: no cap. An empty field takes the default from Settings.
+  const tokenDigits = tokens.replace(/[^0-9]/g, "");
+  const usdDigits = usd.replace(/[^0-9.]/g, "");
+  const budgetTokens = tokenDigits ? Number(tokenDigits) : (settings?.defaultBudgetTokens ?? 400_000);
+  const budgetUsd = usdDigits && Number.isFinite(Number(usdDigits)) ? Number(usdDigits) : (settings?.defaultBudgetUsd ?? 5);
+  const uncapped = [budgetTokens === 0 ? "tokens" : null, budgetUsd === 0 ? "cost" : null].filter(Boolean) as string[];
 
   const runEstimate = () =>
     est.run(async () => {
@@ -168,7 +176,7 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
       return;
     }
     void start.run(async () => {
-      const run = await api.call("POST /api/runs", { body: { projectId, goal: goal.trim(), budgetTokens, budgetUsd } });
+      const run = await api.call("POST /api/runs", { body: { projectId, goal: goal.trim(), budgetTokens, budgetUsd, company } });
       navigate(`/app/runs/${encodeURIComponent(run.id)}`);
     });
   };
@@ -210,6 +218,16 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
             </button>
           ) : null}
         </div>
+        <RadioGroup<CompanyKind>
+          legend="Company"
+          name="company-kind"
+          value={company}
+          onChange={setCompany}
+          options={[
+            { value: "studio", label: COMPANY_WORD.studio, description: `${ceo} hires engineers, a reviewer and QA to build, review and ship code in your project.` },
+            { value: "fund", label: COMPANY_WORD.fund, description: "The crew researches, backtests and trades on paper first; a live order waits for you." },
+          ]}
+        />
         <TextArea
           ref={goalRef}
           label="Goal"
@@ -219,22 +237,41 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
             setEstimate(null);
             if (goalError) setGoalError(null);
           }}
-          placeholder="Add a CSV export to the daily sales report, with tests"
+          placeholder={company === "fund" ? "Test a momentum thesis on the top 20 US tech stocks, paper only" : "Add a CSV export to the daily sales report, with tests"}
           rows={3}
           maxLength={4000}
           error={goalError}
-          hint="Say what done looks like. Kopi turns it into tasks."
+          hint={`Say what done looks like. ${ceo} turns it into tasks.`}
         />
         <div className="field-row">
-          <TextField label="Token budget" inputMode="numeric" value={tokens} placeholder={fmtInt(settings?.defaultBudgetTokens ?? 400_000)} onChange={(e) => setTokens(e.target.value)} hint="The run stops here" />
-          <TextField label="Cost budget in USD" inputMode="decimal" value={usd} placeholder={String(settings?.defaultBudgetUsd ?? 5)} onChange={(e) => setUsd(e.target.value)} hint="Billed to your own key" />
+          <TextField
+            label="Token budget"
+            inputMode="numeric"
+            value={tokens}
+            placeholder={settings?.defaultBudgetTokens === 0 ? "0, no cap" : fmtInt(settings?.defaultBudgetTokens ?? 400_000)}
+            onChange={(e) => setTokens(e.target.value)}
+            hint={budgetTokens === 0 ? "0 means no cap" : "The run stops here. 0 means no cap."}
+          />
+          <TextField
+            label="Cost budget in USD"
+            inputMode="decimal"
+            value={usd}
+            placeholder={settings?.defaultBudgetUsd === 0 ? "0, no cap" : String(settings?.defaultBudgetUsd ?? 5)}
+            onChange={(e) => setUsd(e.target.value)}
+            hint={budgetUsd === 0 ? "0 means no cap" : "Billed to your own key. 0 means no cap."}
+          />
         </div>
+        {uncapped.length ? (
+          <Notice tone="warning" title={uncapped.length === 2 ? "No token or cost cap" : `No ${uncapped[0]} cap`}>
+            This run keeps spending on your own key until it finishes or you stop it. Stop all in the header always works.
+          </Notice>
+        ) : null}
         <div className="newrun-estimate" aria-live="polite">
           {estimate ? (
             <p className="newrun-estimate-text">
               About <span className="num">{estimate.tasks}</span> tasks, <span className="num">{fmtInt(estimate.tokens)}</span> tokens and <span className="num">{fmtUsd(estimate.costUsd)}</span>,{" "}
               {estimate.basis === "history" ? "from your past runs" : "a first guess until you have past runs"}.
-              {estimate.tokens > budgetTokens ? " That is over the token budget, so the run would stop early." : ""}
+              {budgetTokens > 0 && estimate.tokens > budgetTokens ? " That is over the token budget, so the run would stop early." : ""}
             </p>
           ) : (
             <p className="newrun-estimate-text" data-empty="">
@@ -258,7 +295,8 @@ function NewRun({ projects, onProject, focus }: { projects: ProjectDTO[]; onProj
 }
 
 export function HomeScreen({ hash }: { hash: string }) {
-  const { api, catsStill, session } = useApp();
+  const { api, catsStill, session, settings } = useApp();
+  const ceo = leadCatName(settings?.ceoName);
   const now = useNow(60_000);
   const runs = useResource((signal) => api.call("GET /api/runs", { signal }), "runs");
   const projects = useResource((signal) => api.call("GET /api/projects", { signal }), "projects");
@@ -302,7 +340,7 @@ export function HomeScreen({ hash }: { hash: string }) {
             <h2 className="app-h2" id="setup-h">
               The cats need a model key to think
             </h2>
-            <p className="app-region-meta">Add any provider you already pay for. OpenAI gpt-4o-mini is the default when an OpenAI key is present.</p>
+            <p className="app-region-meta">Add any provider you already pay for, then pick the models your cats use.</p>
           </div>
           <Link className="btn" href="/app/providers">
             Add a provider
@@ -320,7 +358,7 @@ export function HomeScreen({ hash }: { hash: string }) {
             ) : (
               <div className="live-list">
                 {liveRuns.map((r, i) => (
-                  <LiveRun key={r.id} run={r} snap={snaps.data?.[i] ?? null} project={projectById.get(r.projectId) ?? null} still={catsStill} />
+                  <LiveRun key={r.id} run={r} snap={snaps.data?.[i] ?? null} project={projectById.get(r.projectId) ?? null} still={catsStill} ceo={ceo} />
                 ))}
               </div>
             )}
@@ -447,7 +485,7 @@ export function HomeScreen({ hash }: { hash: string }) {
                 <span className="company-body">
                   <span className="company-role">
                     {ROLE_LABEL[role]}
-                    {role === "lead" ? <span className="company-name">Kopi</span> : null}
+                    {role === "lead" ? <span className="company-name">{ceo}</span> : null}
                   </span>
                   <span className="company-job">{ROLE_JOB[role]}</span>
                 </span>

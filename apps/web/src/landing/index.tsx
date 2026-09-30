@@ -4,24 +4,32 @@
 // this folder (the new-hire handbook form on D5 knobs).
 //
 // Ledger (composition.variant, in page order), validatePageRecipe gives []:
-//   masthead.left        the claim over the living office (JEV 0.33, measured)
+//   masthead.left        the claim over the product frame: the app's run
+//                        view with the living office at work inside it
+//   logo-row.row         runs on your own key, the providers (attached)
 //   custom.lifecycle     one goal grows a whole company, studio or fund
 //   bento.lead-left      the editor, the timeline, decisions and minutes
 //   feature-grid.rows    bring your own API key, tools and trading safety
-//   bento.lead-right     the measured token numbers around the chart
-//   feature-grid.cells   privacy and security
+//   stat-row.chart       the measured token numbers beside the chart
+//   bento.lead-right     the safety controls, as the app shows them
 //   faq.split            questions, answered plainly
-//   cta-band.split       the close
+//   cta-band.split       the close, with the crew that shipped the goal
 //   footer.inline        logo, product links, open source, credit, license
+//
+// Motion (motion/): the hero is tier 3 (JEV motion.intensity 2.85), the
+// rest of the page tier 2 or lower; Lenis, KitMotion and the frame's scrub
+// load as one lazy chunk on this route only.
 import { useEffect } from "react";
 import { AppShell, Masthead, Page, type AppShellDestination, type RecipeEntry } from "@mengai/ui";
 import { Brand } from "./brand";
-import { HeroOffice } from "./hero/HeroOffice";
+import { HeroFrame } from "./hero/HeroFrame";
 import { CodeIcon, DownloadIcon, KeyIcon, PlayIcon, ShieldIcon, UsersIcon } from "./icons";
 import { DOWNLOAD_URL, WEB_APP_URL } from "./links";
 import { CloseSection } from "./sections/Close";
 import { KeysSection } from "./sections/Keys";
 import { LifecycleSection } from "./sections/Lifecycle";
+import { LogosSection } from "./sections/Logos";
+import { LandingMotion } from "./motion/Motion";
 import { QuestionsSection } from "./sections/Questions";
 import { SecuritySection } from "./sections/Security";
 import { SiteFooter } from "./sections/SiteFooter";
@@ -31,11 +39,12 @@ import "./landing.css";
 
 export const LANDING_LEDGER: RecipeEntry[] = [
   "masthead.left",
+  "logo-row.row",
   "custom.lifecycle",
   "bento.lead-left",
   "feature-grid.rows",
+  "stat-row.chart",
   "bento.lead-right",
-  "feature-grid.cells",
   "faq.split",
   "cta-band.split",
   "footer.inline",
@@ -46,11 +55,6 @@ export const TAGLINE = "Hire a whole company of AI cats.";
 
 export const LEAD = "Give Oyen, the CEO cat, one goal. Oyen plans it, hires the cats it needs, and the crew builds, reviews and ships it while you watch.";
 
-export const BYOK = {
-  title: "Bring your own API key.",
-  body: "It stays in your keychain. Any provider, any model, gpt-4o-mini by default.",
-};
-
 const DESTINATIONS: AppShellDestination[] = [
   { id: "company", label: "Company", href: "#company", icon: <UsersIcon size={24} color="currentColor" /> },
   { id: "workbench", label: "The app", href: "#workbench", icon: <CodeIcon size={24} color="currentColor" /> },
@@ -60,7 +64,7 @@ const DESTINATIONS: AppShellDestination[] = [
 
 const TITLE = "MengAI: hire a whole company of AI cats";
 
-export function Landing() {
+export function Landing({ motion = true }: { motion?: boolean }) {
   useEffect(() => {
     const previous = document.title;
     document.title = TITLE;
@@ -82,6 +86,7 @@ export function Landing() {
           archetype={{ header: "rail", bar: "split" }}
           scroll="document"
         >
+          <LandingMotion engine={motion} />
           <Masthead
             id="top"
             variant="left"
@@ -96,16 +101,11 @@ export function Landing() {
                   <DownloadIcon size={20} color="currentColor" />
                   <span>Download for Mac</span>
                 </a>
-                <p className="lp-byok">
-                  <KeyIcon size={20} color="currentColor" />
-                  <span>
-                    <strong>{BYOK.title}</strong> {BYOK.body}
-                  </span>
-                </p>
               </>
             }
-            proof={<HeroOffice />}
+            proof={<HeroFrame />}
           />
+          <LogosSection />
           <LifecycleSection />
           <WorkbenchSection />
           <KeysSection />

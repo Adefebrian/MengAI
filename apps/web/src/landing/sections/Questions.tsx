@@ -8,7 +8,7 @@ import { FAQ, type FAQItem } from "@mengai/ui";
 export const QUESTIONS: FAQItem[] = [
   {
     q: "Do the cats need an OpenAI key?",
-    a: "No. Any provider in the list works, or any OpenAI or Anthropic compatible endpoint, including Ollama and LM Studio on your Mac. gpt-4o-mini is only where every cat starts.",
+    a: "No. Any provider in the list works, or any OpenAI or Anthropic compatible endpoint, including Ollama and LM Studio on your Mac. You pick the model for every desk.",
   },
   {
     q: "What does a run cost?",

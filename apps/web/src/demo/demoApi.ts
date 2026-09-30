@@ -27,7 +27,9 @@ import {
   type UsageReport,
   type UsageTotals,
 } from "@mengai/shared";
+import type { CreateConnectorBody, RunStage, TradingSettings, UpdateConnectorBody } from "@mengai/shared";
 import { matchPath } from "../router";
+import { createCapabilityState, demoMind } from "./capabilities";
 import { replay } from "../store/runStore";
 import {
   DEMO_APPROVAL,
@@ -76,6 +78,8 @@ function snapshotAt(seq: number): RunSnapshotDTO {
     handoffs: s.handoffs,
     decisions: s.decisions,
     approvals: s.approvalOrder.map((id) => s.approvals[id]!),
+    roles: Object.values(s.roles),
+    ...(s.stage ? { stage: s.stage as RunStage } : {}),
     lastSeq: s.lastSeq,
   };
 }
@@ -164,6 +168,9 @@ export function createDemoState() {
     defaultBudgetTokens: 400_000,
     defaultBudgetUsd: 5,
     maxConcurrentAgents: 4,
+    ceoName: "Oyen",
+    maxAgents: 0,
+    maxDepth: 0,
     allowNetworkTools: false,
     motion: "full",
     prices: {},
@@ -232,6 +239,7 @@ function json(status: number, body: unknown): Response {
 
 export function createDemoFetch(): (input: string, init: RequestInit) => Promise<Response> {
   const st = createDemoState();
+  const cap = createCapabilityState();
   let seq = 0;
   const nextId = (p: string) => `${p}-${(seq += 1)}`;
   const hint = (key: string) => key.slice(-4);
@@ -306,6 +314,38 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
         lastCachedTokens: last?.cachedTokens ?? 0,
         createdAt: last?.createdAt ?? DEMO_T0,
       };
+    }],
+    ["GET /api/runs/:id/agents/:agentId/mind", ({ params }) => {
+      const s = replay(DEMO_EVENTS.filter((e) => e.ts <= clockFn()));
+      const a = s.agents[params.agentId!];
+      if (params.id !== DEMO_RUN_ID || !a) throw new DemoHttpError(404, "not_found", "No cat with that id.");
+      return demoMind(a, s.roles);
+    }],
+    ["GET /api/connectors", () => cap.connectors],
+    ["POST /api/connectors", ({ body }) => cap.addConnector(body as CreateConnectorBody)],
+    ["PATCH /api/connectors/:id", ({ params, body }) => {
+      const c = cap.updateConnector(params.id!, body as UpdateConnectorBody);
+      if (!c) throw new DemoHttpError(404, "not_found", "No connector with that id.");
+      return c;
+    }],
+    ["DELETE /api/connectors/:id", ({ params }) => {
+      const i = cap.connectors.findIndex((x) => x.id === params.id);
+      if (i >= 0) cap.connectors.splice(i, 1);
+      return { ok: true };
+    }],
+    ["POST /api/connectors/:id/test", ({ params }) => {
+      const c = cap.testConnector(params.id!);
+      if (!c) throw new DemoHttpError(404, "not_found", "No connector with that id.");
+      return c;
+    }],
+    ["GET /api/trading/settings", () => cap.getTrading()],
+    ["PUT /api/trading/settings", ({ body }) => cap.setTrading(body as TradingSettings)],
+    ["GET /api/trading/orders", () => cap.orders],
+    ["GET /api/trading/positions", () => cap.positions],
+    ["POST /api/trading/orders/:id/decision", ({ params, body }) => {
+      const o = cap.decideOrder(params.id!, (body as { decision: "approve" | "reject" }).decision);
+      if (!o) throw new DemoHttpError(404, "not_found", "No order with that id.");
+      return o;
     }],
     ["GET /api/usage", ({ query }): UsageReport => {
       const list = query.get("runId") === DEMO_RUN_ID || !query.get("runId") ? visibleCalls() : [];

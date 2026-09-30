@@ -24,12 +24,13 @@ import type {
   Mood,
   ProjectDTO,
   RunDTO,
+  RunStage,
   TaskDTO,
   TaskStatus,
   Tier,
   UsageTotals,
 } from "@mengai/shared";
-import { TOOL_ACTIVITY, type ToolName } from "@mengai/shared";
+import { ROLE_LABEL, ROLE_TOOLS, TOOL_ACTIVITY, type RoleDTO, type ToolName } from "@mengai/shared";
 
 export const DEMO_RUN_ID = "demo";
 export const DEMO_PROJECT_ID = "demo-project";
@@ -63,16 +64,32 @@ interface CatSpec {
   coat: string;
   seed: number;
   tier: Tier;
+  /** a role the crew defined on top of the base role */
+  roleTitle?: string;
+  roleId?: string;
+  hireReason?: string;
 }
 
 export const DEMO_CATS: CatSpec[] = [
-  { id: "agent-kopi", name: "Kopi", role: "lead", coat: "ginger", seed: 1204, tier: "deep" },
-  { id: "agent-mochi", name: "Mochi", role: "engineer", coat: "tuxedo", seed: 88213, tier: "balanced" },
+  { id: "agent-kopi", name: "Oyen", role: "lead", coat: "ginger", seed: 1204, tier: "deep" },
+  { id: "agent-mochi", name: "Gembul", role: "engineer", coat: "tuxedo", seed: 88213, tier: "balanced" },
   { id: "agent-klepon", name: "Klepon", role: "designer", coat: "calico", seed: 5530, tier: "balanced" },
   { id: "agent-tempe", name: "Tempe", role: "reviewer", coat: "gray", seed: 71002, tier: "balanced" },
-  { id: "agent-onde", name: "Onde", role: "qa", coat: "black", seed: 3319, tier: "fast" },
+  { id: "agent-onde", name: "Onde", role: "qa", coat: "black", seed: 3319, tier: "fast", roleTitle: "Export tester", roleId: "role-export-tester", hireReason: "The export needs fixture days with awkward item names" },
   { id: "agent-cilok", name: "Cilok", role: "security", coat: "siamese", seed: 90417, tier: "fast" },
 ];
+
+/** How the CEO names a role it hires for, with its article. */
+const HIRE_WORD: Record<AgentRole, string> = {
+  lead: "a CEO",
+  engineer: "an engineer",
+  designer: "a designer",
+  reviewer: "a reviewer",
+  qa: "a tester",
+  security: "a security check",
+  researcher: "a researcher",
+  operator: "an operator",
+};
 
 const GOAL = "Add a CSV export to the daily sales report, with tests";
 
@@ -153,6 +170,11 @@ class Script {
       usage: zeroUsage(),
       createdAt: this.t,
       updatedAt: this.t,
+      roleTitle: cat.roleTitle ?? ROLE_LABEL[cat.role],
+      archetype: cat.role,
+      roleId: cat.roleId ?? null,
+      hireReason: cat.role === "lead" ? null : (cat.hireReason ?? `The plan needs ${HIRE_WORD[cat.role]}`),
+      hiredBy: cat.role === "lead" ? null : "agent-kopi",
     };
     this.agents.set(cat.id, agent);
     return this.emit("agent.spawned", { agent }, cat.id);
@@ -546,7 +568,11 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   const s = new Script();
   const [kopi, mochi, klepon, tempe, onde, cilok] = DEMO_CATS.map((c) => c.id) as [string, string, string, string, string, string];
 
+  // The tracker moves (run.stage), the way the engine publishes them.
+  const stage = (next: RunStage, previous: RunStage | null, reason: string) => s.emit("run.stage", { stage: next, previous, reason });
+
   s.emit("run.created", { run: s.run("queued") });
+  stage("goal", null, "The goal landed on Oyen's desk");
   s.wait(400).emit("run.status", { status: "running", reason: null });
   s.spawn(DEMO_CATS[0]!);
   s.wait(300).status(kopi, "thinking", "think", "Reading the goal", null, "calm");
@@ -593,12 +619,14 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
     deps: ["t-csv"],
     priority: 1,
   });
+  stage("planned", "goal", "Oyen planned 5 tasks");
   s.decision("orch.route", { owner: "engineer", split: false }, "Route t-csv to an engineer, no split", 0.86);
   s.decision("orch.model", { tier: "balanced" }, "Balanced tier for the engineer tasks", 0.74);
   s.wait(600).spawn(DEMO_CATS[1]!);
   s.wait(200).spawn(DEMO_CATS[2]!);
+  stage("hired", "planned", "Gembul and Klepon joined the crew");
 
-  // Kickoff: Kopi walks the new hires through the plan at the meeting table.
+  // Kickoff: Oyen walks the new hires through the plan at the meeting table.
   s.wait(300).meeting("m-kickoff", "kickoff", "Kickoff: CSV export", [kopi, mochi, klepon], [
     "Walk through the 5 tasks and their order",
     "Agree the CSV columns with the report",
@@ -607,17 +635,18 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.status(kopi, "working", "plan", "Running the kickoff", null, "calm");
   s.status(mochi, "thinking", "think", "In the kickoff", null, "calm");
   s.status(klepon, "thinking", "think", "In the kickoff", null, "calm");
-  s.say(kopi, "Mochi takes the serializer, Klepon the button. Tempe reviews, Onde tests, Cilok scans.");
+  s.say(kopi, "Gembul takes the serializer, Klepon the button. Tempe reviews, Onde tests, Cilok scans.");
   s.wait(3200).endMeeting("m-kickoff", "kickoff", [
     "Columns follow the report: time, item, qty, unit price, total, cashier",
     "Money stays in cents in the data, formatted only in the file",
   ], [
-    "Mochi owns the serializer, Klepon the Export button",
+    "Gembul owns the serializer, Klepon the Export button",
     "Tempe reviews the serializer before anything is wired",
   ], kopi);
 
   s.wait(300).handoff("h-1", "t-csv", kopi, mochi, "engineer", "Serializer only; keep cents as integers, format at the edge.");
   s.update("t-csv", { status: "running", assigneeId: mochi });
+  stage("working", "hired", "Gembul started the serializer");
   s.status(mochi, "working", "read", "Reading the report types", "t-csv");
   s.update("t-button", { status: "running", assigneeId: klepon });
   s.status(klepon, "working", "design", "Sketching the Export button", "t-button");
@@ -626,7 +655,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.say(mochi, "Rows carry cents as integers. I will format them only when writing the file.");
   s.tool(klepon, "generate_image", "Export button, 8 states, 1024x1024", "1 image, $0.04", { taskId: "t-button", ms: 3200 });
   s.ask("rq-empty-day", klepon, kopi, "On a day with no sales, should Export be hidden or shown disabled?", "t-button");
-  s.status(klepon, "waiting", "ask", "Asking Kopi about the empty day", "t-button", "calm");
+  s.status(klepon, "waiting", "ask", "Asking Oyen about the empty day", "t-button", "calm");
   s.status(mochi, "working", "code", "Writing csv.ts", "t-csv");
   s.tool(mochi, "fs_write", "src/report/csv.ts (31 lines)", "Created src/report/csv.ts", { taskId: "t-csv" });
   s.file("src/report/csv.ts", "create", 0, mochi, CSV_TS_V1);
@@ -645,6 +674,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   // Review round 1: fails on quoting.
   s.wait(400).spawn(DEMO_CATS[3]!);
   s.update("t-csv", { status: "review" });
+  stage("review", "working", "csv.ts went to review");
   s.handoff("h-2", "t-csv", mochi, tempe, "reviewer", "csv.ts added, 4 tests pass. Check quoting of commas in item names.");
   s.status(mochi, "waiting", "handoff", "Waiting on review", "t-csv", "calm");
   // The engine opens a review task under the reviewed one; the reviewer works it.
@@ -664,7 +694,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.tool(tempe, "submit_review", "fail: 2 notes", "Review failed: quotes inside fields are not doubled; a newline breaks the row", { taskId: "t-rev-1", ok: true });
   s.update("t-rev-1", { status: "done", resultSummary: "fail: quotes inside fields are not doubled; a newline breaks the row" });
   s.say(tempe, "A name like Kopi \"Tubruk\" comes out as three columns. Double the quotes and quote newlines too.", mochi);
-  s.decision("orch.loop_exit", { exit: "another_round", meets_ask: false }, "Second review round, fix task to Mochi", 0.71);
+  s.decision("orch.loop_exit", { exit: "another_round", meets_ask: false }, "Second review round, fix task to Gembul", 0.71);
   // A failed review calls a short sync at the table before the fix.
   s.meeting("m-sync", "sync", "Sync: the review sent csv.ts back", [kopi, mochi, tempe], [
     "What round 1 found",
@@ -674,9 +704,10 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.wait(2600).endMeeting("m-sync", "sync", [
     "Embedded quotes are not doubled, and a newline splits a row",
   ], [
-    "Mochi writes the failing tests first, then fixes quoteField",
+    "Gembul writes the failing tests first, then fixes quoteField",
     "Tempe reviews round 2 as soon as the tests pass",
   ], kopi);
+  stage("working", "review", "The review asked for doubled quotes and quoted newlines");
   s.status(kopi, "waiting", "wait", "Watching the fix", null, "calm");
   s.task("t-fix", {
     title: "Fix quoting of quotes and newlines in CSV fields",
@@ -700,6 +731,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.tool(mochi, "shell_run", "bun test src/report", "6 pass, 0 fail", { taskId: "t-fix", ms: 2400 });
   s.update("t-fix", { status: "done", resultSummary: "Quotes doubled, CR and LF quoted, 2 tests added" });
   s.handoff("h-3", "t-csv", mochi, tempe, "reviewer", "Quoting fixed, 6 tests pass.");
+  stage("review", "working", "The fix went back to Tempe");
   s.task("t-rev-2", {
     title: "Review: Add a CSV serializer for daily sales rows, round 2",
     role: "reviewer",
@@ -738,9 +770,25 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   // Wiring, tests and the scan run in parallel; one approval for an install.
   s.update("t-wire", { status: "running", assigneeId: mochi });
   s.status(mochi, "working", "code", "Wiring Export to the page", "t-wire");
+  const tester: RoleDTO = {
+    id: "role-export-tester",
+    projectId: DEMO_PROJECT_ID,
+    runId: DEMO_RUN_ID,
+    key: "export-tester",
+    title: "Export tester",
+    archetype: "qa",
+    charter: "You test file exports end to end. Build fixture days that break naive serializers (empty days, commas, quotes, newlines), run the whole suite, and report the first failing case with its input.",
+    charterVersion: 1,
+    tools: ROLE_TOOLS.qa.filter((t) => t !== "handoff"),
+    reason: "The export needs fixture days with awkward item names",
+    createdBy: kopi,
+    createdAt: s.t,
+  };
+  s.emit("role.created", { role: tester, reason: tester.reason, byAgentId: kopi }, kopi);
   s.wait(300).spawn(DEMO_CATS[4]!);
   s.wait(150).spawn(DEMO_CATS[5]!);
   s.update("t-test", { status: "running", assigneeId: onde });
+  stage("testing", "review", "Review passed, Onde tests the export");
   s.update("t-scan", { status: "running", assigneeId: cilok });
   s.status(onde, "working", "code", "Writing 3 fixture days", "t-test");
   s.status(cilok, "working", "scan", "Scanning the diff", "t-scan");
@@ -752,7 +800,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.file("src/report/fixtures/quoted-names.json", "create", 0, onde, FIXTURE_QUOTED);
   s.tool(cilok, "scan_secrets", "diff of 6 files", "0 secrets found", { taskId: "t-scan" });
   s.ask("rq-install", mochi, kopi, "May I add date-fns 4.1.0 to format the export file name?", "t-wire");
-  s.status(mochi, "waiting", "ask", "Asking Kopi about date-fns", "t-wire", "calm");
+  s.status(mochi, "waiting", "ask", "Asking Oyen about date-fns", "t-wire", "calm");
   s.wait(1200).decide("rq-install", kopi, "Yes, pin 4.1.0. The install itself still needs the owner's yes.", true, "t-wire");
   const approval: ApprovalDTO = {
     id: DEMO_APPROVAL_ID,
@@ -791,7 +839,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   }, cilok);
   s.decision("sec.severity", { severity: "low" }, "Low: dev dependency, not in the shipped bundle", null, false, 12);
   s.ask("rq-block", cilok, kopi, "Should the low advisory block the run?", "t-scan");
-  s.status(cilok, "waiting", "ask", "Asking Kopi about the advisory", "t-scan", "calm");
+  s.status(cilok, "waiting", "ask", "Asking Oyen about the advisory", "t-scan", "calm");
   s.wait(1400).decide("rq-block", kopi, "No. It is a dev dependency and never ships. Log it and move on.", false, "t-scan");
   s.update("t-scan", { status: "done", resultSummary: "No secrets; 1 low advisory in a dev dependency" });
   s.status(cilok, "done", "celebrate", "Scan clean", null, "calm");
@@ -801,7 +849,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.tool(mochi, "shell_run", "bun add date-fns@4.1.0", "Installed date-fns 4.1.0", { taskId: "t-wire", ms: 3000 });
   s.file("package.json", "update", 0, mochi, PACKAGE_JSON);
   s.file("bun.lock", "update", 48_210, mochi);
-  s.ask("rq-suite", onde, kopi, "Run the full suite now, or after Mochi's install lands?", "t-test");
+  s.ask("rq-suite", onde, kopi, "Run the full suite now, or after Gembul's install lands?", "t-test");
   s.wait(900).decide("rq-suite", kopi, "After the install. One full run on the final lockfile.", true, "t-test");
   s.tool(mochi, "shell_run", "bun run typecheck", "0 errors", { taskId: "t-wire", ms: 2600 });
   s.update("t-wire", { status: "done", resultSummary: "Export downloads sales-YYYY-MM-DD.csv" });
@@ -811,7 +859,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.update("t-test", { status: "done", resultSummary: "3 fixtures, 31 tests pass" });
   s.status(onde, "done", "celebrate", "Tests pass", null, "proud");
 
-  // Wrap-up at the table, then Kopi closes the run.
+  // Wrap-up at the table, then Oyen closes the run.
   s.meeting("m-wrapup", "wrapup", "Wrap-up: CSV export", [kopi, mochi, klepon, tempe, onde, cilok], [
     "What shipped",
     "What to watch",
@@ -829,6 +877,7 @@ function build(): { events: MengaiEvent[]; calls: LlmCallDTO[]; approval: Approv
   s.say(kopi, "Export ships: 6 tasks done, one review round, one install you approved, one low advisory to watch.");
   s.tool(kopi, "finish", "final report", "Run report saved", { input: 4800 });
   s.status(kopi, "done", "celebrate", "Run complete", null, "proud");
+  stage("shipped", "testing", "Every check passed and Oyen signed the report");
   s.emit("run.status", { status: "done", reason: null });
 
   return { events: s.events, calls: s.calls, approval, versions: s.versions };

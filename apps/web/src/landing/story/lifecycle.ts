@@ -6,8 +6,10 @@
 // so. No model is called.
 //
 // JEV imm.concept c4 "The door is the company" (core 2.34, first screen
-// 0.72, feasible 0.78): Oyen starts alone with the goal; the hires walk in
-// through the entrance door with their boxes within the first seconds;
+// 0.72, feasible 0.78): Oyen starts alone with the goal; the clock starts
+// when the floor is half in view and the first hire steps into the doorway
+// within about 3 s (critic fix round 2), the rest walking in with their
+// boxes and settling before the kickoff seats them at the table;
 // later a cat that failed three times walks out with its box through the
 // same door as its replacement walks in, starting with everything the role
 // has learned. The story plays once when the section is on screen and
@@ -168,7 +170,7 @@ export const STUDIO: Company = {
     rows: {
       charter: { value: "Engineer charter v3", evidence: "Static and cached by your provider: the same text for every engineer." },
       strategy: { value: "v3: read the acceptance criteria before the first edit.", evidence: "Learned by the role, not the cat: every engineer gets it." },
-      skills: { value: "Run the signup tests", evidence: "Promoted by JEV mem.promote at 0.78 after 6 wins in 7 uses." },
+      skills: { value: "Run the signup tests", evidence: "Promoted after 6 wins in 7 uses, checked by an offline eval." },
       tools: { value: "Search, read, edit and run in your project, hand off, save a skill.", evidence: "The engineer's own tool set: nothing outside the project folder." },
       memory: { value: "Nothing yet.", evidence: "First run with this crew." },
       trust: { value: "No reviews yet.", evidence: "Tempe has not reviewed Cemong's work before." },
@@ -187,18 +189,17 @@ export const STUDIO: Company = {
     {
       id: "plan",
       scene: "Oyen plans",
-      at: 4_000,
+      at: 1_200,
       clock: "09:02",
       stage: 1,
       caption: "Oyen plans six cards and spots five roles the studio does not have yet.",
       agents: { oyen: { ...work("plan", "Six cards, five hires."), taskTitle: "Plan the launch" } },
       plan: { s1: "doing", s2: "todo", s3: "todo", s4: "todo", s5: "todo", s6: "todo" },
-      beats: [{ kind: "deliver", fromId: "oyen", taskTitle: "Plan the launch" }],
     },
     {
       id: "hire",
       scene: "Hiring",
-      at: 9_000,
+      at: 2_600,
       clock: "09:03",
       stage: 2,
       caption: "Oyen hires. Five cats walk in with their boxes, and Serabi fills a new role: Copywriter.",
@@ -217,7 +218,7 @@ export const STUDIO: Company = {
     {
       id: "kickoff",
       scene: "Kickoff",
-      at: 25_000,
+      at: 19_000,
       clock: "09:05",
       stage: 2,
       caption: "Kickoff in the meeting room: who takes which card, and what has to pass review.",
@@ -240,7 +241,7 @@ export const STUDIO: Company = {
     {
       id: "desks",
       scene: "Desk work",
-      at: 35_000,
+      at: 33_000,
       clock: "09:12",
       stage: 3,
       caption: "Each cat takes its card to its desk. Cemong builds the form, Serabi writes the copy.",
@@ -258,7 +259,7 @@ export const STUDIO: Company = {
     {
       id: "coffee",
       scene: "Coffee queue",
-      at: 42_000,
+      at: 40_000,
       clock: "09:40",
       stage: 3,
       caption: "A queue at the coffee machine. Serabi lets Onde go first, Tempe waits with an empty mug.",
@@ -272,7 +273,7 @@ export const STUDIO: Company = {
     {
       id: "handoff",
       scene: "Review",
-      at: 49_000,
+      at: 47_000,
       clock: "10:05",
       stage: 4,
       caption: "Cemong carries the signup form to Tempe for review.",
@@ -286,7 +287,7 @@ export const STUDIO: Company = {
     {
       id: "bounce",
       scene: "Sent back",
-      at: 55_000,
+      at: 53_000,
       clock: "10:08",
       stage: 3,
       back: 4,
@@ -300,7 +301,7 @@ export const STUDIO: Company = {
       head: {
         strategy: {
           value: "v4: show an error for every invalid field before a handoff.",
-          evidence: "JEV adopted v4 at 0.81 after the offline eval: it covers 3 of 3 recent failures, v3 covered 1.",
+          evidence: "Adopted after an offline eval and a judge's check: it covers 3 of 3 recent failures, v3 covered 1.",
         },
         memory: { value: "Tempe wants an error on every field.", evidence: "Written after round 1 of the review." },
         trust: { value: "Tempe trusts Cemong at 0.33.", evidence: "0 of 1 reviews passed so far." },
@@ -309,7 +310,7 @@ export const STUDIO: Company = {
     {
       id: "strikes",
       scene: "Third strike",
-      at: 62_000,
+      at: 60_000,
       clock: "10:20",
       stage: 3,
       back: 4,
@@ -322,7 +323,7 @@ export const STUDIO: Company = {
     {
       id: "letgo",
       scene: "Let go",
-      at: 68_000,
+      at: 66_000,
       clock: "10:22",
       stage: 3,
       back: 4,
@@ -336,14 +337,14 @@ export const STUDIO: Company = {
       head: {
         strategy: {
           value: "v4: show an error for every invalid field before a handoff.",
-          evidence: "JEV adopted v4 at 0.81 after the offline eval. Risol, the new hire, starts on v4 too.",
+          evidence: "Adopted after an offline eval and a judge's check. Risol, the new hire, starts on v4 too.",
         },
       },
     },
     {
       id: "overtime",
       scene: "Overtime",
-      at: 76_000,
+      at: 74_000,
       clock: "18:40",
       stage: 3,
       back: 4,
@@ -359,7 +360,7 @@ export const STUDIO: Company = {
     {
       id: "tests",
       scene: "Tests",
-      at: 82_000,
+      at: 80_000,
       clock: "19:05",
       stage: 5,
       caption: "Tempe passes round two. Onde runs 24 tests on the server rack, and all 24 pass.",
@@ -378,7 +379,7 @@ export const STUDIO: Company = {
     {
       id: "shipped",
       scene: "Shipped",
-      at: 89_000,
+      at: 87_000,
       clock: "19:20",
       stage: 6,
       complete: true,
@@ -395,7 +396,7 @@ export const STUDIO: Company = {
       beats: [{ kind: "celebrate", agentIds: ["cemong", "serabi", "tempe", "onde", "risol"] }],
     },
   ],
-  total: 98_000,
+  total: 96_000,
   poster: 4,
 };
 
@@ -444,7 +445,7 @@ export const FUND: Company = {
     rows: {
       charter: { value: "Quant charter v2", evidence: "Static and cached by your provider: the same text for every quant." },
       strategy: { value: "v1: hold out the last 12 months and never tune on them.", evidence: "Learned by the role, not the cat: every quant gets it." },
-      skills: { value: "Walk-forward backtest", evidence: "Promoted by JEV mem.promote at 0.76 after 5 wins in 6 uses." },
+      skills: { value: "Walk-forward backtest", evidence: "Promoted after 5 wins in 6 uses, checked by an offline eval." },
       tools: { value: "Market data over your MCP server, backtest runs, hand off, save a skill.", evidence: "Every order is paper until you switch live trading on." },
       memory: { value: "Nothing yet.", evidence: "First run on this desk." },
       trust: { value: "No reviews yet.", evidence: "Duku has not reviewed Jahe's work before." },
@@ -463,18 +464,17 @@ export const FUND: Company = {
     {
       id: "plan",
       scene: "Oyen plans",
-      at: 4_000,
+      at: 1_200,
       clock: "08:02",
       stage: 0,
       caption: "Oyen splits it into six cards and spots five seats the trading floor does not have yet.",
       agents: { oyen: { ...work("plan", "Six cards, five hires."), taskTitle: "Frame the thesis" } },
       plan: { f1: "doing", f2: "todo", f3: "todo", f4: "todo", f5: "todo", f6: "todo" },
-      beats: [{ kind: "deliver", fromId: "oyen", taskTitle: "Frame the thesis" }],
     },
     {
       id: "hire",
       scene: "Hiring",
-      at: 9_000,
+      at: 2_600,
       clock: "08:03",
       stage: 0,
       caption: "Oyen hires. Five cats walk in with their boxes, and Duku fills a new role: Risk officer.",
@@ -493,7 +493,7 @@ export const FUND: Company = {
     {
       id: "research",
       scene: "Data research",
-      at: 25_000,
+      at: 19_000,
       clock: "08:20",
       stage: 1,
       caption: "Salak pulls five years of daily prices. Meanwhile the coffee queue is three cats long.",
@@ -509,7 +509,7 @@ export const FUND: Company = {
     {
       id: "backtest",
       scene: "Backtest",
-      at: 32_000,
+      at: 26_000,
       clock: "09:10",
       stage: 2,
       caption: "The data is clean. Jahe and Kencur backtest the signal and the exits at their desks.",
@@ -524,7 +524,7 @@ export const FUND: Company = {
     {
       id: "risk",
       scene: "Risk review",
-      at: 39_000,
+      at: 33_000,
       clock: "10:30",
       stage: 3,
       caption: "Jahe carries the backtest to Duku for the risk review.",
@@ -538,7 +538,7 @@ export const FUND: Company = {
     {
       id: "bounce",
       scene: "Sent back",
-      at: 45_000,
+      at: 39_000,
       clock: "10:34",
       stage: 2,
       back: 3,
@@ -552,7 +552,7 @@ export const FUND: Company = {
       head: {
         strategy: {
           value: "v2: cap the drawdown at 15% before a risk review.",
-          evidence: "JEV adopted v2 at 0.79 after the offline eval: it covers 2 of 2 risk bounces, v1 covered 0.",
+          evidence: "Adopted after an offline eval and a judge's check: it covers 2 of 2 risk bounces, v1 covered 0.",
         },
         memory: { value: "Duku caps drawdown at 15%.", evidence: "Written after round 1 of the risk review." },
         trust: { value: "Duku trusts Jahe at 0.33.", evidence: "0 of 1 reviews passed so far." },
@@ -561,7 +561,7 @@ export const FUND: Company = {
     {
       id: "committee",
       scene: "Risk committee",
-      at: 51_000,
+      at: 45_000,
       clock: "10:40",
       stage: 2,
       back: 3,
@@ -583,7 +583,7 @@ export const FUND: Company = {
     {
       id: "strikes",
       scene: "Third strike",
-      at: 60_000,
+      at: 54_000,
       clock: "11:30",
       stage: 2,
       back: 3,
@@ -598,7 +598,7 @@ export const FUND: Company = {
     {
       id: "letgo",
       scene: "Let go",
-      at: 66_000,
+      at: 60_000,
       clock: "11:32",
       stage: 2,
       back: 3,
@@ -612,14 +612,14 @@ export const FUND: Company = {
       head: {
         strategy: {
           value: "v2: cap the drawdown at 15% before a risk review.",
-          evidence: "JEV adopted v2 at 0.79 after the offline eval. Lontong, the new hire, starts on v2 too.",
+          evidence: "Adopted after an offline eval and a judge's check. Lontong, the new hire, starts on v2 too.",
         },
       },
     },
     {
       id: "paper",
       scene: "Paper trade",
-      at: 74_000,
+      at: 68_000,
       clock: "14:00",
       stage: 4,
       caption: "Risk passes at a 12% drawdown. Paper trading starts, and Salak naps in the cat bed.",
@@ -640,7 +640,7 @@ export const FUND: Company = {
     {
       id: "live",
       scene: "Live needs you",
-      at: 81_000,
+      at: 75_000,
       clock: "16:00",
       stage: 5,
       caption: "Going live is your call: Oyen asks you first, and orders stay inside your hard limits.",
@@ -654,7 +654,7 @@ export const FUND: Company = {
     {
       id: "report",
       scene: "P&L report",
-      at: 88_000,
+      at: 82_000,
       clock: "17:00",
       stage: 6,
       complete: true,
@@ -670,7 +670,7 @@ export const FUND: Company = {
       beats: [{ kind: "celebrate", agentIds: ["salak", "jahe", "duku", "pukis", "lontong"] }],
     },
   ],
-  total: 97_000,
+  total: 91_000,
   poster: 4,
 };
 

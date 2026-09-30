@@ -72,7 +72,7 @@ describe("the office props", () => {
   test("every cat has its desk data: energy, its latest file, its task", () => {
     const at = replay(DEMO_EVENTS.filter((e) => e.seq <= DEMO_WARM_SEQ), emptyRunState("demo"));
     const agents = officeAgents(at, {});
-    expect(agents.map((a) => a.name)).toEqual(["Kopi", "Mochi", "Klepon", "Tempe", "Onde", "Cilok"]);
+    expect(agents.map((a) => a.name)).toEqual(["Oyen", "Gembul", "Klepon", "Tempe", "Onde", "Cilok"]);
     const mochi = agents.find((a) => a.id === "agent-mochi")!;
     expect(mochi.file).toBe("src/pages/report.tsx");
     expect(mochi.taskTitle).toBe("Wire Export to the report page");
@@ -114,13 +114,13 @@ describe("the office props", () => {
 describe("the status line in cat voice", () => {
   test("at the approval it says who waits on you and for what", () => {
     const at = replay(DEMO_EVENTS.filter((e) => e.seq <= DEMO_WARM_SEQ), emptyRunState("demo"));
-    expect(companyNow(at)).toBe("Mochi is waiting on you: install date-fns 4.1.0 with bun add.");
+    expect(companyNow(at)).toBe("Gembul is waiting on you: install date-fns 4.1.0 with bun add.");
   });
 
   test("during the kickoff the crew is at the table", () => {
     const i = DEMO_EVENTS.findIndex((e) => e.type === "meeting.started");
     const s = replay(DEMO_EVENTS.slice(0, i + 1), emptyRunState("demo"));
-    expect(companyNow(s)).toBe("Kickoff: CSV export. Kopi, Mochi and Klepon are at the table.");
+    expect(companyNow(s)).toBe("Kickoff: CSV export. Oyen, Gembul and Klepon are at the table.");
   });
 
   test("at the end it is done and never uses an em dash", () => {

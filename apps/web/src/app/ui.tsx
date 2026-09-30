@@ -262,6 +262,73 @@ export function Checkbox({ label, description, checked, onChange, disabled }: { 
   );
 }
 
+/**
+ * A radio group (JAL Core Radio anatomy on the app's control row): one
+ * 44px button per option with role radio, a drawn 20px circle beside the
+ * option in ink and one line of description in ink-muted, so the target
+ * never shrinks to the circle. One tab stop, arrow keys move and select.
+ */
+export function RadioGroup<T extends string>({
+  legend,
+  name,
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  legend: string;
+  name: string;
+  value: T;
+  options: Array<{ value: T; label: string; description?: string }>;
+  onChange: (v: T) => void;
+  disabled?: boolean;
+}) {
+  const lid = useId();
+  const move = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = options[(index + step + options.length) % options.length]!;
+    onChange(next.value);
+    const group = e.currentTarget.parentElement;
+    requestAnimationFrame(() => group?.querySelector<HTMLButtonElement>(`[data-value="${next.value}"]`)?.focus());
+  };
+  return (
+    <div className="app-radios">
+      <p className="field-label" id={lid}>
+        {legend}
+      </p>
+      <div className="app-radio-list" role="radiogroup" aria-labelledby={lid} data-name={name}>
+        {options.map((o, i) => {
+          const on = value === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              tabIndex={on ? 0 : -1}
+              data-value={o.value}
+              className="app-radio"
+              disabled={disabled}
+              onClick={() => onChange(o.value)}
+              onKeyDown={(e) => move(e, i)}
+            >
+              <span className="app-radio-dot" aria-hidden="true">
+                <span className="app-radio-center" />
+              </span>
+              <span className="app-radio-text">
+                <span className="app-radio-label">{o.label}</span>
+                {o.description ? <span className="app-radio-desc">{o.description}</span> : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Inline result line under a form: the changed state itself, or the error with its cause. Space is reserved. */
 export function FormStatus({ ok, error }: { ok?: string | null; error?: string | null }) {
   if (!ok && !error) return <p className="app-form-status" aria-live="polite" />;

@@ -5,8 +5,6 @@
 // three settings tables on one column grid, closed by one save row).
 import {
   AGENT_ROLES,
-  DEFAULT_CHAT_MODEL,
-  DEFAULT_CHAT_PRESET,
   ROLE_LABEL,
   TIERS,
   findPreset,
@@ -208,7 +206,7 @@ function AddProvider({ presets, onAdded }: { presets: ProviderPreset[]; onAdded:
           label="Models"
           value={models}
           onChange={(e) => setModels(e.target.value)}
-          placeholder={preset?.suggestedModels.slice(0, 3).join(", ") || DEFAULT_CHAT_MODEL}
+          placeholder={preset?.suggestedModels.slice(0, 3).join(", ") || "your-model-id"}
           hint="Comma separated. Test connection fetches the real list when the vendor has one."
           spellCheck={false}
         />
@@ -281,11 +279,22 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
       const rest = d.tiers.filter((x) => x.tier !== t);
       return { ...d, tiers: [...rest, { ...tier(t), ...patch }].sort((a, b) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier)) };
     });
-  const hasDefault = providers.some((p) => p.preset === DEFAULT_CHAT_PRESET && p.hasKey);
-  const defaultUse = hasDefault ? `${DEFAULT_CHAT_MODEL} on OpenAI` : "Falls back to another mapped tier";
+  // Mirrors the server (provider agnostic): an Automatic tier borrows the
+  // nearest mapped tier, cheaper first; with nothing mapped it uses the first
+  // chat provider the owner added, with that provider's first model.
+  const BORROW: Record<Tier, Tier[]> = { fast: ["balanced", "deep"], balanced: ["fast", "deep"], deep: ["balanced", "fast"] };
+  const firstProvider = providers.find((p) => p.caps.includes("chat") && (p.hasKey || !findPreset(p.preset)?.keyRequired));
+  const firstModel = firstProvider ? (firstProvider.models[0]?.id ?? findPreset(firstProvider.preset)?.suggestedModels[0] ?? null) : null;
+  const autoUse = (t: Tier) => {
+    for (const b of BORROW[t]) {
+      const m = tier(b);
+      if (m.providerId && m.model) return `Borrows ${TIER_WORD[b]}: ${m.model}`;
+    }
+    return firstProvider && firstModel ? `${firstModel} on ${firstProvider.label}` : "Needs a provider first";
+  };
   const tierUse = (t: Tier) => {
     const m = tier(t);
-    if (!m.providerId) return defaultUse;
+    if (!m.providerId) return autoUse(t);
     return m.model ? `${m.model} on ${labelOf(m.providerId)}` : `${TIER_WORD[t]} has no model yet`;
   };
   const mediaUse = (kind: "image" | "video", noun: string) => {
@@ -323,7 +332,7 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
       <div className="rt-group">
         <div className="rt-intro">
           <h3 className="app-h3">Tiers</h3>
-          <p className="app-region-meta">A tier left on Default uses OpenAI {DEFAULT_CHAT_MODEL} whenever an OpenAI key is present.</p>
+          <p className="app-region-meta">A tier left on Automatic borrows the nearest tier you mapped, or uses the first provider you added.</p>
         </div>
         <div className="rt-table">
           <RoutingHead cols={["Tier", "Provider", "Model"]} />
@@ -349,7 +358,7 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
                     value={m.providerId ?? ""}
                     onChange={(e) => setTier(t, { providerId: e.target.value || null, model: null })}
                   >
-                    <option value="">Default</option>
+                    <option value="">Automatic</option>
                     {chat.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.label}
@@ -384,7 +393,7 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
                       <span className="rt-cap" aria-hidden="true">
                         Model
                       </span>
-                      <p className="rt-use rt-inherit">{defaultUse}</p>
+                      <p className="rt-use rt-inherit">{autoUse(t)}</p>
                     </>
                   )}
                 </div>
@@ -466,7 +475,7 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
                     setDraft((d) => ({ ...d, [kind]: { providerId: next, model: next && next === saved.providerId ? saved.model : null } }));
                   }}
                 >
-                  <option value="">Default</option>
+                  <option value="">Automatic</option>
                   {providers
                     .filter((p) => p.caps.includes(kind))
                     .map((p) => (

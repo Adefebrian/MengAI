@@ -20,6 +20,13 @@ export function roleWord(role: AgentRole): string {
   return role === "lead" ? "CEO" : ROLE_LABEL[role];
 }
 
+/** The title a cat carries on its desk plate and in every list: CEO for the lead, else its role title (a dynamic title like "Launch tester", or the base role). */
+export function roleTitleOf(a: Pick<AgentDTO, "role" | "roleTitle">): string {
+  if (a.role === "lead") return "CEO";
+  const t = a.roleTitle?.trim();
+  return t ? t : ROLE_LABEL[a.role];
+}
+
 export function leadOf(s: RunState): AgentDTO | null {
   return crewOrder(s).find((a) => a.role === "lead") ?? null;
 }
@@ -93,7 +100,12 @@ export function latestFiles(s: RunState): Record<string, { path: string; ts: num
 /** How long a line the cat said stays in its bubble, in event time. */
 const SAY_FRESH_MS = 9000;
 
-export function officeAgents(s: RunState, spend: Record<string, AgentSpend>): OfficeAgent[] {
+/**
+ * The office props per cat. `roleTitle` rides along for the desk plate: the
+ * scene contract (packages/cats) does not read it yet, so the plate shows
+ * the base role until the scene picks the field up.
+ */
+export function officeAgents(s: RunState, spend: Record<string, AgentSpend>): Array<OfficeAgent & { roleTitle: string }> {
   const files = latestFiles(s);
   const now = clockOf(s);
   const budget = s.run?.budgetTokens ?? 0;
@@ -107,6 +119,7 @@ export function officeAgents(s: RunState, spend: Record<string, AgentSpend>): Of
       id: a.id,
       name: a.name,
       role: a.role,
+      roleTitle: roleTitleOf(a),
       look: a.look,
       status: a.status,
       activity: a.activity,

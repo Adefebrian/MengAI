@@ -3,10 +3,10 @@
 // kit.feature-grid.rows (0.29, low confidence, the top pick kept: the
 // runner-up is not the JAL Core component spec); motion.intensity 0.89,
 // tier 1. Six promises, one per row, each with the value it comes down to:
-// where the key lives, which providers, which model, which tools, and the
+// where the key lives, which providers, how models map, which tools, and the
 // two trading safety defaults. The provider count is the real preset list
 // from @mengai/shared.
-import { DEFAULT_CHAT_MODEL, PROVIDER_PRESETS } from "@mengai/shared";
+import { PROVIDER_PRESETS } from "@mengai/shared";
 import { FeatureGrid, type Feature } from "@mengai/ui";
 import { ActivityIcon, ChartBarIcon, CodeIcon, KeyIcon, RefreshIcon, UserCheckIcon } from "../icons";
 
@@ -29,10 +29,10 @@ export const KEY_PROMISES: Feature[] = [
     meta: `${NAMED_PROVIDERS.length} presets`,
   },
   {
-    title: `Any model, ${DEFAULT_CHAT_MODEL} by default`,
-    body: `Every cat starts on ${DEFAULT_CHAT_MODEL}. Give Oyen a deeper model and a busy desk a faster one: fast, balanced and deep tiers map to any model id.`,
+    title: "Any model, your pick per desk",
+    body: "No house model and no lock-in. Give Oyen a deep thinker and a busy desk a quick one: fast, balanced and deep tiers map to any model id from any provider you added.",
     icon: <ActivityIcon size={20} color="currentColor" />,
-    meta: DEFAULT_CHAT_MODEL,
+    meta: "Fast, balanced, deep",
   },
   {
     title: "Your own tools, over MCP and APIs",

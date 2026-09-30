@@ -1,6 +1,9 @@
-/* Standalone landing preview: the same three JAL Core sheets the web app
-   loads (apps/web/src/styles.css), so the preview renders what "/" renders
-   without depending on the rest of the web build. */
+/* Standalone landing preview: the same JAL Core sheets the web app loads
+   (apps/web/src/styles.css: tokens, ui, kit, the product components the
+   hero frame and the security views use) plus the motion module's Lenis
+   rules, so the preview renders what "/" renders without depending on the
+   rest of the web build. */
 @import "../../../../../packages/ui/src/tokens.css";
 @import "../../../../../packages/ui/src/ui.css";
 @import "../../../../../packages/ui/src/kit.css";
+@import "../../../../../packages/ui/src/product/product.css";

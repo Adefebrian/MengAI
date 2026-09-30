@@ -1,10 +1,11 @@
 // One cat up close (JEV: card, ui.component_recipe core.panel.swap at
 // 0.82). The CatCard is the card: the cat on its cushion, who it is, what
 // it does, the task and the energy used. Under it, on the page ground: the
-// facts, its latest words, the tool call in flight, and the one action
-// that matters when a cat misbehaves.
+// facts, its latest words, the tool call in flight, the one action that
+// matters when a cat misbehaves, then what is in its head (Mind). A cat
+// that was let go opens here too, with the reason it left.
 import { CatCard } from "@mengai/cats";
-import { ACTIVITY_LABEL, ROLE_LABEL } from "@mengai/shared";
+import { ACTIVITY_LABEL } from "@mengai/shared";
 import { KeyValue, ProductIcon, Sheet } from "@mengai/ui/src/product";
 import { useState } from "react";
 import type { RunState } from "../../store/runStore";
@@ -12,8 +13,11 @@ import { fmtDuration, fmtInt, fmtUsd } from "../format";
 import { useAction } from "../hooks";
 import { isFinished } from "../status";
 import { energyOf, type AgentSpend } from "./derive";
+import { Mind } from "./Mind";
+import { roleTitleOf } from "./office";
 
 export function AgentDetail({
+  runId,
   state,
   agentId,
   spend,
@@ -22,8 +26,10 @@ export function AgentDetail({
   onClose,
   onXray,
   onStop,
+  onOpenAgent,
   replaying,
 }: {
+  runId: string;
   state: RunState;
   agentId: string;
   spend: Record<string, AgentSpend>;
@@ -32,6 +38,7 @@ export function AgentDetail({
   onClose?: () => void;
   onXray: (agentId: string) => void;
   onStop: (agentId: string) => Promise<void>;
+  onOpenAgent: (agentId: string) => void;
   replaying: boolean;
 }) {
   const a = state.agents[agentId];
@@ -43,7 +50,9 @@ export function AgentDetail({
   const task = a.currentTaskId ? state.tasks[a.currentTaskId] : null;
   const tool = state.tools[a.id];
   const said = state.says[a.id];
-  const canStop = !replaying && !isFinished(state.run?.status) && a.status !== "stopped" && a.status !== "done";
+  const gone = state.departed[a.id];
+  const canStop = !gone && !replaying && !isFinished(state.run?.status) && a.status !== "stopped" && a.status !== "done";
+  const title = roleTitleOf(a);
   const since = state.activitySince[a.id] ?? a.updatedAt;
 
   return (
@@ -62,7 +71,7 @@ export function AgentDetail({
         status={a.status}
         activity={a.activity}
         mood={a.mood}
-        label={`${a.name}, ${ROLE_LABEL[a.role]}, ${ACTIVITY_LABEL[a.activity].toLowerCase()}`}
+        label={`${a.name}, ${title}, ${gone ? "left the company" : ACTIVITY_LABEL[a.activity].toLowerCase()}`}
         size={160}
         still={still}
         name={a.name}
@@ -74,11 +83,14 @@ export function AgentDetail({
       <KeyValue
         label={`${a.name} facts`}
         items={[
-          { label: "Doing", value: `${ACTIVITY_LABEL[a.activity]} for ${fmtDuration(Math.max(0, now - since))}` },
+          { label: "Role", value: title },
+          gone
+            ? { label: "Left", value: gone.reason }
+            : { label: "Doing", value: `${ACTIVITY_LABEL[a.activity]} for ${fmtDuration(Math.max(0, now - since))}` },
           { label: "Model tier", value: a.tier === "deep" ? "Deep" : a.tier === "fast" ? "Fast" : "Balanced" },
           { label: "Steps", value: fmtInt(a.steps), mono: true },
-          { label: "Tokens", value: s ? fmtInt(s.inputTokens + s.outputTokens) : "0", mono: true },
-          { label: "Cost", value: fmtUsd(s?.costUsd ?? 0), mono: true },
+          { label: "Tokens", value: s ? fmtInt(s.inputTokens + s.outputTokens) : fmtInt(a.usage.inputTokens + a.usage.outputTokens), mono: true },
+          { label: "Cost", value: fmtUsd(s?.costUsd ?? a.usage.costUsd), mono: true },
         ]}
       />
       {tool ? (
@@ -115,6 +127,7 @@ export function AgentDetail({
           <span>{act.error}</span>
         </p>
       ) : null}
+      <Mind runId={runId} state={state} agent={a} spend={s} now={now} onOpenAgent={onOpenAgent} />
       <Sheet
         open={confirm}
         onClose={() => setConfirm(false)}

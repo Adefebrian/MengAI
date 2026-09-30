@@ -1,15 +1,13 @@
-// The live status strip (JEV ui.region_gate divided section,
-// ui.component_recipe core.divided_section 0.96, motion tier 1, the text
-// swap layer refused at 0.54): one sentence in cat voice of what the
-// company is doing right now, then three figures between hairlines: tasks
-// done, cats at work, and the budget, each with a flat meter. Figures sit
-// in tabular mono so a live count never jitters.
+// The live figures (JEV ui.region_gate kept at relevance 1.85 once the
+// tracker took over the cat-voice line; container card at low confidence,
+// the primary since neither neighbour is a card): tasks done, cats at
+// work, and the budget, each with a flat meter. Figures sit in tabular
+// mono so a live count never jitters. A budget of 0 is no cap, and says so.
 import { Meter } from "@mengai/ui/src/product";
 import type { RunState } from "../../store/runStore";
 import { crewOrder, tokensUsed } from "../../store/runStore";
 import { fmtInt, fmtUsd } from "../format";
 import { taskCounts } from "./derive";
-import { companyNow } from "./office";
 
 export function StatusStrip({ state }: { state: RunState }) {
   const run = state.run;
@@ -20,10 +18,7 @@ export function StatusStrip({ state }: { state: RunState }) {
   const used = tokensUsed(run.usage);
   const share = run.budgetTokens > 0 ? used / run.budgetTokens : 0;
   return (
-    <section className="app-region status-strip" data-container="divided" aria-label="What the company is doing now">
-      <p className="status-now" aria-live="polite">
-        {companyNow(state)}
-      </p>
+    <section className="app-region app-card status-strip" data-container="card" aria-label="Live figures">
       <dl className="status-figures">
         <div className="status-figure">
           <dt>Tasks done</dt>
@@ -47,12 +42,13 @@ export function StatusStrip({ state }: { state: RunState }) {
           <dt>Budget used</dt>
           <dd>
             <span className="status-value tnum">
-              {fmtInt(used)} <span className="status-of">of {fmtInt(run.budgetTokens)} tokens, {fmtUsd(run.usage.costUsd)}</span>
+              {fmtInt(used)}{" "}
+              <span className="status-of">{run.budgetTokens > 0 ? `of ${fmtInt(run.budgetTokens)} tokens, ${fmtUsd(run.usage.costUsd)}` : `tokens, ${fmtUsd(run.usage.costUsd)}, no cap`}</span>
             </span>
             <Meter
               label="Budget used"
               value={share}
-              valueText={`${fmtInt(used)} of ${fmtInt(run.budgetTokens)} tokens, ${fmtUsd(run.usage.costUsd)} of ${fmtUsd(run.budgetUsd)}`}
+              valueText={run.budgetTokens > 0 ? `${fmtInt(used)} of ${fmtInt(run.budgetTokens)} tokens, ${fmtUsd(run.usage.costUsd)} of ${run.budgetUsd > 0 ? fmtUsd(run.budgetUsd) : "no cost cap"}` : `${fmtInt(used)} tokens, no token cap`}
               tone={share >= 0.9 ? "danger" : share >= 0.75 ? "warning" : "ink"}
               compact
             />

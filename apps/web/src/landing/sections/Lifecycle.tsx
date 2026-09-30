@@ -42,7 +42,9 @@ import {
   type CompanyKind,
   type LifeScene,
 } from "../story/lifecycle";
-import { useStory, type StoryPlayer, type StoryScript } from "../story/useStory";
+import { hourOf } from "../story/script";
+import { useFadeOnChange } from "../story/useFade";
+import { useStory, type StoryPlayer, type StoryScript, type StoryVisibility } from "../story/useStory";
 
 export const LIFE_TITLE = "Watch a company grow around one goal";
 export const LIFE_LEAD =
@@ -99,8 +101,11 @@ function KindSwitch({ kind, onPick }: { kind: CompanyKind; onPick: (k: CompanyKi
   );
 }
 
+/** The story starts when the floor is half in view (critic fix round 2), then plays while any real part of it shows. */
+export const LIFE_VISIBILITY: StoryVisibility = { start: 0.5, stay: 0.15 };
+
 function LifeStage({ company }: { company: Company }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const floor = useRef<HTMLDivElement>(null);
   const script = useMemo<StoryScript>(
     () => ({
       steps: company.steps,
@@ -112,13 +117,13 @@ function LifeStage({ company }: { company: Company }) {
     }),
     [company],
   );
-  const story = useStory(ref, script);
+  const story = useStory(floor, script, LIFE_VISIBILITY);
   const scene = useMemo(() => lifeAt(company, story.index), [company, story.index]);
 
   return (
-    <div ref={ref} className="lp-life-stage" data-kind={company.kind}>
+    <div className="lp-life-stage" data-kind={company.kind}>
       <Tracker company={company} scene={scene} story={story} />
-      <div className="lp-life-office" data-motion="rise" style={staggerStyle(1)}>
+      <div ref={floor} className="lp-life-office" data-motion="rise" style={staggerStyle(1)}>
         <Office
           agents={scene.agents}
           meetings={scene.meetings}
@@ -129,6 +134,7 @@ function LifeStage({ company }: { company: Company }) {
           theme={company.theme}
           still={story.still}
           label={lifeLabel(company, scene.step)}
+          hour={hourOf(scene.step.clock)}
         />
       </div>
       <div className="lp-life-panels">
@@ -147,6 +153,7 @@ function controlLabel(story: StoryPlayer): string {
 /** The on-demand tracker: one status line over the seven stage cells. */
 function Tracker({ company, scene, story }: { company: Company; scene: LifeScene; story: StoryPlayer }) {
   const { step, cells } = scene;
+  const status = useFadeOnChange<HTMLParagraphElement>(`${story.play}-${story.index}`);
   return (
     <div className="lp-track" data-motion="rise">
       <div className="lp-track-bar">
@@ -165,7 +172,7 @@ function Tracker({ company, scene, story }: { company: Company; scene: LifeScene
           <span>{LIFE_LABEL}</span>
         </p>
       </div>
-      <p key={`${story.play}-${story.index}`} className="lp-track-status">
+      <p ref={status} className="lp-track-status">
         {step.caption}
       </p>
       <ol className="lp-cells" aria-label={`Progress of the ${company.label.toLowerCase()} goal`}>
@@ -173,9 +180,7 @@ function Tracker({ company, scene, story }: { company: Company; scene: LifeScene
           const state = cells[i]!;
           return (
             <li key={s.id} className="lp-cell" data-state={state} aria-current={state === "now" ? "step" : undefined}>
-              <span key={state} className="lp-cell-icon">
-                <StateIcon state={state} label={s.label} />
-              </span>
+              <CellIcon state={state} label={s.label} />
               <span className="lp-cell-text" aria-hidden="true">
                 <span className="lp-cell-label">{s.label}</span>
                 <span className="lp-cell-state">{STATE_WORD[state]}</span>
@@ -185,6 +190,26 @@ function Tracker({ company, scene, story }: { company: Company; scene: LifeScene
         })}
       </ol>
     </div>
+  );
+}
+
+/** The cell's state glyph, fading in when the state changes. */
+function CellIcon({ state, label }: { state: CellState; label: string }) {
+  const ref = useFadeOnChange<HTMLSpanElement>(state, 150);
+  return (
+    <span ref={ref} className="lp-cell-icon">
+      <StateIcon state={state} label={label} />
+    </span>
+  );
+}
+
+/** One head row's value, fading in when the story changes it. */
+function HeadValue({ value }: { value: string }) {
+  const ref = useFadeOnChange<HTMLSpanElement>(value);
+  return (
+    <span ref={ref} className="lp-head-text">
+      {value}
+    </span>
   );
 }
 
@@ -226,9 +251,7 @@ function HeadCard({ company, scene }: { company: Company; scene: LifeScene }) {
                 {isNew ? <span className="lp-new">New</span> : null}
               </dt>
               <dd className="lp-head-value">
-                <span key={row.value} className="lp-head-text">
-                  {row.value}
-                </span>
+                <HeadValue value={row.value} />
                 <span className="lp-head-evidence">{row.evidence}</span>
               </dd>
             </div>

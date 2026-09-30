@@ -19,6 +19,7 @@ import { AboutScreen } from "./screens/About";
 import { ApprovalsScreen } from "./screens/Approvals";
 import { AssetsScreen } from "./screens/Assets";
 import { LocalLaunchScreen, LoginScreen, SetupScreen } from "./screens/Auth";
+import { ConnectorsScreen } from "./screens/Connectors";
 import { EvalsScreen } from "./screens/Evals";
 import { HomeScreen } from "./screens/Home";
 import { MemoryScreen } from "./screens/Memory";
@@ -26,14 +27,17 @@ import { NotFoundScreen } from "./screens/NotFound";
 import { ProvidersScreen } from "./screens/Providers";
 import { SecurityScreen } from "./screens/Security";
 import { SettingsScreen } from "./screens/Settings";
+import { TradingScreen } from "./screens/Trading";
 import { Page } from "./ui";
 
-export type AppRouteId = "home" | "run" | "providers" | "approvals" | "memory" | "assets" | "security" | "evals" | "settings" | "about";
+export type AppRouteId = "home" | "run" | "providers" | "connectors" | "trading" | "approvals" | "memory" | "assets" | "security" | "evals" | "settings" | "about";
 
 const NAV_OF: Record<AppRouteId, string> = {
   home: "runs",
   run: "runs",
   providers: "providers",
+  connectors: "connectors",
+  trading: "trading",
   approvals: "approvals",
   memory: "memory",
   assets: "assets",
@@ -49,6 +53,8 @@ function destinations(pending: number): AppShellDestination[] {
     { id: "runs", label: "Runs", href: "/app", icon: icon("runs") },
     { id: "approvals", label: "Approvals", href: "/app/approvals", icon: icon("approvals"), badge: pending > 0 ? pending : undefined },
     { id: "providers", label: "Providers", href: "/app/providers", icon: icon("providers") },
+    { id: "connectors", label: "Connectors", href: "/app/connectors", icon: icon("cpu") },
+    { id: "trading", label: "Trading", href: "/app/trading", icon: icon("dollar") },
     { id: "memory", label: "Memory", href: "/app/memory", icon: icon("memory") },
     { id: "assets", label: "Assets", href: "/app/assets", icon: icon("assets") },
     { id: "security", label: "Security", href: "/app/security", icon: icon("security") },
@@ -252,7 +258,12 @@ function Frame({
       <MotionConfig reducedMotion={motion === "off" ? "always" : "user"}>
         <AppShell
           title="MengAI"
-          brand={<span className="app-brand">MengAI</span>}
+          brand={
+            <span className="app-brand">
+              <img className="app-brand-logo" src="/brand/mengai-logo-192.png" alt="" width={28} height={28} decoding="async" />
+              <span className="app-brand-word">MengAI</span>
+            </span>
+          }
           brandHref="/app"
           destinations={destinations(pending)}
           current={current}
@@ -312,6 +323,10 @@ function Screen({ route, location }: { route: RouteMatch<AppRouteId> | null; loc
       return <RunScreen key={route.params.id} runId={route.params.id ?? ""} />;
     case "providers":
       return <ProvidersScreen />;
+    case "connectors":
+      return <ConnectorsScreen />;
+    case "trading":
+      return <TradingScreen />;
     case "approvals":
       return <ApprovalsScreen />;
     case "memory":

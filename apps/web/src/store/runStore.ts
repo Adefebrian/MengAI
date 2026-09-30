@@ -14,8 +14,12 @@ import {
   type HandoffDTO,
   type MeetingKind,
   type MengaiEvent,
+  type OrderDTO,
+  type PositionDTO,
+  type RoleDTO,
   type RunDTO,
   type RunSnapshotDTO,
+  type StrategyVersionDTO,
   type TaskDTO,
   type UsageTotals,
 } from "@mengai/shared";
@@ -56,6 +60,22 @@ export interface RequestState {
   decision: { byAgentId: string | null; byOwner: boolean; answer: string; approved: boolean; at: number } | null;
 }
 
+/** One move on the run tracker (run.stage): forward, or back to work after a failed review. */
+export interface StageMove {
+  stage: string;
+  previous: string | null;
+  reason: string;
+  ts: number;
+}
+
+/** A cat that left the company (agent.left, or the snapshot's departed list). */
+export interface Departure {
+  reason: string;
+  byAgentId: string | null;
+  at: number;
+  requeued: string[];
+}
+
 export interface RunState {
   runId: string | null;
   run: RunDTO | null;
@@ -94,6 +114,21 @@ export interface RunState {
   meetingOrder: string[];
   requests: Record<string, RequestState>;
   requestOrder: string[];
+  /** where the run is on the tracker: a COMPANY_STAGES key of its company kind, null until the first run.stage */
+  stage: string | null;
+  /** every tracker move in order, so a failed review shows as a loop back */
+  stageMoves: StageMove[];
+  /** cats that were let go, by agent id; the agent stays in `agents` so names still resolve */
+  departed: Record<string, Departure>;
+  /** dynamic roles the crew defined in this run, by role id */
+  roles: Record<string, RoleDTO>;
+  /** the latest strategy addendum per subject ("role:<key>" or "agent:<id>"), from strategy.updated */
+  strategies: Record<string, Pick<StrategyVersionDTO, "version" | "text" | "reason"> & { at: number }>;
+  /** fund runs: every order the crew proposed, decided or filled */
+  orders: Record<string, OrderDTO>;
+  orderOrder: string[];
+  /** fund runs: the latest book, null until trade.positions */
+  positions: PositionDTO[] | null;
   /** every applied event in seq order, the source for the timeline and the replay */
   log: MengaiEvent[];
   lastSeq: number;
@@ -128,6 +163,14 @@ export function emptyRunState(runId: string | null = null): RunState {
     meetingOrder: [],
     requests: {},
     requestOrder: [],
+    stage: null,
+    stageMoves: [],
+    departed: {},
+    roles: {},
+    strategies: {},
+    orders: {},
+    orderOrder: [],
+    positions: null,
     log: [],
     lastSeq: 0,
     connection: "idle",
@@ -190,13 +233,27 @@ export function stateFromSnapshot(s: RunSnapshotDTO, prev?: RunState): RunState 
     if (!holders[t.id] && t.createdBy) holders[t.id] = t.createdBy;
   }
   const meetings = snapshotMeetings(s);
+  // Departed cats stay in the agent map (their names still label old
+  // events) and are listed in `departed`, so the crew and the office skip them.
+  const departed: Record<string, Departure> = {};
+  const gone = Array.isArray(s.departed) ? s.departed : [];
+  for (const a of gone) {
+    if (!a || typeof a.id !== "string") continue;
+    agents[a.id] = { ...a, status: "stopped", activity: "rest" };
+    departed[a.id] = { reason: a.leftReason ?? "Let go by the CEO", byAgentId: null, at: a.updatedAt, requeued: [] };
+  }
+  const roles: Record<string, RoleDTO> = {};
+  for (const r of Array.isArray(s.roles) ? s.roles : []) if (r && typeof r.id === "string") roles[r.id] = r;
   return {
     ...base,
     run: s.run,
+    stage: typeof s.stage === "string" ? s.stage : null,
+    departed,
+    roles,
     meetings: Object.fromEntries(meetings.map((m) => [m.id, m])),
     meetingOrder: meetings.map((m) => m.id),
     agents,
-    agentOrder: s.agents.map((a) => a.id),
+    agentOrder: [...s.agents.map((a) => a.id), ...gone.filter((a) => a && typeof a.id === "string" && !s.agents.some((b) => b.id === a.id)).map((a) => a.id)],
     tasks,
     taskOrder: s.tasks.map((t) => t.id),
     handoffs: [...s.handoffs],
@@ -483,6 +540,39 @@ export function reduceRun(state: RunState, e: MengaiEvent): RunState {
         },
       };
     }
+    case "run.stage": {
+      const d = (e as MengaiEvent<"run.stage">).data;
+      const stage = String(d.stage);
+      return { ...next, stage, stageMoves: [...next.stageMoves, { stage, previous: d.previous === null ? null : String(d.previous), reason: d.reason, ts: e.ts }] };
+    }
+    case "agent.left": {
+      const d = (e as MengaiEvent<"agent.left">).data;
+      const a = next.agents[d.agentId];
+      return {
+        ...next,
+        departed: { ...next.departed, [d.agentId]: { reason: d.reason, byAgentId: d.byAgentId, at: e.ts, requeued: [...d.requeued] } },
+        agents: a ? { ...next.agents, [d.agentId]: { ...a, status: "stopped", activity: "rest", leftReason: d.reason, currentTaskId: null, updatedAt: e.ts } } : next.agents,
+        tools: { ...next.tools, [d.agentId]: null },
+      };
+    }
+    case "role.created": {
+      const d = (e as MengaiEvent<"role.created">).data;
+      return { ...next, roles: { ...next.roles, [d.role.id]: d.role } };
+    }
+    case "strategy.updated": {
+      const d = (e as MengaiEvent<"strategy.updated">).data;
+      const key = `${d.subject}:${d.subjectKey}`;
+      return { ...next, strategies: { ...next.strategies, [key]: { version: d.version, text: d.text, reason: d.reason, at: e.ts } } };
+    }
+    case "trade.order": {
+      const { order } = (e as MengaiEvent<"trade.order">).data;
+      const known = !!next.orders[order.id];
+      return { ...next, orders: { ...next.orders, [order.id]: order }, orderOrder: known ? next.orderOrder : [...next.orderOrder, order.id] };
+    }
+    case "trade.positions": {
+      const d = (e as MengaiEvent<"trade.positions">).data;
+      return { ...next, positions: [...d.positions] };
+    }
     case "error": {
       const d = (e as MengaiEvent<"error">).data;
       return { ...next, error: d.message };
@@ -499,14 +589,22 @@ export function replay(events: readonly MengaiEvent[], from: RunState = emptyRun
   return s;
 }
 
-/** Agents in board order: the lead first, then by spawn time. */
+/** Agents in board order: the lead first, then by spawn time. Cats that were let go are not on the crew. */
 export function crewOrder(state: RunState): AgentDTO[] {
-  const list = state.agentOrder.map((id) => state.agents[id]).filter((a): a is AgentDTO => !!a);
+  const list = state.agentOrder.map((id) => state.agents[id]).filter((a): a is AgentDTO => !!a && !state.departed[a.id]);
   return list.sort((a, b) => {
     if (a.role === "lead" && b.role !== "lead") return -1;
     if (b.role === "lead" && a.role !== "lead") return 1;
     return a.createdAt - b.createdAt;
   });
+}
+
+/** Cats that left the company, oldest departure first. */
+export function departedOrder(state: RunState): AgentDTO[] {
+  return state.agentOrder
+    .map((id) => state.agents[id])
+    .filter((a): a is AgentDTO => !!a && !!state.departed[a.id])
+    .sort((a, b) => (state.departed[a.id]!.at ?? 0) - (state.departed[b.id]!.at ?? 0));
 }
 
 export function pendingApprovals(state: RunState): ApprovalDTO[] {

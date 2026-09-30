@@ -1,8 +1,10 @@
 // The run page, the core of MengAI: the cat company at work on one goal.
 // Structure (JEV ui.region_gate, every region kept; containers in the
-// comments of each part): the run header, the request that blocks a cat
-// (rises in when it arrives, drops out when answered), the live status
-// strip in cat voice, then the living office as the hero (every cat at its
+// comments of each part): the run tracker pinned on top (the stages of the
+// company kind, in cat voice, with the tokens to go), the run header, the
+// request that blocks a cat (rises in when it arrives, drops out when
+// answered), the live figures, then the living office as the hero, dressed
+// as a studio or a trading floor by the run's company (every cat at its
 // own desk, walking to a colleague for a handoff, to the CEO to ask, to the
 // meeting table, the plan on the CEO whiteboard). Once the run ends the
 // report and its scrubber sit right under the office and drive it again.
@@ -10,9 +12,11 @@
 // 0.88: at full width the scene puts the CEO room and the meeting room side
 // by side over the pods, so the whole floor fits one screen); under it the
 // code editor sits beside a side stack of the meetings and CEO calls over
-// the task queue, and the records are tabs below. Below 1024px the office is
-// on top and every panel is a tab. A cat opens in a drawer (a bottom sheet
-// below 640px), a task in a sheet.
+// the task queue, and the records are tabs below, the crew rows first. A
+// hedge fund run adds its trading desk under the office. Below 1024px the
+// office is on top and every panel is a tab. A cat opens in a drawer (a
+// bottom sheet below 640px) from the office or its crew row, or from
+// #cat=<id>; a task opens in a sheet from #task=<id>.
 import type { OfficeProps } from "@mengai/cats";
 import type { ProjectDTO } from "@mengai/shared";
 import { Drawer, EmptyState, ProductIcon, SkeletonRows, TabPanel, Tabs } from "@mengai/ui/src/product";
@@ -28,12 +32,16 @@ import { ApprovalNotice } from "../parts/ApprovalNotice";
 import { AgentDetail } from "./AgentDetail";
 import { CodeEditor } from "./CodeEditor";
 import { CompanyFeed } from "./CompanyFeed";
+import { CrewRows } from "./CrewRows";
+import { FundPanel } from "./FundPanel";
 import { Decisions } from "./Decisions";
 import { runApprovals, spendByAgent } from "./derive";
 import { leadOf, officeAgents, officeLabel, officeMeetings, officePlan } from "./office";
 import { OfficeStage } from "./OfficeStage";
 import { Replay } from "./Replay";
 import { RunHeader } from "./RunHeader";
+import { RunTracker } from "./RunTracker";
+import { companyOf } from "./stages";
 import { StatusStrip } from "./StatusStrip";
 import { TaskQueue, queueGroups } from "./TaskQueue";
 import { TaskSheet } from "./TaskSheet";
@@ -41,9 +49,10 @@ import { Timeline } from "./Timeline";
 import { Usage } from "./Usage";
 import { useOfficeBeats } from "./useOfficeBeats";
 import { stateAt, useRunData } from "./useRunData";
+import { crewOrder } from "../../store/runStore";
 import { Xray } from "./Xray";
 
-type TabId = "feed" | "code" | "tasks" | "timeline" | "usage" | "xray" | "decisions";
+type TabId = "crew" | "feed" | "code" | "tasks" | "timeline" | "usage" | "xray" | "decisions";
 
 export function RunScreen({ runId }: { runId: string }) {
   const { api, catsStill, refreshApprovals } = useApp();
@@ -52,8 +61,13 @@ export function RunScreen({ runId }: { runId: string }) {
   const level = useMotionLevel();
   const [selected, setSelected] = useState<string | null>(null);
   const location = useLocation();
-  const openTask = new URLSearchParams(location.hash.replace(/^#/, "")).get("task");
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const openTask = hashParams.get("task");
+  const hashCat = hashParams.get("cat");
   const closeTask = () => navigate(location.pathname + location.search, { replace: true });
+  useEffect(() => {
+    if (hashCat) setSelected(hashCat);
+  }, [hashCat]);
   const [tab, setTab] = useState<TabId | null>(null);
   const [xrayAgent, setXrayAgent] = useState<string | null>(null);
   const [replayAt, setReplayAt] = useState<number | null>(null);
@@ -106,6 +120,7 @@ export function RunScreen({ runId }: { runId: string }) {
       selectedId: selectedAgent,
       onSelect: (id: string) => setSelected((cur) => (cur === id ? null : id)),
       variant: "full",
+      theme: companyOf(shown.run),
       still: catsStill,
       label: officeLabel(shown),
     }),
@@ -162,8 +177,14 @@ export function RunScreen({ runId }: { runId: string }) {
     requestAnimationFrame(() => document.getElementById("run-tabs")?.scrollIntoView({ block: "start", behavior: off ? "auto" : "smooth" }));
   };
 
+  const closeCat = () => {
+    setSelected(null);
+    if (hashCat) navigate(location.pathname + location.search, { replace: true });
+  };
+
   const detail = selectedAgent ? (
     <AgentDetail
+      runId={runId}
       state={shown}
       agentId={selectedAgent}
       spend={spend}
@@ -171,13 +192,16 @@ export function RunScreen({ runId }: { runId: string }) {
       still={catsStill}
       onXray={openXray}
       onStop={data.stopAgent}
+      onOpenAgent={setSelected}
       replaying={replaying}
     />
   ) : null;
 
   const groups = queueGroups(shown);
   const meetings = shown.meetingOrder.length + shown.requestOrder.length;
+  const crewCount = crewOrder(shown).length;
   const tabs: Array<{ id: TabId; label: string; count?: number }> = [
+    { id: "crew", label: "Crew", count: crewCount || undefined },
     ...(desktop
       ? []
       : ([
@@ -210,6 +234,8 @@ export function RunScreen({ runId }: { runId: string }) {
     />
   ) : null;
 
+  const fund = companyOf(shown.run) === "fund" ? <FundPanel state={shown} runId={runId} replaying={replaying} /> : null;
+
   const office = (
     <section className="app-region run-office" data-container="plain" aria-labelledby="office-h">
       <div className="p-sr-wrap">
@@ -222,7 +248,11 @@ export function RunScreen({ runId }: { runId: string }) {
   );
 
   return (
-    <Page>
+    <>
+      <div className="run-tracker-band">
+        <RunTracker state={shown} replaying={replaying} />
+      </div>
+      <Page>
       <RunHeader state={shown} project={project} replaying={replaying} onPause={data.pause} onResume={data.resume} onStop={data.stop} />
 
       <AnimatePresence initial={false}>
@@ -260,6 +290,7 @@ export function RunScreen({ runId }: { runId: string }) {
         <>
           {office}
           {replay}
+          {fund}
           <div className="run-work">
             {code}
             <div className="run-side">
@@ -272,6 +303,7 @@ export function RunScreen({ runId }: { runId: string }) {
         <>
           {office}
           {replay}
+          {fund}
         </>
       )}
 
@@ -279,6 +311,7 @@ export function RunScreen({ runId }: { runId: string }) {
         <Tabs label="Run panels" idPrefix="run" items={tabs} selected={current} onSelect={(id) => setTab(id as TabId)} />
         {tabs.map((t) => (
           <TabPanel key={t.id} idPrefix="run" id={t.id} selected={current === t.id}>
+            {t.id === "crew" ? <CrewRows state={shown} spend={spend} still={catsStill} selectedId={selectedAgent} onOpen={setSelected} now={now} /> : null}
             {t.id === "feed" ? feed : null}
             {t.id === "code" ? code : null}
             {t.id === "tasks" ? queue : null}
@@ -292,9 +325,9 @@ export function RunScreen({ runId }: { runId: string }) {
 
       <Drawer
         open={!!selectedAgent}
-        onClose={() => setSelected(null)}
+        onClose={closeCat}
         title={selectedAgent ? (shown.agents[selectedAgent]?.name ?? "Cat") : "Cat"}
-        description="What this cat is doing right now"
+        description={selectedAgent && shown.departed[selectedAgent] ? "This cat left the company" : "What this cat is doing and what is in its head"}
       >
         {detail}
       </Drawer>
@@ -306,6 +339,7 @@ export function RunScreen({ runId }: { runId: string }) {
         onPatch={data.patchTask}
         readOnly={replaying || finished}
       />
-    </Page>
+      </Page>
+    </>
   );
 }

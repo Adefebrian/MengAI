@@ -1,52 +1,86 @@
-// Privacy and security (kit.feature-grid.cells, JEV 0.96; tier 1): six
-// equivalent safeguards in the hairline cell grid, an inline icon on each
-// title row. Every line restates docs/architecture.md, nothing more.
-import { FeatureGrid, type Feature } from "@mengai/ui";
-import { EyeSlashIcon, FolderLockIcon, KeyIcon, ShieldIcon, StopCircleIcon, TerminalIcon } from "../icons";
+// Privacy and security (kit.bento.lead-right; critic fix round 2: the six
+// icon cells became the app's own controls on labelled sample data). JEV
+// ui.region_gate sec_views kept (relevance 1.82, bento 0.58);
+// motion.intensity 1.61, tier 2; motion.choreography reveal (0.88);
+// ui.component_recipe kit.bento_reveal_states (0.48, low, the top pick
+// kept): the tiles arrive in one batch and each view carries its own state
+// change. The permission ask and the kill switch lead; the budget meter,
+// the keychain and the project jail sit around them. Every line restates
+// docs/architecture.md, nothing more.
+import type { JSX } from "react";
+import { BentoGrid, BentoTile } from "@mengai/ui";
+import { AskView, AuditView, BudgetView, JailView, KillView, VaultView } from "../views/security";
 
-export const SAFEGUARDS: Feature[] = [
+export interface Safeguard {
+  area: string;
+  title: string;
+  body: string;
+}
+
+// kit BENTO_PRESETS[4]["lead-right"]: a b c c / d d c c. The lead (c) holds
+// the two controls you act on, the ask and the kill switch; the budget and
+// the keychain sit beside it, the project jail under them.
+export const SAFEGUARDS: Safeguard[] = [
   {
-    title: "Keys never leave the vault",
-    body: "Stored in the macOS Keychain or sealed on your server, and sent only inside the request to your provider.",
-    icon: <KeyIcon size={20} color="currentColor" />,
-  },
-  {
-    title: "Scrubbed from every output",
-    body: "Tool results and logs are checked against your key fingerprints before any cat, or the page, sees them.",
-    icon: <EyeSlashIcon size={20} color="currentColor" />,
-  },
-  {
-    title: "Jailed to your project",
-    body: "Files and commands stay inside the project folder: a macOS sandbox on the Mac, the container on your server, each with a scrubbed environment.",
-    icon: <FolderLockIcon size={20} color="currentColor" />,
-  },
-  {
+    area: "a",
     title: "A budget on every run",
     body: "Each run stops at 400,000 tokens unless you change it, and guards end loops that stop making progress.",
-    icon: <ShieldIcon size={20} color="currentColor" />,
   },
   {
-    title: "Stop everything at once",
-    body: "Pause, stop, or hit the kill switch: calls in flight and the processes they started end right away.",
-    icon: <StopCircleIcon size={20} color="currentColor" />,
+    area: "b",
+    title: "Keys never leave the vault",
+    body: "Kept in the macOS Keychain or sealed on your server, and scrubbed from every output before a cat sees it.",
   },
   {
-    title: "Local on the Mac",
-    body: "The Mac app listens only on 127.0.0.1 and opens with a one-time launch token, so nothing else on the network can reach it.",
-    icon: <TerminalIcon size={20} color="currentColor" />,
+    area: "c",
+    title: "A cat asks, and you can stop it all",
+    body: "Installs, deletes and anything that sends data out wait for your answer, with the exact command shown. The kill switch ends every call and command at once, and every answer lands in the audit log.",
+  },
+  {
+    area: "d",
+    title: "Jailed to your project",
+    body: "Files and commands stay inside the project folder unless you grant more, and the Mac app answers only on 127.0.0.1.",
   },
 ];
 
+function Controls() {
+  return (
+    <div className="lp-sec-stack">
+      <AskView />
+      <KillView />
+      <AuditView />
+    </div>
+  );
+}
+
+const VIEWS: Record<string, () => JSX.Element> = { a: BudgetView, b: VaultView, c: Controls, d: JailView };
+
 export function SecuritySection() {
   return (
-    <FeatureGrid
+    <BentoGrid
       id="security"
       tone="layer"
-      variant="cells"
-      columns={3}
+      preset="lead-right"
       title="Your code, your keys, your budget"
-      lead="The crew works for you inside limits you can read. Nothing leaves your machine except the requests to the provider you picked."
-      items={SAFEGUARDS}
-    />
+      lead="The crew works for you inside limits you can see and change. These are the app's own controls on sample data: try them."
+    >
+      {SAFEGUARDS.map((s) => {
+        const View = VIEWS[s.area]!;
+        return (
+          <BentoTile
+            key={s.area}
+            area={s.area}
+            kind="media"
+            media={
+              <div className="lp-tile-view lp-sec-tile">
+                <View />
+              </div>
+            }
+            title={s.title}
+            body={s.body}
+          />
+        );
+      })}
+    </BentoGrid>
   );
 }

@@ -11,6 +11,8 @@ export const APP_ROUTES: ReadonlyArray<{ id: AppRouteId; path: string }> = [
   { id: "home", path: "/app" },
   { id: "run", path: "/app/runs/:id" },
   { id: "providers", path: "/app/providers" },
+  { id: "connectors", path: "/app/connectors" },
+  { id: "trading", path: "/app/trading" },
   { id: "approvals", path: "/app/approvals" },
   { id: "memory", path: "/app/memory" },
   { id: "assets", path: "/app/assets" },

@@ -1,6 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import { CREW, PLAN, POSTER_STEP, START_STEP, STEPS, STORY_MS, beatsFor, energyAt, sceneAt, sceneLabel, stepAt } from "./script";
-import { nextDelay, openingStep } from "./useStory";
+import {
+  CREW,
+  FEED_SIZE,
+  OPENING_NOTES,
+  OPENING_PLAN,
+  PLAN,
+  POSTER_STEP,
+  START_STEP,
+  STEPS,
+  STORY_BUDGET,
+  STORY_MS,
+  beatsFor,
+  energyAt,
+  feedAt,
+  hourOf,
+  sceneAt,
+  sceneLabel,
+  stepAt,
+  tokensAt,
+} from "./script";
+import { nextDelay, openingStep, visibleShare } from "./useStory";
 
 const EMDASH = String.fromCharCode(0x2014);
 const ids = new Set(CREW.map((c) => c.id));
@@ -16,12 +35,10 @@ describe("the hero story", () => {
     expect(new Set(STEPS.map((s) => s.scene)).size).toBe(STEPS.length);
   });
 
-  test("every scenario plays, in the order of a real day", () => {
-    const order = ["kickoff", "plan", "coding", "question", "approval", "handoff", "review", "sync", "fix", "tests", "coffee", "wrapup", "celebrate"];
+  test("the loop opens on desk work and moves the kickoff of the next goal to the end", () => {
+    const order = ["desk", "question", "approval", "handoff", "review", "sync", "fix", "tests", "coffee", "wrapup", "celebrate", "kickoff", "plan"];
     expect(STEPS.map((s) => s.id)).toEqual(order);
     const kinds = (id: string) => (STEPS[indexOf(id)]!.beats ?? []).map((b) => b.kind);
-    expect(STEPS[indexOf("kickoff")]!.meetingStart?.kind).toBe("kickoff");
-    expect(kinds("plan")).toContain("deliver");
     expect(kinds("question")).toContain("ask");
     expect(kinds("approval")).toContain("decided");
     expect(kinds("handoff")).toContain("handoff");
@@ -35,17 +52,31 @@ describe("the hero story", () => {
     expect(coffee.length).toBeGreaterThanOrEqual(1);
     expect(STEPS[indexOf("wrapup")]!.meetingStart?.kind).toBe("wrapup");
     expect(kinds("celebrate")).toContain("celebrate");
+    expect(STEPS[indexOf("kickoff")]!.meetingStart?.kind).toBe("kickoff");
+    expect(STEPS[indexOf("kickoff")]!.planReset).toBe(true);
+    expect(kinds("plan")).toContain("deliver");
   });
 
-  test("the opening move: the crew walks to the kickoff at 0 ms; reduced motion rests on the coding poster", () => {
+  test("the first frame is the company at work: every cat seated on a card, code on screens, one handoff walking", () => {
     expect(START_STEP).toBe(0);
-    expect(STEPS[START_STEP]!.meetingStart?.agentIds.length).toBe(CREW.length);
-    expect(STEPS[POSTER_STEP]!.id).toBe("coding");
+    expect(STEPS[START_STEP]!.id).toBe("desk");
+    const first = sceneAt(START_STEP);
+    expect(first.agents.length).toBe(CREW.length);
+    expect(first.agents.every((a) => a.taskTitle !== null)).toBe(true);
+    expect(first.agents.every((a) => a.status === "working")).toBe(true);
+    expect(first.agents.filter((a) => a.activity === "code").length).toBeGreaterThanOrEqual(2);
+    expect(first.agents.filter((a) => a.file !== null).length).toBeGreaterThanOrEqual(4);
+    expect(first.meetings.length).toBe(0);
+    expect(first.plan.length).toBe(PLAN.length);
+    expect(first.plan.map((p) => p.status)).toEqual(PLAN.map((p) => OPENING_PLAN[p.id]!));
+    expect((STEPS[START_STEP]!.beats ?? []).map((b) => b.kind)).toEqual(["handoff"]);
+    expect(STEPS[START_STEP]!.shot.focus).toBe("wide");
+  });
+
+  test("reduced motion rests on the same desk work", () => {
+    expect(POSTER_STEP).toBe(START_STEP);
     expect(openingStep(false)).toBe(START_STEP);
     expect(openingStep(true)).toBe(POSTER_STEP);
-    const poster = sceneAt(POSTER_STEP);
-    expect(poster.meetings.every((m) => m.endedAt !== null)).toBe(true);
-    expect(poster.agents.filter((a) => a.role !== "lead").every((a) => a.taskTitle !== null)).toBe(true);
   });
 
   test("every beat and meeting names real crew, and the CEO decides a request", () => {
@@ -58,6 +89,7 @@ describe("the hero story", () => {
       for (const r of s.meetingStart?.agentIds ?? []) expect(ids.has(r)).toBe(true);
       for (const r of Object.keys(s.agents ?? {})) expect(ids.has(r)).toBe(true);
       for (const p of Object.keys(s.plan ?? {})) expect(PLAN.some((c) => c.id === p)).toBe(true);
+      if (Array.isArray(s.shot.focus)) for (const r of s.shot.focus) expect(ids.has(r)).toBe(true);
     }
     const decided = beats.find((b) => b.kind === "decided");
     expect(decided && decided.kind === "decided" && decided.byId).toBe("oyen");
@@ -68,27 +100,32 @@ describe("the hero story", () => {
     const started = STEPS.flatMap((s) => (s.meetingStart ? [s.meetingStart.id] : []));
     const ended = STEPS.flatMap((s) => (s.meetingEnd ? [s.meetingEnd.id] : []));
     expect(ended.sort()).toEqual(started.sort());
-    expect(sceneAt(0).meetings.filter((m) => m.endedAt === null).map((m) => m.kind)).toEqual(["kickoff"]);
+    expect(sceneAt(indexOf("kickoff")).meetings.filter((m) => m.endedAt === null).map((m) => m.kind)).toEqual(["kickoff"]);
   });
 
-  test("the plan is dealt onto the whiteboard, bounces once, and ends all done", () => {
-    expect(sceneAt(0).plan.length).toBe(0);
-    expect(sceneAt(indexOf("plan")).plan.length).toBe(PLAN.length);
+  test("the board: dealt at the start, the export bounces once, every card done by the celebration, cleared for the next goal", () => {
     const card = (i: number) => sceneAt(i).plan.find((p) => p.id === "p2")?.status;
+    expect(card(0)).toBe("doing");
     expect(card(indexOf("handoff"))).toBe("review");
     expect(card(indexOf("review"))).toBe("doing");
     expect(card(indexOf("fix"))).toBe("done");
-    expect(sceneAt(STEPS.length - 1).plan.every((p) => p.status === "done")).toBe(true);
-    expect(sceneAt(0).agents.length).toBe(CREW.length);
+    expect(sceneAt(indexOf("celebrate")).plan.every((p) => p.status === "done")).toBe(true);
+    expect(sceneAt(indexOf("celebrate")).done).toBe(PLAN.length);
+    expect(sceneAt(indexOf("kickoff")).plan.length).toBe(0);
+    expect(sceneAt(indexOf("plan")).plan.length).toBe(PLAN.length);
+    expect(sceneAt(indexOf("plan")).done).toBe(0);
   });
 
-  test("energy climbs through the day and stays in 0..1", () => {
+  test("energy and the budget climb through the day and stay inside the budget", () => {
     let prev = -1;
     for (let i = 0; i < STEPS.length; i++) {
       const e = sceneAt(i).agents[0]!.energy;
       expect(e).toBeGreaterThan(prev);
       expect(e).toBeLessThanOrEqual(1);
       prev = e;
+      expect(sceneAt(i).tokens).toBe(tokensAt(STEPS[i]!.at));
+      expect(sceneAt(i).tokens).toBeLessThanOrEqual(STORY_BUDGET);
+      expect(sceneAt(i).tokens % 100).toBe(0);
     }
     expect(energyAt(-5)).toBeGreaterThanOrEqual(0);
     expect(energyAt(STORY_MS * 2)).toBeLessThanOrEqual(1);
@@ -102,13 +139,30 @@ describe("the hero story", () => {
     expect(nextDelay(STEPS.length - 1, STEPS.at(-1)!.at)).toBe(STORY_MS - STEPS.at(-1)!.at);
   });
 
-  test("walking beats get time to finish before the next scene", () => {
+  test("walking beats get time to finish, and a camera shot holds at least 1.5 s", () => {
     for (let i = 0; i < STEPS.length; i++) {
-      const walks = (STEPS[i]!.beats ?? []).some((b) => b.kind !== "celebrate" && b.kind !== "decided");
-      const meets = Boolean(STEPS[i]!.meetingStart);
-      const room = nextDelay(i, STEPS[i]!.at);
+      const s = STEPS[i]!;
+      const walks = (s.beats ?? []).some((b) => b.kind !== "celebrate" && b.kind !== "decided");
+      const room = nextDelay(i, s.at);
       if (walks) expect(room).toBeGreaterThanOrEqual(5_000);
-      if (meets) expect(room).toBeGreaterThanOrEqual(8_000);
+      if (s.meetingStart) expect(room).toBeGreaterThanOrEqual(8_000);
+      expect(room - (s.shot.after ?? 0)).toBeGreaterThanOrEqual(1_500);
+    }
+  });
+
+  test("the feed: the three opening notices, newest first, then what the story adds", () => {
+    expect(OPENING_NOTES.map((n) => n.kind)).toEqual(["cache", "meeting", "approve"]);
+    expect(feedAt(0).map((n) => n.id)).toEqual(OPENING_NOTES.map((n) => n.id));
+    const approval = feedAt(indexOf("approval"));
+    expect(approval.length).toBe(FEED_SIZE);
+    expect(approval[0]!.kind).toBe("approve");
+    expect(approval[1]!.kind).toBe("ask");
+    expect(feedAt(indexOf("sync"))[0]!.title).toBe("Meeting starting");
+    expect(feedAt(indexOf("coffee"))[0]!.kind).toBe("cache");
+    for (let i = 0; i < STEPS.length; i++) {
+      const f = feedAt(i);
+      expect(f.length).toBe(FEED_SIZE);
+      expect(new Set(f.map((n) => n.id)).size).toBe(f.length);
     }
   });
 
@@ -117,13 +171,39 @@ describe("the hero story", () => {
     expect(new Set(all).size).toBe(all.length);
   });
 
-  test("every caption, scene name and label is plain copy", () => {
+  test("every caption, scene name, notice and label is plain copy, labelled as a sample", () => {
+    const notes = [...OPENING_NOTES, ...STEPS.flatMap((s) => s.notes ?? [])];
     for (const s of STEPS) {
       for (const text of [s.caption, s.scene, ...(s.meetingStart?.agenda ?? []), ...(s.meetingEnd?.notes ?? [])]) {
         expect(text.includes(EMDASH)).toBe(false);
         expect(/\p{Extended_Pictographic}/u.test(text)).toBe(false);
       }
-      expect(sceneLabel(s)).toContain("Sample story");
+      expect(sceneLabel(s)).toContain("Sample run");
     }
+    for (const n of notes) {
+      for (const text of [n.title, n.text]) {
+        expect(text.includes(EMDASH)).toBe(false);
+        expect(/\p{Extended_Pictographic}/u.test(text)).toBe(false);
+      }
+    }
+  });
+});
+
+describe("the story clock drives the windows", () => {
+  test("an office clock reads as an hour of the day", () => {
+    expect(hourOf("10:08")).toBeCloseTo(10.133, 2);
+    expect(hourOf("09:00")).toBe(9);
+    expect(hourOf("19:20")).toBeCloseTo(19.333, 2);
+    expect(hourOf("later")).toBe(12);
+    for (const s of STEPS) expect(hourOf(s.clock)).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe("story visibility", () => {
+  test("the share in view counts the viewport for an element taller than it", () => {
+    expect(visibleShare(0.5, 400, 800)).toBe(0.5);
+    expect(visibleShare(0.3, 800, 800)).toBe(1);
+    expect(visibleShare(0.2, 200, 800)).toBe(0.25);
+    expect(visibleShare(0, 0, 0)).toBe(0);
   });
 });

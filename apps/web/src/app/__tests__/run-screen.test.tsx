@@ -50,19 +50,19 @@ describe("run page, demo", () => {
     const office = el.querySelector(".run-office");
     expect(office).toBeTruthy();
     const text = office!.textContent ?? "";
-    for (const name of ["Kopi", "Mochi", "Klepon", "Tempe", "Onde", "Cilok"]) expect(text).toContain(name);
-    expect(el.querySelector(".status-now")?.textContent).toContain("Mochi is waiting on you");
+    for (const name of ["Oyen", "Gembul", "Klepon", "Tempe", "Onde", "Cilok"]) expect(text).toContain(name);
+    expect(el.querySelector(".status-now")?.textContent).toContain("Gembul is waiting on you");
   });
 
   test("the request that blocks a cat sits on top with its cat, and the panels are there", async () => {
     const el = await mount("/app/runs/demo?demo=1");
     const ask = el.querySelector(".approvals-now");
-    expect(ask?.textContent).toContain("Mochi needs you");
+    expect(ask?.textContent).toContain("Gembul needs you");
     expect(ask?.querySelector(".ask-cat")).toBeTruthy();
-    expect(el.querySelectorAll('[role="tab"]').length).toBe(desktop() ? 4 : 7);
+    expect(el.querySelectorAll('[role="tab"]').length).toBe(desktop() ? 5 : 8);
     if (desktop()) {
       expect(el.querySelector(".feed")?.textContent).toContain("Kickoff: CSV export");
-      expect(el.querySelector(".feed")?.textContent).toContain("Kopi approved");
+      expect(el.querySelector(".feed")?.textContent).toContain("Oyen approved");
       expect(el.querySelectorAll(".queue-row").length).toBe(6);
       expect(el.querySelector(".ide")).toBeTruthy();
     }

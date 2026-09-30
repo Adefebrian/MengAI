@@ -1,9 +1,12 @@
 // Settings (/app/settings): the defaults every run starts from and how
 // much the app and the cats move. Regions per JEV ui.region_gate: head
-// plain, budgets card, crew plain, network plain, motion card (session was
-// dropped at relevance 1.15, so it is not built).
-import type { OwnerSettings } from "@mengai/shared";
-import { SkeletonRows } from "@mengai/ui/src/product";
+// plain, budgets card, company divided (2.93; its card primary sat on the
+// budgets card, so the runner-up), crew plain, network plain, motion card
+// (session was dropped at relevance 1.15, so it is not built). A budget or
+// a cap of 0 is unlimited: the budget says so in a warning while it is 0,
+// the org caps read Unlimited.
+import { leadCatName, type OwnerSettings } from "@mengai/shared";
+import { Notice, SkeletonRows } from "@mengai/ui/src/product";
 import { useEffect, useState, type FormEvent } from "react";
 import { useApp, type CatMotion } from "../context";
 import { fmtInt } from "../format";
@@ -15,6 +18,12 @@ export function SettingsScreen() {
   const [tokens, setTokens] = useState("");
   const [usd, setUsd] = useState("");
   const [agents, setAgents] = useState("");
+  const [ceoName, setCeoName] = useState("");
+  const [maxAgents, setMaxAgents] = useState("");
+  const [maxDepth, setMaxDepth] = useState("");
+  const [orgOk, setOrgOk] = useState<string | null>(null);
+  const [orgError, setOrgError] = useState<{ agents?: string; depth?: string }>({});
+  const org = useAction();
   const [budgetOk, setBudgetOk] = useState<string | null>(null);
   const [crewOk, setCrewOk] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
@@ -28,6 +37,9 @@ export function SettingsScreen() {
     setTokens(String(settings.defaultBudgetTokens));
     setUsd(String(settings.defaultBudgetUsd));
     setAgents(String(settings.maxConcurrentAgents));
+    setCeoName(settings.ceoName ?? "");
+    setMaxAgents(String(settings.maxAgents ?? 0));
+    setMaxDepth(String(settings.maxDepth ?? 0));
   }, [settings]);
 
   const patch = async (p: Partial<OwnerSettings>) => {
@@ -39,16 +51,19 @@ export function SettingsScreen() {
   const saveBudget = (e: FormEvent) => {
     e.preventDefault();
     setBudgetOk(null);
-    const t = Number(tokens.replace(/[^0-9]/g, ""));
-    const u = Number(usd.replace(/[^0-9.]/g, ""));
-    if (!t || t < 1000) {
-      setTokenError("Use at least 1,000 tokens.");
+    const tDigits = tokens.replace(/[^0-9]/g, "");
+    const t = Number(tDigits);
+    const u = Number(usd.replace(/[^0-9.]/g, "") || "0");
+    if (!tDigits || (t > 0 && t < 1000)) {
+      setTokenError("Use 0 for no cap, or at least 1,000 tokens.");
       return;
     }
     setTokenError(null);
     void budget.run(async () => {
-      const next = await patch({ defaultBudgetTokens: t, defaultBudgetUsd: u || 0 });
-      setBudgetOk(`Saved. New runs stop at ${fmtInt(next.defaultBudgetTokens)} tokens or $${next.defaultBudgetUsd}.`);
+      const next = await patch({ defaultBudgetTokens: t, defaultBudgetUsd: Number.isFinite(u) ? u : 0 });
+      const tok = next.defaultBudgetTokens ? `${fmtInt(next.defaultBudgetTokens)} tokens` : "no token cap";
+      const cost = next.defaultBudgetUsd ? `$${next.defaultBudgetUsd}` : "no cost cap";
+      setBudgetOk(`Saved. New runs start with ${tok} and ${cost}.`);
     });
   };
 
@@ -67,6 +82,23 @@ export function SettingsScreen() {
     });
   };
 
+  const saveOrg = (e: FormEvent) => {
+    e.preventDefault();
+    setOrgOk(null);
+    const a = Number(maxAgents.trim() || "0");
+    const d = Number(maxDepth.trim() || "0");
+    const errors: typeof orgError = {};
+    if (!Number.isInteger(a) || a < 0) errors.agents = "Use 0 for Unlimited, or a whole number.";
+    if (!Number.isInteger(d) || d < 0) errors.depth = "Use 0 for Unlimited, or a whole number.";
+    setOrgError(errors);
+    if (errors.agents || errors.depth) return;
+    void org.run(async () => {
+      const next = await patch({ ceoName: ceoName.trim(), maxAgents: a, maxDepth: d });
+      const name = leadCatName(next.ceoName);
+      setOrgOk(`Saved. ${name} runs every new company, ${next.maxAgents ? `up to ${next.maxAgents} ${next.maxAgents === 1 ? "cat" : "cats"}` : "with no cap on cats"}, ${next.maxDepth ? `${next.maxDepth} ${next.maxDepth === 1 ? "level" : "levels"} deep` : "as deep as the work needs"}.`);
+    });
+  };
+
   if (!settings) {
     return (
       <Page>
@@ -76,19 +108,64 @@ export function SettingsScreen() {
     );
   }
 
+  const zeroTokens = tokens.trim() !== "" && Number(tokens.replace(/[^0-9]/g, "") || "1") === 0;
+  const zeroUsd = usd.trim() !== "" && Number(usd.replace(/[^0-9.]/g, "") || "1") === 0;
   const budgetsRegion = (
     <Region container="card" title="Budgets" className="app-card settings-budgets" meta="Every run stops at whichever limit comes first. You can change it per run.">
       <form className="app-form" onSubmit={saveBudget} noValidate>
         <div className="field-row">
-          <TextField label="Tokens per run" inputMode="numeric" value={tokens} onChange={(e) => setTokens(e.target.value)} error={tokenError} hint="Input and output together" />
-          <TextField label="USD per run" inputMode="decimal" value={usd} onChange={(e) => setUsd(e.target.value)} hint="Billed to your own keys" />
+          <TextField label="Tokens per run" inputMode="numeric" value={tokens} onChange={(e) => setTokens(e.target.value)} error={tokenError} hint="Input and output together. 0 means no cap." />
+          <TextField label="USD per run" inputMode="decimal" value={usd} onChange={(e) => setUsd(e.target.value)} hint="Billed to your own keys. 0 means no cap." />
         </div>
+        {zeroTokens || zeroUsd ? (
+          <Notice tone="warning" title={zeroTokens && zeroUsd ? "No token or cost cap" : zeroTokens ? "No token cap" : "No cost cap"}>
+            With 0, a run keeps spending on your own key until it finishes or you stop it. Stop all in the header always works.
+          </Notice>
+        ) : null}
         <div className="app-form-actions">
           <button type="submit" aria-busy={budget.busy || undefined}>
             Save budgets
           </button>
         </div>
         <FormStatus ok={budgetOk} error={budget.error} />
+      </form>
+    </Region>
+  );
+
+  const ceo = leadCatName(ceoName);
+  const agentsN = Number(maxAgents.trim() || "0");
+  const depthN = Number(maxDepth.trim() || "0");
+  const companyRegion = (
+    <Region container="divided" title="Company" className="settings-company" meta="Who runs every new company, and how big the org may grow.">
+      <form className="app-form" onSubmit={saveOrg} noValidate>
+        <TextField label="CEO name" value={ceoName} maxLength={24} placeholder="Oyen" onChange={(e) => setCeoName(e.target.value)} hint={`${ceo} plans every run, hires the crew and signs off the report. Empty means Oyen.`} />
+        <div className="field-row">
+          <TextField
+            label="Max cats"
+            inputMode="numeric"
+            value={maxAgents}
+            onChange={(e) => setMaxAgents(e.target.value)}
+            error={orgError.agents}
+            hint={agentsN > 0 ? `Up to ${fmtInt(agentsN)} ${agentsN === 1 ? "cat" : "cats"}, ${ceo} included.` : "0 means Unlimited."}
+          />
+          <TextField
+            label="Max depth"
+            inputMode="numeric"
+            value={maxDepth}
+            onChange={(e) => setMaxDepth(e.target.value)}
+            error={orgError.depth}
+            hint={depthN > 0 ? `${fmtInt(depthN)} ${depthN === 1 ? "level" : "levels"} of the org below ${ceo}.` : "0 means Unlimited."}
+          />
+        </div>
+        <p className="settings-org-now">
+          Now: {agentsN > 0 ? `${fmtInt(agentsN)} ${agentsN === 1 ? "cat" : "cats"} at most` : "Unlimited cats"}, {depthN > 0 ? `${fmtInt(depthN)} ${depthN === 1 ? "level" : "levels"} deep` : "Unlimited depth"}.
+        </p>
+        <div className="app-form-actions">
+          <button type="submit" aria-busy={org.busy || undefined}>
+            Save company
+          </button>
+        </div>
+        <FormStatus ok={orgOk} error={org.error} />
       </form>
     </Region>
   );
@@ -159,7 +236,7 @@ export function SettingsScreen() {
     </Region>
   );
 
-  // DOM order follows the region gate (budgets, crew, network, motion); two
+  // DOM order follows the region gate (budgets, company, crew, network, motion); two
   // columns from 1024px, each a stack, so no two cards share a row.
   return (
     <Page>
@@ -167,6 +244,7 @@ export function SettingsScreen() {
       <div className="settings-grid">
         <div className="settings-col">
           {budgetsRegion}
+          {companyRegion}
           {crewRegion}
         </div>
         <div className="settings-col">

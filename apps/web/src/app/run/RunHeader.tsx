@@ -7,11 +7,12 @@ import type { ProjectDTO } from "@mengai/shared";
 import { ProductIcon, Sheet, StatusPill } from "@mengai/ui/src/product";
 import { useState } from "react";
 import type { Connection, RunState } from "../../store/runStore";
-import { tokensUsed } from "../../store/runStore";
+import { crewOrder, tokensUsed } from "../../store/runStore";
 import { fmtClock, fmtInt, fmtUsd } from "../format";
 import { useAction, useMedia } from "../hooks";
 import { RUN_STATUS, isFinished } from "../status";
 import { clip } from "./office";
+import { COMPANY_WORD, companyOf } from "./stages";
 
 const CONNECTION: Record<Connection, { word: string; icon: "refresh" | "checkCircle" | "infoCircle" | "clock" | "alertCircle" } | null> = {
   idle: null,
@@ -44,7 +45,8 @@ export function RunHeader({
   const act = useAction();
   const [confirm, setConfirm] = useState(false);
   const finished = isFinished(run.status);
-  const crew = state.agentOrder.length;
+  const crew = crewOrder(state).length;
+  const company = companyOf(run);
   // The goal is the page title; a long one is cut at a word so it stays a
   // title (two lines on a desk, three on a phone), whole in its tooltip and
   // for assistive tech.
@@ -68,6 +70,10 @@ export function RunHeader({
               <span>{conn.word}</span>
             </span>
           ) : null}
+          <span className="run-meta-item">
+            <ProductIcon name={company === "fund" ? "dollar" : "code"} size={16} />
+            <span>{COMPANY_WORD[company]}</span>
+          </span>
           {project ? (
             <span className="run-meta-item">
               <ProductIcon name="folder" size={16} />

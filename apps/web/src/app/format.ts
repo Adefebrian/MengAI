@@ -60,3 +60,29 @@ export function fmtBytes(n: number): string {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${fmtInt(n)} ${n === 1 ? one : many}`;
 }
+
+const PRICE = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const QTY = new Intl.NumberFormat("en-US", { maximumFractionDigits: 8 });
+
+/** A price in USD with two decimals: "$182.10". */
+export function fmtPrice(n: number): string {
+  return `$${PRICE.format(Number.isFinite(n) ? n : 0)}`;
+}
+
+/** A signed USD amount for P&L: "+$124.30", "-$12.10", "$0.00". The sign carries the meaning, never color alone. */
+export function fmtSignedUsd(n: number): string {
+  const v = Number.isFinite(n) ? n : 0;
+  if (Math.abs(v) < 0.005) return "$0.00";
+  return `${v > 0 ? "+" : "-"}$${PRICE.format(Math.abs(v))}`;
+}
+
+/** A quantity with up to 8 decimals, for shares and crypto alike. */
+export function fmtQty(n: number): string {
+  return QTY.format(Number.isFinite(n) ? n : 0);
+}
+
+/** A count where 0 means no cap. */
+export function fmtLimit(n: number | undefined | null, unit?: string): string {
+  if (!n) return "Unlimited";
+  return unit ? `${fmtInt(n)} ${unit}` : fmtInt(n);
+}

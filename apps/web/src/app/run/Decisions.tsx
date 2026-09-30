@@ -27,7 +27,7 @@ export function Decisions({ decisions }: { decisions: DecisionDTO[] }) {
         }
       />
       {list.length === 0 ? (
-        <p className="app-empty-line">No calls to make yet. Kopi asks JEV whenever a choice is soft.</p>
+        <p className="app-empty-line">No calls to make yet. The CEO asks JEV whenever a choice is soft.</p>
       ) : (
         <ol className="decision-list">
           <AnimatePresence initial={false}>

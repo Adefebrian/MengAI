@@ -6,6 +6,7 @@
 // the next lawful option). The session left Settings, where JEV dropped it
 // (relevance 1.40).
 import { Cat } from "@mengai/cats";
+import { leadCatName } from "@mengai/shared";
 import { KeyValue, ProductIcon } from "@mengai/ui/src/product";
 import { useApp } from "../context";
 import { useAction, useResource } from "../hooks";
@@ -16,7 +17,8 @@ const AUTHOR = "https://github.com/adefebrian";
 const LICENSE = `${REPO}/blob/main/LICENSE`;
 
 export function AboutScreen() {
-  const { api, session, catsStill } = useApp();
+  const { api, session, catsStill, settings } = useApp();
+  const ceo = leadCatName(settings?.ceoName);
   const health = useResource((signal) => api.call("GET /api/health", { signal }), "health");
   const out = useAction();
   const signOut = () =>
@@ -28,7 +30,7 @@ export function AboutScreen() {
     <Page>
       <header className="app-head about-head">
         <span className="about-cat">
-          <Cat look={{ coat: "ginger", seed: 1204 }} role="lead" status="idle" activity="rest" mood="calm" label="Kopi, the lead cat, resting" size={96} still={catsStill} />
+          <Cat look={{ coat: "ginger", seed: 1204 }} role="lead" status="idle" activity="rest" mood="calm" label={`${ceo}, the CEO cat, resting`} size={96} still={catsStill} />
         </span>
         <div className="app-head-text">
           <h1 className="app-title">About MengAI</h1>
@@ -44,7 +46,7 @@ export function AboutScreen() {
             { label: "Built by", value: <a href={AUTHOR} rel="noreferrer" target="_blank">Adefebrian</a> },
             { label: "License", value: <a href={LICENSE} rel="noreferrer" target="_blank">Apache License 2.0</a> },
             { label: "Source", value: <a href={REPO} rel="noreferrer" target="_blank" className="num">github.com/adefebrian/mengai</a> },
-            { label: "Models", value: "Your own keys, any provider. Default OpenAI gpt-4o-mini." },
+            { label: "Models", value: "Your own keys, any provider, any model." },
           ]}
         />
       </Region>

@@ -4,8 +4,10 @@
 // (script.ts, loops) and the lifecycle (lifecycle.ts, plays once and rests
 // on its last step until the visitor asks for a replay).
 //
-// The clock runs only while the story's element is on screen, the tab is
-// visible, and the visitor has not paused it. Under reduced motion a story
+// The clock runs only while the story's element is on screen (the page
+// says how much of it: the lifecycle waits until its floor is half in view,
+// then keeps running while any real part of it shows), the tab is visible,
+// and the visitor has not paused it. Under reduced motion a story
 // rests on its poster step until the visitor presses play or picks a
 // scene, and the scene then moves instantly (still). A paused story is
 // still too, so pause stops every walk and loop in the office (WCAG
@@ -73,20 +75,43 @@ export function nextDelay(index: number, elapsed: number, script: StoryScript = 
   return Math.max(0, nextAt - elapsed);
 }
 
-function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
+/** How much of the story's element must be in view: to start the clock, then to keep it running. */
+export interface StoryVisibility {
+  /** share of the element (or of the viewport, for an element taller than it) that starts the clock */
+  start: number;
+  /** share that keeps it running once started */
+  stay: number;
+}
+
+export const DEFAULT_VISIBILITY: StoryVisibility = { start: 0.15, stay: 0.15 };
+
+/** The share of the element in view, or of the viewport when the element is taller than the viewport. */
+export function visibleShare(ratio: number, seen: number, rootHeight: number): number {
+  return Math.max(ratio, rootHeight > 0 ? seen / rootHeight : 0);
+}
+
+function useOnScreen(ref: RefObject<HTMLElement | null>, vis: StoryVisibility): boolean {
   const [on, setOn] = useState(true);
+  const started = useRef(false);
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
       (entries) => {
-        for (const e of entries) setOn(e.isIntersecting);
+        for (const e of entries) {
+          const root = e.rootBounds?.height ?? window.innerHeight;
+          const share = visibleShare(e.intersectionRatio, e.intersectionRect.height, root);
+          const need = started.current ? vis.stay : vis.start;
+          const now = e.isIntersecting && share >= need - 0.001;
+          if (now) started.current = true;
+          setOn(now);
+        }
       },
-      { threshold: 0.15 },
+      { threshold: Array.from({ length: 21 }, (_, i) => i / 20) },
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [ref]);
+  }, [ref, vis.start, vis.stay]);
   return on;
 }
 
@@ -100,9 +125,9 @@ function usePageVisible(): boolean {
   return visible;
 }
 
-export function useStory(ref: RefObject<HTMLElement | null>, script: StoryScript = HERO_SCRIPT): StoryPlayer {
+export function useStory(ref: RefObject<HTMLElement | null>, script: StoryScript = HERO_SCRIPT, visibility: StoryVisibility = DEFAULT_VISIBILITY): StoryPlayer {
   const reduced = usePrefersReducedMotion();
-  const onScreen = useOnScreen(ref);
+  const onScreen = useOnScreen(ref, visibility);
   const pageVisible = usePageVisible();
   const [choice, setChoice] = useState<StoryChoice>("auto");
   const [position, setPosition] = useState(() => ({ index: openingStep(reduced, script), play: 0, ended: false }));

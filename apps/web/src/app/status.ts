@@ -2,6 +2,8 @@
 // rides on color alone.
 import type { GlyphName, StatusTone } from "@mengai/ui/src/product";
 import type {
+  ConnectorDTO,
+  OrderStatus,
   AgentStatus,
   ApprovalStatus,
   AssetStatus,
@@ -107,3 +109,18 @@ export const JOB_STATUS: Record<ScanStatus | AssetStatus, StatusLook> = {
 export function isFinished(status: RunStatus | undefined | null): boolean {
   return status === "done" || status === "failed" || status === "stopped";
 }
+
+export const ORDER_STATUS: Record<OrderStatus, StatusLook> = {
+  proposed: { tone: "warning", icon: "hourglass", word: "Proposed" },
+  approved: { tone: "info", icon: "checkCircle", word: "Approved" },
+  rejected: { tone: "neutral", icon: "xCircle", word: "Rejected" },
+  filled: { tone: "success", icon: "checkCircle", word: "Filled" },
+  cancelled: { tone: "neutral", icon: "minusCircle", word: "Cancelled" },
+  failed: { tone: "danger", icon: "alertCircle", word: "Failed" },
+};
+
+export const CONNECTOR_STATUS: Record<ConnectorDTO["status"], StatusLook> = {
+  connected: { tone: "success", icon: "checkCircle", word: "Connected" },
+  error: { tone: "danger", icon: "alertCircle", word: "Error" },
+  disabled: { tone: "neutral", icon: "minusCircle", word: "Off" },
+};

@@ -22,6 +22,14 @@ for (const kind of COMPANY_KINDS) {
       expect(c.stages.length).toBe(7);
     });
 
+    test("the first hire reaches the door within about 3 s, and the crew settles before the next meeting", () => {
+      const hire = c.steps[idx(c, "hire")]!;
+      expect(hire.at).toBeLessThanOrEqual(3_000);
+      const next = c.steps.find((s) => s.meetingStart);
+      expect(next).toBeDefined();
+      expect(next!.at - hire.at).toBeGreaterThanOrEqual(14_000);
+    });
+
     test("Oyen the CEO starts alone, then the hires walk in", () => {
       const ceo = c.cats.find((x) => x.role === "lead")!;
       expect(ceo.name).toBe("Oyen");
@@ -130,12 +138,14 @@ for (const kind of COMPANY_KINDS) {
       expect(first.focusHired).toBe(false);
       for (const k of HEAD_KEYS) expect(first.head.rows[k].value.length).toBeGreaterThan(0);
       expect(first.head.rows.charter.value).toMatch(/charter v\d/);
-      expect(first.head.rows.skills.evidence).toContain("JEV");
+      // plain words for a first-time visitor: no internal decision ids or scores (critic fix round 2)
+      expect(first.head.rows.skills.evidence).toMatch(/after \d wins in \d uses, checked by an offline eval/);
+      for (const k of HEAD_KEYS) expect(first.head.rows[k].evidence).not.toMatch(/JEV|mem\.promote|\b0\.\d\d\b/);
       const bounce = lifeAt(c, idx(c, "bounce"));
       expect(bounce.focusHired).toBe(true);
       expect(bounce.fresh).toEqual(["strategy", "memory", "trust"]);
-      expect(bounce.head.rows.strategy.evidence).toMatch(/JEV adopted/);
-      expect(bounce.head.rows.strategy.evidence).toMatch(/offline eval/);
+      expect(bounce.head.rows.strategy.evidence).toMatch(/^Adopted after an offline eval and a judge's check/);
+      expect(bounce.head.rows.strategy.evidence).not.toMatch(/JEV|\bat 0\.\d\d\b/);
       expect(lifeAt(c, idx(c, "bounce") + 1).fresh).toEqual([]);
     });
 
