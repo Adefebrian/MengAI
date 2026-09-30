@@ -33,6 +33,7 @@ import type {
   Tier,
 } from "./enums";
 import type { MeetingKind } from "./events";
+import type { CompanyKind } from "./capabilities";
 
 export interface HealthDTO {
   ok: boolean;
@@ -310,6 +311,47 @@ export interface SkillDTO {
   wins: number;
   createdAt: number;
 }
+
+/**
+ * A written skill: instruction text that every matching cat reads in its
+ * prompt, next to its role charter. Two sources: the built-in pack that ships
+ * with MengAI (the JAL-AIDev design guardrails, system design and UI craft,
+ * flexible about the tech stack; versioned with the app, can be switched off,
+ * never edited) and the owner's own skills. Different from SkillDTO, which is
+ * a tool recipe the crew learned by itself.
+ */
+export interface CrewSkillDTO {
+  id: string;
+  source: "builtin" | "owner";
+  name: string;
+  /** one line for lists */
+  summary: string;
+  /** the instruction text the cats read (markdown, at most 6,000 characters) */
+  body: string;
+  /** roles that read it; null means every role */
+  roles: AgentRole[] | null;
+  /** company kinds it applies to; null means all */
+  kinds: CompanyKind[] | null;
+  enabled: boolean;
+  /** built-in skills carry the app's version of the text; owner skills count their edits */
+  version: number;
+  /** estimated tokens this skill adds to each matching prompt */
+  tokens: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateCrewSkillBody {
+  name: string;
+  summary?: string;
+  body: string;
+  roles?: AgentRole[] | null;
+  kinds?: CompanyKind[] | null;
+  enabled?: boolean;
+}
+
+/** built-in skills accept only { enabled } */
+export type UpdateCrewSkillBody = Partial<CreateCrewSkillBody>;
 
 export interface DecisionDTO {
   id: string;

@@ -29,6 +29,9 @@ import type {
   ScanDTO,
   SessionDTO,
   SkillDTO,
+  CrewSkillDTO,
+  CreateCrewSkillBody,
+  UpdateCrewSkillBody,
   TaskDTO,
   UsageTotals,
 } from "./dto";
@@ -237,6 +240,11 @@ export interface Routes {
   "DELETE /api/memory/lessons/:id": [never, { ok: true }];
   "GET /api/memory/skills": [never, SkillDTO[]];
   "DELETE /api/memory/skills/:id": [never, { ok: true }];
+  // written skills: the built-in JAL-AIDev pack and the owner's own
+  "GET /api/crew-skills": [never, CrewSkillDTO[]];
+  "POST /api/crew-skills": [CreateCrewSkillBody, CrewSkillDTO];
+  "PATCH /api/crew-skills/:id": [UpdateCrewSkillBody, CrewSkillDTO];
+  "DELETE /api/crew-skills/:id": [never, { ok: true }];
 
   "GET /api/evals": [never, EvalRunDTO[]];
   "POST /api/evals/run": [{ suite?: string }, { legacy: EvalRunDTO; v2: EvalRunDTO; savingsPct: number }];
