@@ -10,7 +10,7 @@ import { CHAT_PROVIDERS, KEY_PROMISES, NAMED_PROVIDERS } from "./sections/Keys";
 import { PROVIDER_PRESETS } from "@mengai/shared";
 import { LOGOS_LABEL, PROVIDER_MARKS } from "./sections/Logos";
 import { TOKEN_STATS } from "./sections/Tokens";
-import { SHIPPED_CREW } from "./views/shipped";
+import { GUARD, GUARD_LINES } from "./views/keys";
 import { SYNC_SEATS } from "./views/workbench";
 import { CLOSE_TITLE } from "./sections/Close";
 import { BUDGET } from "./views/security";
@@ -210,6 +210,26 @@ describe("landing", () => {
     expect(NAMED_PROVIDERS.length).toBeGreaterThan(10);
     expect(text).toContain(`${NAMED_PROVIDERS.length} presets`);
     for (const part of ["macOS Keychain", "MCP servers", "APIs", "paper", "live trading on", "approval", "hard limits"]) expect(text).toContain(part);
+    expect(host.querySelectorAll("#keys .lp-keys-say").length).toBe(KEY_PROMISES.length);
+  });
+
+  test("keys: Garong guards the vault, and a Test press nods and lands the tick", async () => {
+    const keys = host.querySelector<HTMLElement>("#keys")!;
+    const guard = keys.querySelector<HTMLElement>(".lp-guard")!;
+    expect(GUARD.name).toBe("Garong");
+    expect(GUARD.role).toBe("security");
+    expect(guard.querySelector(".cat")?.getAttribute("aria-label")).toContain("Garong");
+    expect(guard.querySelector(".lp-safe")).not.toBeNull();
+    expect(guard.dataset.checked).toBe("false");
+    expect(guard.querySelector(".lp-guard-say")?.textContent).toBe(GUARD_LINES.idle);
+    const test = Array.from(keys.querySelectorAll<HTMLButtonElement>(".lp-keys-view button")).find((b) => b.textContent === "Test")!;
+    await click(test);
+    expect(guard.dataset.checked).toBe("true");
+    expect(guard.querySelector(".lp-guard-say")?.textContent).toBe(GUARD_LINES.tested);
+    expect(keys.querySelector(".lp-keys-test")?.textContent).toContain("Answered in");
+    const first = guard.dataset.nod;
+    await click(test);
+    expect(guard.dataset.nod).not.toBe(first);
   });
 
   test("carries the measured token numbers from the benchmark report, as a stat row beside the chart", () => {
@@ -244,18 +264,16 @@ describe("landing", () => {
     expect(BUDGET).toEqual({ used: 182_400, total: 400_000 });
   });
 
-  test("the close is centered: text, then both actions, then the crew strip", () => {
+  test("the close is centered: the headline and lead, then both actions, no strip", () => {
     const close = host.querySelector<HTMLElement>("#get")!;
     expect(close.dataset.kitComposition).toBe("custom");
     expect(close.dataset.variant).toBe("close");
     expect(close.querySelector("h2")?.textContent).toBe(CLOSE_TITLE);
-    const parts = Array.from(close.querySelectorAll(".lp-close-text, .lp-close-actions, .lp-shipped"));
-    expect(parts.map((p) => p.className.split(" ").find((c) => c.startsWith("lp-")))).toEqual(["lp-close-text", "lp-close-actions", "lp-shipped"]);
+    const parts = Array.from(close.querySelectorAll(".lp-close-text, .lp-close-actions"));
+    expect(parts.map((p) => p.className.split(" ").find((c) => c.startsWith("lp-")))).toEqual(["lp-close-text", "lp-close-actions"]);
     expect(Array.from(close.querySelectorAll(".lp-close-actions a")).map((a) => a.textContent)).toEqual(["Open the app", "Download for Mac"]);
-    expect(close.querySelector(".lp-shipped")?.textContent).toContain("Shipped");
-    expect(close.querySelector(".lp-shipped")?.textContent).toContain("Sample, the studio story above");
-    expect(close.querySelectorAll(".lp-crew .cat").length).toBe(SHIPPED_CREW.length);
-    expect(SHIPPED_CREW[0]).toBe("oyen");
+    expect(close.textContent).not.toContain("Shipped");
+    expect(close.querySelectorAll(".cat").length).toBe(0);
   });
 
   test("the footer carries the brand, six product links and the legal line", () => {

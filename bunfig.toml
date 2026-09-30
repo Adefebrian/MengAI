@@ -24,4 +24,5 @@ linker = "hoisted"
 
 [test]
 preload = ["./apps/web/src/happydom.ts"]
-pathIgnorePatterns = ["**/node_modules/**"]
+# packages/motion tests assume no DOM; turbo runs them in their own package (37 pass)
+pathIgnorePatterns = ["**/node_modules/**", "packages/motion/**"]

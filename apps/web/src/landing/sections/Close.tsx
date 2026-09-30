@@ -2,22 +2,19 @@
 // professional SaaS close with the buttons under the text). No kit CTABand
 // variant centers (split, form and band all start align), so the close is
 // hand-written on the kit grid inside <Section>, recorded in direction.md.
-// It still carries the page's own world under the buttons.
+// Release round: the owner took the shipped strip and its crew row out, so
+// the close is the headline, the lead and the two actions on the page's
+// center axis, with the footer right under it.
 //
 // JEV decisions (verified, round C): ui.region_gate close_text kept (0.55,
-// relevance 2.08), close_actions kept (0.79, relevance 2.94), close_proof
-// kept (0.68, relevance 1.64) as a divided_section (0.44, low, the primary:
-// it matches neither neighbour); ui.component_recipe close_strip
-// core.strip_line_then_crew (0.30, low, the top pick; the runner-up is not
-// the JAL Core spec). Carried from round 2: motion.intensity 1.82, tier 2;
-// motion.choreography stagger_sequence (0.84): the text, then the actions,
-// then the strip rise in order, and the crew celebrates one cat after
-// another. The credit and the license live in the footer under it.
+// relevance 2.08), close_actions kept (0.79, relevance 2.94). Carried from
+// round 2: motion.intensity 1.82, tier 2; motion.choreography
+// stagger_sequence (0.84): the text, then the actions rise in order. The
+// credit and the license live in the footer under it.
 import { useId } from "react";
 import { Section, staggerStyle } from "@mengai/ui";
 import { DownloadIcon } from "../icons";
 import { DOWNLOAD_URL, WEB_APP_URL } from "../links";
-import { ShippedView } from "../views/shipped";
 
 export const CLOSE_TITLE = "Open the office. The crew is ready.";
 
@@ -44,9 +41,6 @@ export function CloseSection() {
             <span>Download for Mac</span>
           </a>
         </div>
-      </div>
-      <div className="lp-close-proof" data-motion="rise" style={staggerStyle(2)}>
-        <ShippedView />
       </div>
     </Section>
   );

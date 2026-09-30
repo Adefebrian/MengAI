@@ -4,7 +4,7 @@
 // small, each part the app's own row anatomy (screens/Providers.tsx,
 // screens/Connectors.tsx, screens/Trading.tsx) on sample values:
 //   provider   a custom OpenAI compatible gateway, its key ending q7Zk, and
-//              a Test button that answers once
+//              a Test button that answers
 //   tiers      fast, balanced and deep, each mapped to a model id the owner
 //              added (sample ids on the owner's own gateway: MengAI has no
 //              house model and names none)
@@ -14,6 +14,14 @@
 // The screens themselves need the signed-in app (its API client and
 // context), so the view repeats their anatomy on sample data instead of
 // importing them.
+// Release round (JEV ui.component_recipe guard_placement
+// guard_panel_above_view 0.90): above the view, in a slim panel of its
+// own (the landing's character, not the app's UI), Garong, the roster's
+// security cat, sits beside a flat keychain vault that holds the view's two
+// keys and says so in one line. Each press of Test nods Garong's head once
+// and lands a tick on the vault (transform and opacity only, tier 1);
+// under reduced motion the cat holds still and the tick fades in.
+import { Cat, lookFor, rosterCat } from "@mengai/cats";
 import { ProductIcon, StatusPill } from "@mengai/ui/src/product";
 import { useId, useState, type ReactNode } from "react";
 
@@ -38,6 +46,66 @@ export const SAMPLE_CONNECTOR = {
   meta: ["Token in the keychain", "All roles"],
 } as const;
 
+/** The vault's guard: the roster's security cat. */
+export const GUARD = rosterCat("Garong")!;
+/** What Garong says, before any test and after a Test press. */
+export const GUARD_LINES = {
+  idle: "Two keys in the vault. Not one in a log.",
+  tested: "That key works. It went straight back in.",
+} as const;
+
+/** The flat keychain vault: a safe door with a dial and a handle; the tick lands on its corner once a key tests clean. */
+function Vault() {
+  return (
+    <span className="lp-safe">
+      <svg className="lp-safe-svg" viewBox="0 0 96 96" width="96" height="96" aria-hidden="true" focusable="false">
+        <g transform="translate(4 0)">
+          <rect className="lp-safe-body" x="4" y="14" width="80" height="70" rx="8" />
+          <rect className="lp-safe-door" x="12" y="22" width="64" height="54" rx="4" />
+          <circle className="lp-safe-dial" cx="36" cy="49" r="13" />
+          <path className="lp-safe-notch" d="M36 38.5v3M36 56.5v3M25.5 49h3M43.5 49h3" />
+          <path className="lp-safe-pointer" d="M36 49v-7" />
+          <circle className="lp-safe-hub" cx="36" cy="49" r="2.5" />
+          <rect className="lp-safe-handle" x="58" y="40" width="8" height="18" rx="4" />
+          <rect className="lp-safe-foot" x="12" y="84" width="14" height="6" rx="2" />
+          <rect className="lp-safe-foot" x="62" y="84" width="14" height="6" rx="2" />
+          <g className="lp-safe-tick">
+            <circle cx="72" cy="16" r="11" />
+            <path d="M67 16.5l3.5 3.5 6.5-7" />
+          </g>
+        </g>
+      </svg>
+    </span>
+  );
+}
+
+/** Garong on the vault. `tests` counts Test presses: each one nods the head once and lands the tick. */
+function Guard({ tests }: { tests: number }) {
+  const tested = tests > 0;
+  return (
+    <div className="lp-guard" data-checked={tested ? "true" : "false"} data-nod={tested ? (tests % 2 ? "a" : "b") : undefined}>
+      <div className="lp-guard-scene">
+        <Cat
+          look={lookFor(GUARD.name)}
+          role={GUARD.role}
+          status="idle"
+          activity="rest"
+          mood="focused"
+          label={`${GUARD.name}, the security cat, guarding the keychain vault`}
+          size={96}
+        />
+        <Vault />
+      </div>
+      <div className="lp-guard-text">
+        <p className="lp-guard-say">
+          <q>{tested ? GUARD_LINES.tested : GUARD_LINES.idle}</q>
+        </p>
+        <p className="lp-guard-who">{GUARD.name}, the security cat, on keychain duty</p>
+      </div>
+    </div>
+  );
+}
+
 function Part({ title, children }: { title: string; children: ReactNode }) {
   const id = useId();
   return (
@@ -50,8 +118,7 @@ function Part({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function ProviderPart() {
-  const [tested, setTested] = useState(false);
+function ProviderPart({ tested, onTest }: { tested: boolean; onTest: () => void }) {
   const p = SAMPLE_PROVIDER;
   return (
     <Part title="Providers">
@@ -78,7 +145,7 @@ function ProviderPart() {
             </span>
           </span>
         </span>
-        <button type="button" className="btn-secondary lp-keys-action" onClick={() => setTested(true)}>
+        <button type="button" className="btn-secondary lp-keys-action" onClick={onTest}>
           Test
         </button>
       </div>
@@ -163,10 +230,12 @@ function TradingPart() {
 }
 
 export function KeysView() {
+  const [tests, setTests] = useState(0);
   return (
     <div className="lp-keys-media">
+      <Guard tests={tests} />
       <div className="lp-keys-view" role="group" aria-label="Keys, models, tools and trading in the app, on sample data">
-        <ProviderPart />
+        <ProviderPart tested={tests > 0} onTest={() => setTests((n) => n + 1)} />
         <TierPart />
         <ConnectorPart />
         <TradingPart />

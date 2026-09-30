@@ -1594,12 +1594,11 @@
 }
 
 /* ---------------------------------------------------------------------
- * The close (custom.close, round C): a centered SaaS close on the kit
- * grid. The heading and the lead on the page's center axis, the two
- * actions centered under them, then the shipped strip: a divided section
- * (one hairline above it; the tone edge of the section ends it) with one
- * centered line, a muted line and the crew row. Everything spans the
- * grid, so the axis is the page's own center at every width.
+ * The close (custom.close, round C; release round: the shipped strip is
+ * out): a centered SaaS close on the kit grid. The heading and the lead on
+ * the page's center axis and the two actions centered under them, then
+ * the section's own edge and the footer. Everything spans the grid, so the
+ * axis is the page's own center at every width.
  * ------------------------------------------------------------------- */
 .lp .lp-close > .kit-grid {
   justify-items: center;
@@ -1652,93 +1651,6 @@
   }
 }
 
-.lp .lp-close-proof {
-  grid-column: 1 / -1;
-  inline-size: 100%;
-  min-width: 0;
-}
-
-.lp .lp-shipped {
-  box-sizing: border-box;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-  row-gap: var(--kit-gap-inside);
-  inline-size: 100%;
-  min-width: 0;
-  padding-block-start: var(--kit-gap-group);
-  border-block-start: 1px solid var(--color-border);
-}
-
-.lp .lp-shipped-line {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: var(--space-8px) var(--space-12px);
-  max-inline-size: 100%;
-  min-width: 0;
-}
-
-.lp .lp-shipped-goal {
-  margin: 0;
-  min-width: 0;
-  font-size: var(--text-1);
-  line-height: var(--line-1);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-title);
-  color: var(--color-ink);
-  text-wrap: balance;
-}
-
-.lp .lp-shipped-meta {
-  margin: 0;
-  min-width: 0;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-  text-wrap: balance;
-}
-
-.lp .lp-crew {
-  --lp-crew-col: var(--space-64px);
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, var(--lp-crew-col)));
-  justify-content: center;
-  gap: var(--space-12px) var(--space-8px);
-  inline-size: 100%;
-  margin: 0;
-  margin-block-start: calc(var(--kit-gap-related) - var(--kit-gap-inside));
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.lp .lp-crew[data-size="64"] {
-  --lp-crew-col: var(--space-80px);
-}
-
-.lp .lp-crew[data-cols="6"] {
-  grid-template-columns: repeat(6, minmax(0, var(--lp-crew-col)));
-}
-
-.lp .lp-crew-cat {
-  display: grid;
-  justify-items: center;
-  row-gap: var(--space-4px);
-  min-width: 0;
-}
-
-.lp .lp-crew-name {
-  max-inline-size: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: var(--text-n1);
-  line-height: var(--line-n1);
-  color: var(--color-ink-muted);
-}
-
 /* ---------------------------------------------------------------------
  * The footer (kit.footer.inline on the page's center axis, round C: JEV
  * ui.component_recipe kit.footer.inline_centered 0.97, under the centered
@@ -1778,7 +1690,8 @@
 }
 
 /* ---------------------------------------------------------------------
- * Keys (kit.split.inset, critic round 2): one line per claim in the text
+ * Keys (kit.split.inset, critic round 2; release round: two tiers per
+ * claim and Garong's vault above the view): one claim per item in the text
  * column, and one app view beside it: the provider row, the tier map, the
  * connector row and the Paper and Live switch, each a part of one surface
  * separated by the view's own 1 px gap over the border tone, so every rule
@@ -1787,18 +1700,44 @@
 .lp .lp-keys-claims {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-12px);
+  row-gap: var(--space-16px);
+  column-gap: var(--space-24px);
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
+/* On a tablet the text column spans the page: the six claims read in two
+   columns of three, back to one column beside the view from 1024. */
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .lp .lp-keys-claims {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Two tiers per claim: the cat's short line in ink over the plain fact. */
 .lp .lp-keys-claim {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-2px);
+  align-content: start;
+  min-width: 0;
+}
+
+.lp .lp-keys-say {
   min-width: 0;
   font-size: var(--text-0);
   line-height: var(--line-0);
+  font-weight: var(--weight-semibold);
   color: var(--color-ink);
+}
+
+.lp .lp-keys-fact {
+  min-width: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  color: var(--color-ink-muted);
   text-wrap: pretty;
 }
 
@@ -1816,10 +1755,205 @@
 }
 
 .lp .lp-keys-media {
+  container: lp-keys-media / inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--space-8px);
+  row-gap: var(--space-12px);
   min-width: 0;
+}
+
+/* The guard (release round): Garong beside the flat keychain vault, one
+   line in the cat's voice and its name. A slim panel of its own above the
+   view, the same width, surface and border. On a narrow column the scene
+   sits over the text; from a 440 px column they share one row. */
+.lp .lp-guard {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  align-items: center;
+  row-gap: var(--space-12px);
+  column-gap: var(--space-24px);
+  min-width: 0;
+  padding: var(--space-16px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-card);
+}
+
+@container lp-keys-media (min-width: 440px) {
+  .lp .lp-guard {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+.lp .lp-guard-scene {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+
+.lp .lp-guard-scene > .cat {
+  flex: none;
+}
+
+.lp .lp-guard-text {
+  display: grid;
+  row-gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp .lp-guard-say {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-title);
+  color: var(--color-ink);
+  text-wrap: balance;
+}
+
+.lp .lp-guard-who {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+/* The vault in the cats' own flat line: the cat line tone and weight,
+   paper and layer fills, the one accent on the dial and the tick. */
+/* As the cat's own stage: a fixed square box, the drawing laid over it
+   and out of the reading flow, so the art's parts never count as boxes. */
+.lp .lp-safe {
+  position: relative;
+  flex: none;
+  display: block;
+  inline-size: var(--space-96px);
+  block-size: var(--space-96px);
+  contain: layout paint;
+}
+
+.lp .lp-safe-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  pointer-events: none;
+}
+
+.lp .lp-safe-body,
+.lp .lp-safe-door,
+.lp .lp-safe-dial {
+  stroke: var(--color-ink-muted);
+  stroke-width: 2;
+}
+
+.lp .lp-safe-body {
+  fill: var(--color-layer-2);
+}
+
+.lp .lp-safe-door {
+  fill: var(--color-surface);
+}
+
+.lp .lp-safe-dial {
+  fill: var(--color-layer-1);
+}
+
+.lp .lp-safe-notch {
+  fill: none;
+  stroke: var(--color-ink-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.lp .lp-safe-pointer {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.lp .lp-safe-hub,
+.lp .lp-safe-handle,
+.lp .lp-safe-foot {
+  fill: var(--color-ink-muted);
+}
+
+.lp .lp-safe-tick {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.lp .lp-safe-tick > circle {
+  fill: var(--color-accent);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+
+.lp .lp-safe-tick > path {
+  fill: none;
+  stroke: var(--color-accent-contrast);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lp .lp-guard[data-checked="true"] .lp-safe-tick {
+  opacity: 1;
+}
+
+/* Each Test press: the tick drops onto the vault's corner and settles, and
+   Garong's head nods twice at the neck (the rig's own head group). The two
+   names alternate per press so the same keyframes replay. */
+.lp .lp-guard[data-nod="a"] .lp-safe-tick {
+  animation: lp-tick-a var(--dur-400) var(--ease-standard) both;
+}
+
+.lp .lp-guard[data-nod="b"] .lp-safe-tick {
+  animation: lp-tick-b var(--dur-400) var(--ease-standard) both;
+}
+
+.lp .lp-guard[data-nod="a"] .cat--live .cat-react-head {
+  animation: lp-nod-a var(--dur-600) var(--ease-standard) both;
+}
+
+.lp .lp-guard[data-nod="b"] .cat--live .cat-react-head {
+  animation: lp-nod-b var(--dur-600) var(--ease-standard) both;
+}
+
+@keyframes lp-tick-a {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.6); }
+  60% { opacity: 1; transform: translateY(1px) scale(1.06); }
+  100% { opacity: 1; transform: none; }
+}
+
+@keyframes lp-tick-b {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.6); }
+  60% { opacity: 1; transform: translateY(1px) scale(1.06); }
+  100% { opacity: 1; transform: none; }
+}
+
+@keyframes lp-nod-a {
+  0%, 40%, 80%, 100% { transform: translateY(0); }
+  20% { transform: translateY(7px); }
+  60% { transform: translateY(5px); }
+}
+
+@keyframes lp-nod-b {
+  0%, 40%, 80%, 100% { transform: translateY(0); }
+  20% { transform: translateY(7px); }
+  60% { transform: translateY(5px); }
+}
+
+@keyframes lp-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .lp .lp-keys-part {
@@ -1930,6 +2064,32 @@
   justify-self: start;
 }
 
+/* Test: the base JAL rule paints every enabled button's border ink on
+   hover and press; the secondary keeps its own border and takes the state
+   layer instead, with no press scale. */
+.lp .lp-keys-action:enabled:hover,
+.lp .lp-keys-action:enabled:active {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+  color: var(--color-ink);
+  transform: none;
+}
+
+@media (hover: hover) {
+  .lp .lp-keys-action:enabled:hover {
+    background: var(--state-hover);
+  }
+}
+
+.lp .lp-keys-action:enabled:active {
+  background: var(--state-pressed);
+}
+
+.lp .lp-keys-action:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 .lp .lp-keys-switch {
   inline-size: auto;
   grid-template-columns: auto auto;
@@ -2014,5 +2174,11 @@
   }
   .lp .lp-life-scene[data-cut] {
     animation: none;
+  }
+  .lp .lp-guard[data-nod] .cat-react-head {
+    animation: none;
+  }
+  .lp .lp-guard[data-nod] .lp-safe-tick {
+    animation: lp-fade-in var(--dur-reduced) linear both;
   }
 }
