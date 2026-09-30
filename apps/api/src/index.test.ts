@@ -169,8 +169,11 @@ describe("config", () => {
 
   test("MENGAI_SITE_ORIGINS: exact https origins, checked at boot; MENGAI_UI_ORIGIN: one loopback dev origin", () => {
     const bare = buildConfig(parseEnv({ MENGAI_MODE: "local" }));
-    expect(bare.siteOrigins).toEqual([]);
-    expect(bare.app.allowedOrigins).toEqual([]);
+    expect(bare.siteOrigins).toEqual(["https://mengai.adefebrian.com"]);
+    expect(bare.app.allowedOrigins).toEqual(["https://mengai.adefebrian.com"]);
+    const none = buildConfig(parseEnv({ MENGAI_MODE: "local", MENGAI_SITE_ORIGINS: "none" }));
+    expect(none.siteOrigins).toEqual([]);
+    expect(none.app.allowedOrigins).toEqual([]);
     const boot = buildConfig(parseEnv({ MENGAI_MODE: "local", MENGAI_SITE_ORIGINS: " https://mengai.example/ , https://b.example:8443", MENGAI_UI_ORIGIN: "http://localhost:3000/" }));
     expect(boot.siteOrigins).toEqual(["https://mengai.example", "https://b.example:8443"]);
     expect(boot.app.allowedOrigins).toEqual(["https://mengai.example", "https://b.example:8443", "http://localhost:3000"]);
@@ -181,7 +184,7 @@ describe("config", () => {
       expect(() => parseEnv({ MENGAI_MODE: "local", MENGAI_UI_ORIGIN: bad })).toThrow(/MENGAI_UI_ORIGIN/);
     }
     // local mode never reads ALLOWED_ORIGINS; server mode never reads the site list
-    expect(buildConfig(parseEnv({ MENGAI_MODE: "local", ALLOWED_ORIGINS: "https://x.example" })).app.allowedOrigins).toEqual([]);
+    expect(buildConfig(parseEnv({ MENGAI_MODE: "local", ALLOWED_ORIGINS: "https://x.example" })).app.allowedOrigins).toEqual(["https://mengai.adefebrian.com"]);
     const server = buildConfig(parseEnv({ MENGAI_MODE: "server", VAULT_KEK: KEK, DATABASE_URL: "postgres://h/db", MENGAI_SITE_ORIGINS: "https://mengai.example" }));
     expect(server.siteOrigins).toEqual([]);
     expect(server.app.allowedOrigins).toEqual([]);
@@ -197,8 +200,8 @@ describe("hardening", () => {
     expect(res.status).toBe(200);
     const csp = res.headers.get("content-security-policy") ?? "";
     expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("img-src 'self' data: blob:");
-    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toContain("img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*");
+    expect(csp).toContain("connect-src 'self' http://127.0.0.1:* http://localhost:*");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("frame-src http://127.0.0.1:* http://localhost:*");
     expect(csp).toContain("object-src 'none'");

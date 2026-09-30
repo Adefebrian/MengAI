@@ -144,7 +144,7 @@ export const envSchema = z
         });
       }
     }
-    for (const origin of parseOrigins(env.MENGAI_SITE_ORIGINS)) {
+    for (const origin of env.MENGAI_SITE_ORIGINS?.trim() === "none" ? [] : parseOrigins(env.MENGAI_SITE_ORIGINS)) {
       if (!isHttpsOrigin(origin)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

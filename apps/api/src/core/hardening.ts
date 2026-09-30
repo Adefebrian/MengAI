@@ -117,14 +117,18 @@ export const HEALTH_PATH = "/api/health";
  * tell "engine running" from "nothing here" with an opaque request. CORS
  * reads are not affected by CORP. frame-src admits loopback pages only: the
  * live preview iframe shows what the crew built on its own 127.0.0.1 port.
+ * connect-src, img-src and media-src also admit loopback, so a hosted copy of
+ * the UI (the official website) can reach the engine on the owner's Mac.
  */
+const LOOPBACK_SRC = ["http://127.0.0.1:*", "http://localhost:*"];
+
 export function securityHeaders(mode: Mode): MiddlewareHandler {
   const inner = secureHeaders({
     contentSecurityPolicy: {
       defaultSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "blob:"],
-      mediaSrc: ["'self'", "blob:"],
-      connectSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "blob:", ...LOOPBACK_SRC],
+      mediaSrc: ["'self'", "blob:", ...LOOPBACK_SRC],
+      connectSrc: ["'self'", ...LOOPBACK_SRC],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'"],
       fontSrc: ["'self'"],

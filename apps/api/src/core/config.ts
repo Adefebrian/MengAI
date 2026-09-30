@@ -39,6 +39,9 @@ export interface BootConfig {
 }
 
 export const APP_VERSION: string = pkg.version;
+
+/** The official MengAI website, allowed by default so it can reach the engine on this Mac. */
+export const OFFICIAL_SITE_ORIGIN = "https://mengai.adefebrian.com";
 export const KEYCHAIN_SERVICE = "id.mengai.app";
 export const SERVER_DEFAULT_PORT = 3001;
 
@@ -68,7 +71,15 @@ export function buildConfig(env: Env, opts: { home?: string; version?: string } 
   // local mode: the exact Origin allowlist besides the engine's own origins
   // (those follow allowedHosts): the site origins and the UI dev origin.
   // Server mode: ALLOWED_ORIGINS, with credentials for cookie clients.
-  const siteOrigins = mode === "local" ? parseOrigins(env.MENGAI_SITE_ORIGINS) : [];
+  // Unset means the official website; "none" turns every website off.
+  const siteOrigins =
+    mode !== "local"
+      ? []
+      : env.MENGAI_SITE_ORIGINS === undefined
+        ? [OFFICIAL_SITE_ORIGIN]
+        : env.MENGAI_SITE_ORIGINS.trim() === "none"
+          ? []
+          : parseOrigins(env.MENGAI_SITE_ORIGINS);
   const allowedOrigins =
     mode === "local" ? [...new Set([...siteOrigins, ...(env.MENGAI_UI_ORIGIN ? [env.MENGAI_UI_ORIGIN] : [])])] : parseOrigins(env.ALLOWED_ORIGINS);
 
