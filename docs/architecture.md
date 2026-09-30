@@ -187,3 +187,12 @@ Routes never contain business logic; services never import Hono.
 | landing | apps/web/src/landing |
 | desktop | apps/desktop |
 | direction | docs/design |
+
+## 18. Live preview and Open folder (preview module, local engine only)
+- `modules/preview` is service only; `modules/projects` owns `GET|POST|DELETE /api/projects/:id/preview` and `POST /api/projects/:id/reveal`, resolves the realpath workspace root and passes it in. Server mode (and a build without the module) answers 404.
+- Detection, first match wins: package.json script `dev`, `start`, `preview`, run as `<tool> run <script>` where the tool comes from the lockfile (bun.lock or bun.lockb, pnpm-lock.yaml, yarn.lock, package-lock.json; else `packageManager`; else bun), with `<tool> install` first when there are dependencies and no node_modules; else a static index.html in the root, dist, build, public or out (never a folder symlinked out of the workspace). Nothing found: failed with a plain reason.
+- Scripts run through Bun.spawn in their own process group, cwd the workspace, env exactly PATH, HOME, LANG, PORT (a free port in 4300 to 4399), HOST=127.0.0.1, BROWSER=none, NODE_ENV=development. Output goes to a redacted 40 line ring buffer; the first `http://localhost:<port>` or `http://127.0.0.1:<port>` line it prints is the URL (never a LAN address or an engine port), else the assigned port is probed; ready on the first HTTP answer, failed after 90 s with the log tail.
+- Static projects get a Bun.serve on 127.0.0.1 that answers only a local Host, GET and HEAD, and 404s dot segments, dotfiles, encoded separators and symlinks out of the folder.
+- One preview per project, at most 3 at once (the oldest stops), restart on `POST {restart:true}`. Stop sends SIGTERM to the group, then SIGKILL. The kill switch hook `preview`, engine shutdown and project delete stop previews.
+- Reveal opens only the workspace root: `/usr/bin/open` on macOS, `xdg-open` on Linux, `explorer.exe` on Windows, argv array, no shell.
+- Demo mode writes a self-contained index.html into each demo workspace before its run starts, so Live preview works from the first second.

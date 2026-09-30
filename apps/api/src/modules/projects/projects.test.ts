@@ -3,12 +3,13 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Hono } from "hono";
-import type { FileContent, FileNodeDTO, ProjectDTO } from "@mengai/shared";
+import type { FileContent, FileNodeDTO, PreviewDTO, ProjectDTO } from "@mengai/shared";
 import type { AppConfig, ModuleContext } from "../../core/module";
 import type { Db } from "../../core/ports/db";
 import type { WorkspaceService } from "../../core/services";
 import { errorBody, HttpError } from "../../lib/http";
 import { captureEvents, createTestDb, fakeClock, memoryKv, memoryVault, silentLogger } from "../../testing";
+import { createPreviewModule, type PreviewService } from "../preview";
 import { createWorkspaceModule } from "../workspace";
 import { createProjectsModule } from "./index";
 import { id8, slugify } from "./service";
@@ -29,7 +30,31 @@ let config: AppConfig;
 let ctx: ModuleContext;
 let workspace: WorkspaceService;
 
-function setup(mode: "local" | "server") {
+let opened: string[][] = [];
+let stoppedServers = 0;
+
+function fakePreview(): PreviewService {
+  opened = [];
+  stoppedServers = 0;
+  return createPreviewModule(ctx, {}, {
+    open: async (argv) => {
+      opened.push(argv);
+      return 0;
+    },
+    portFree: async () => true,
+    serveStatic: (_dir, port) => ({
+      port,
+      stop: async () => {
+        stoppedServers++;
+      },
+    }),
+    spawn: () => {
+      throw new Error("no process in these tests");
+    },
+  }).service;
+}
+
+function setup(mode: "local" | "server", withPreview = false) {
   config = {
     mode,
     version: "test",
@@ -42,7 +67,7 @@ function setup(mode: "local" | "server") {
   };
   ctx = { config, db, kv: memoryKv(), blob: null as never, vault: memoryVault(), clock: fakeClock(), logger: silentLogger, events: captureEvents() };
   workspace = createWorkspaceModule(ctx, {}).service;
-  return createProjectsModule(ctx, { workspace });
+  return createProjectsModule(ctx, { workspace, preview: withPreview ? fakePreview() : undefined });
 }
 
 async function rejectsWith(p: Promise<unknown>, status: HttpError["status"], code?: string) {
@@ -137,8 +162,8 @@ describe("projects service", () => {
 });
 
 describe("projects routes", () => {
-  function app() {
-    const mod = setup("local");
+  function app(mode: "local" | "server" = "local", withPreview = false) {
+    const mod = setup(mode, withPreview);
     expect(mod.name).toBe("projects");
     expect(mod.mountPath).toBe("projects");
     const a = new Hono();
@@ -186,5 +211,75 @@ describe("projects routes", () => {
     expect((await a.request(`/api/projects/${p.id}/file`)).status).toBe(422);
     expect((await a.request(`/api/projects/${p.id}/files?depth=99`)).status).toBe(422);
     expect((await a.request(`/api/projects/${p.id}/file?path=nope.txt`)).status).toBe(404);
+  });
+
+  test("live preview: idle detection, start, stop; the workspace root only", async () => {
+    const a = app("local", true);
+    const p = (await (await a.request("/api/projects", json({ name: "Site" }))).json()) as ProjectDTO;
+    const idle = (await (await a.request(`/api/projects/${p.id}/preview`)).json()) as PreviewDTO;
+    expect(idle).toMatchObject({ projectId: p.id, status: "idle", kind: null, url: null });
+    expect(idle.error).toContain("Nothing to preview yet");
+    await writeFile(join(p.workspacePath, "index.html"), "<h1>site</h1>");
+    expect(((await (await a.request(`/api/projects/${p.id}/preview`)).json()) as PreviewDTO)).toMatchObject({ status: "idle", kind: "static", command: "static index.html", error: null });
+    const started = (await (await a.request(`/api/projects/${p.id}/preview`, { method: "POST" })).json()) as PreviewDTO;
+    expect(started).toMatchObject({ status: "ready", kind: "static", url: "http://127.0.0.1:4300/" });
+    const again = await a.request(`/api/projects/${p.id}/preview`, json({ restart: true }));
+    expect(((await again.json()) as PreviewDTO).status).toBe("ready");
+    expect(stoppedServers).toBe(1);
+    expect((await a.request(`/api/projects/${p.id}/preview`, json({ restart: "yes" }))).status).toBe(422);
+    expect((await a.request(`/api/projects/${p.id}/preview`, json([]))).status).toBe(422);
+    expect((await a.request(`/api/projects/${p.id}/preview`, { method: "POST", headers: { "content-type": "application/json" }, body: "{nope" })).status).toBe(400);
+    const stopped = (await (await a.request(`/api/projects/${p.id}/preview`, { method: "DELETE" })).json()) as PreviewDTO;
+    expect(stopped).toMatchObject({ status: "stopped", url: null });
+    expect(stoppedServers).toBe(2);
+    expect((await a.request("/api/projects/not-a-uuid/preview")).status).toBe(404);
+    expect((await a.request("/api/projects/0192f0aa-0000-7000-8000-0000000000ff/preview", { method: "POST" })).status).toBe(404);
+    // deleting the project stops its preview
+    await a.request(`/api/projects/${p.id}/preview`, { method: "POST" });
+    await a.request(`/api/projects/${p.id}`, { method: "DELETE" });
+    expect(stoppedServers).toBe(3);
+  });
+
+  test("reveal opens the workspace root and takes no path", async () => {
+    const a = app("local", true);
+    const p = (await (await a.request("/api/projects", json({ name: "Reveal" }))).json()) as ProjectDTO;
+    const res = await a.request(`/api/projects/${p.id}/reveal`, { method: "POST" });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(opened).toEqual([[process.platform === "darwin" ? "/usr/bin/open" : process.platform === "win32" ? "explorer.exe" : "xdg-open", p.workspacePath]]);
+    expect((await a.request(`/api/projects/${p.id}/reveal`, json({}))).status).toBe(200);
+    expect((await a.request(`/api/projects/${p.id}/reveal`, json({ path: "/etc" }))).status).toBe(422);
+    expect((await a.request(`/api/projects/${p.id}/reveal`, json([]))).status).toBe(422);
+    expect((await a.request("/api/projects/0192f0aa-0000-7000-8000-0000000000ff/reveal", { method: "POST" })).status).toBe(404);
+    expect(opened).toHaveLength(2);
+    expect(opened.every((argv) => argv.at(-1) === p.workspacePath)).toBe(true);
+  });
+
+  test("preview and reveal are rate limited per ip", async () => {
+    const a = app("local", true);
+    const p = (await (await a.request("/api/projects", json({ name: "Busy" }))).json()) as ProjectDTO;
+    const codes: number[] = [];
+    for (let i = 0; i < 21; i++) codes.push((await a.request(`/api/projects/${p.id}/reveal`, { method: "POST" })).status);
+    expect(codes.slice(0, 20).every((c) => c === 200)).toBe(true);
+    expect(codes[20]).toBe(429);
+  });
+
+  test("server mode and a missing preview module answer 404 and open nothing", async () => {
+    for (const [mode, withPreview] of [
+      ["server", true],
+      ["local", false],
+    ] as const) {
+      const a = app(mode, withPreview);
+      const p = (await (await a.request("/api/projects", json({ name: `x-${mode}` }))).json()) as ProjectDTO;
+      for (const [method, path] of [
+        ["GET", "preview"],
+        ["POST", "preview"],
+        ["DELETE", "preview"],
+        ["POST", "reveal"],
+      ] as const) {
+        const res = await a.request(`/api/projects/${p.id}/${path}`, { method });
+        expect(`${mode} ${method} ${path} ${res.status}`).toBe(`${mode} ${method} ${path} 404`);
+      }
+      expect(opened).toHaveLength(0);
+    }
   });
 });

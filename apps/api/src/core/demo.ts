@@ -43,6 +43,10 @@
 //   fills count as wins on the venue's skills
 // The tracker walks every fund stage: thesis, research, backtest, risk
 // review, paper trade, live trade, report. No network, no real exchange.
+// Seeding writes a small static index.html into each demo workspace first
+// (the landing page the cafe crew ships, the fund desk page), so Live
+// preview has something to serve from the first second; the cafe crew
+// then rebuilds its page file by file in the same folder.
 // No model is called and no key is needed. Each reply waits 2.2 to 4.2 s and
 // each meeting holds 6 to 10 s, so the crew is visibly alive. The runtime JEV
 // is scripted too (the demo judge rides on the router).
@@ -55,6 +59,8 @@
 // answered here by their exact system prompts. Token metering and the prompt
 // cache are simulated by the evals module's ScriptedProvider, so the usage
 // panels move like a real run.
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { AGENT_ROLES, type AgentRole, type ProviderModel } from "@mengai/shared";
 import { STRATEGY_SYSTEM, ScriptedProvider, type ScriptedTurn } from "../modules/evals";
 import { CEO_SYSTEM, REFLEXION_SYSTEM, ROLE_HEADER_RE, ROLE_SYSTEM, packetQuestion, type CompanyPace, type JudgeHint } from "../modules/runs";
@@ -383,7 +389,7 @@ function leadSteps(planning: boolean, security: boolean): Step[] {
   return [
     { say: "Morning, crew. This is the demo run: every step is scripted and no model is called. Reading the workspace first.", calls: [call("fs_list", { path: "." })] },
     {
-      say: `Empty workspace. ${tasks.length} tasks on the board: scaffold and copy start together, then the copy goes in, then a Launch tester${security ? ", security" : ""} and the README. Kickoff in the meeting room.`,
+      say: `Only a one file preview page in the workspace so far. ${tasks.length} tasks on the board: scaffold and copy start together, then the copy goes in, then a Launch tester${security ? ", security" : ""} and the README. Kickoff in the meeting room.`,
       calls: [call("create_tasks", { tasks })],
     },
     {
@@ -1086,6 +1092,168 @@ export function createDemoExchange(): VenueSimulator {
   };
 }
 
+// ----------------------------------------------------------- preview pages
+// Self-contained static pages (inline CSS and SVG, no script, no motion, no
+// external request) in JAL Core style: white, flat, hairline tiles, 44 px
+// targets.
+const PAGE_CSS = `:root { --ink: #1b1b1b; --ink-muted: #474747; --paper: #ffffff; --layer: #f5f5f4; --border: #e5e5e3; --accent: #b45309; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/24px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: inherit; }
+a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 8px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 72px; }
+.brand { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; text-decoration: none; }
+nav { display: flex; gap: 8px; }
+nav a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 12px; border-radius: 12px; color: var(--ink-muted); text-decoration: none; }
+nav a:hover { color: var(--ink); background: var(--layer); }
+main { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; padding: 8px 0 48px; }
+.tile { min-width: 0; padding: 24px; background: var(--paper); border: 1px solid var(--border); border-radius: 16px; }
+.hero { grid-column: span 4; display: flex; flex-direction: column; justify-content: center; gap: 16px; padding: 40px; }
+.art { grid-column: span 2; display: flex; align-items: center; justify-content: center; background: var(--layer); }
+.art svg { display: block; width: 100%; max-width: 280px; height: auto; }
+h1 { margin: 0; font-size: 48px; line-height: 56px; font-weight: 600; letter-spacing: -0.03em; }
+h2 { margin: 0 0 8px; font-size: 19px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.lede { margin: 0; max-width: 36ch; font-size: 19px; line-height: 28px; color: var(--ink-muted); }
+.cta { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border-radius: 12px; background: var(--ink); color: var(--paper); font-weight: 500; text-decoration: none; }
+.cta:hover { background: #333333; }
+.cta:active { background: #474747; }
+.section { grid-column: span 6; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.section > .title { grid-column: span 3; margin: 16px 0 0; font-size: 23px; line-height: 32px; }
+.tile p, dd { margin: 0; color: var(--ink-muted); }
+.wide { grid-column: span 3; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+dl { margin: 0; }
+dt { font-weight: 500; }
+.mark { color: var(--accent); font-weight: 600; }
+footer { padding: 0 0 40px; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+@media (max-width: 800px) {
+  .hero, .art { grid-column: span 6; }
+  .hero { padding: 24px; }
+  h1 { font-size: 40px; line-height: 48px; }
+  .section, .wide { grid-template-columns: minmax(0, 1fr); }
+  .section > .title, .wide { grid-column: span 1; }
+}`;
+
+const page = (title: string, description: string, nav: string, body: string, footer: string) => `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  <meta name="description" content="${description}">
+  <style>
+${PAGE_CSS}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="#top">${title}</a>
+      <nav aria-label="Main">${nav}</nav>
+    </header>
+    <main id="top">
+${body}
+    </main>
+    <footer>${footer}</footer>
+  </div>
+</body>
+</html>
+`;
+
+const CAT_ART = `<svg viewBox="0 0 280 200" aria-hidden="true">
+          <ellipse cx="206" cy="164" rx="50" ry="8" fill="#e5e5e3"/>
+          <rect x="174" y="112" width="64" height="48" rx="12" fill="#ffffff" stroke="#1b1b1b" stroke-width="3"/>
+          <circle cx="244" cy="134" r="12" fill="none" stroke="#1b1b1b" stroke-width="3"/>
+          <ellipse cx="206" cy="116" rx="28" ry="5" fill="#b45309"/>
+          <path d="M150 158 C 176 172 150 186 110 178" fill="none" stroke="#e08a3c" stroke-width="12" stroke-linecap="round"/>
+          <ellipse cx="104" cy="146" rx="62" ry="30" fill="#e08a3c"/>
+          <circle cx="54" cy="134" r="25" fill="#e08a3c"/>
+          <path d="M34 120 L40 96 L54 112 Z M58 110 L70 96 L74 120 Z" fill="#e08a3c"/>
+          <path d="M42 136 q5 4 10 0 M60 136 q5 4 10 0" fill="none" stroke="#1b1b1b" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>`;
+
+/** Whisker Cafe: the landing page the demo crew ships, as one file. */
+export const DEMO_PREVIEW_HTML = page(
+  "Whisker Cafe",
+  "Slow coffee. Soft paws. Twelve resident cats, one quiet room, and coffee we roast ourselves.",
+  `<a href="#menu">Menu</a><a href="#visit">Visit</a>`,
+  `      <section class="tile hero">
+        <h1>Slow coffee. Soft paws.</h1>
+        <p class="lede">Twelve resident cats, one quiet room, and coffee we roast ourselves.</p>
+        <a class="cta" href="#visit">Plan a visit</a>
+      </section>
+      <div class="tile art" role="img" aria-label="A ginger cat asleep next to a latte">
+        ${CAT_ART}
+      </div>
+      <section class="section" id="menu" aria-labelledby="menu-title">
+        <h2 class="title" id="menu-title">On the menu</h2>
+        <article class="tile"><h2>House latte</h2><p>Roasted in small batches every Monday.</p></article>
+        <article class="tile"><h2>Matcha</h2><p>For the cats who do not do coffee.</p></article>
+        <article class="tile"><h2>Morning pastries</h2><p>Baked each morning, crumbs shared with no one.</p></article>
+      </section>
+      <section class="section" id="visit" aria-labelledby="visit-title">
+        <h2 class="title" id="visit-title">Visit us</h2>
+        <div class="tile wide">
+          <p>Book a slot and a cat will find you. All twelve cats are adopted and pick their own laps.</p>
+          <dl><dt>Open</dt><dd>Daily, 8 to 18</dd></dl>
+          <dl><dt>Residents</dt><dd><span class="mark">12</span> cats, all adopted</dd></dl>
+        </div>
+      </section>`,
+  "Whisker Cafe. Coffee, calm and cats. Built by a MengAI demo crew.",
+);
+
+const DESK_ART = `<svg viewBox="0 0 280 200" aria-hidden="true">
+          <rect x="28" y="120" width="20" height="52" rx="4" fill="#475569"/>
+          <rect x="60" y="104" width="20" height="68" rx="4" fill="#475569"/>
+          <rect x="92" y="112" width="20" height="60" rx="4" fill="#475569"/>
+          <rect x="124" y="88" width="20" height="84" rx="4" fill="#475569"/>
+          <rect x="156" y="72" width="20" height="100" rx="4" fill="#15803d"/>
+          <rect x="188" y="56" width="20" height="116" rx="4" fill="#15803d"/>
+          <rect x="220" y="64" width="20" height="108" rx="4" fill="#15803d"/>
+        </svg>`;
+
+/** Paw Capital: the fund desk page, pointing at the files the fund crew writes. */
+export const FUND_PREVIEW_HTML = page(
+  "Paw Capital",
+  "The Paw Capital paper desk: one BTC-USD trading day with paper money, from thesis to P&amp;L report.",
+  `<a href="#desk">Desk</a><a href="#files">Files</a>`,
+  `      <section class="tile hero">
+        <h1>Paw Capital paper desk</h1>
+        <p class="lede">One trading day on BTC-USD with paper money: a momentum thesis, a backtest, a risk review, paper fills and a P&amp;L report.</p>
+        <a class="cta" href="#files">See the desk files</a>
+      </section>
+      <div class="tile art" role="img" aria-label="Daily BTC-USD bars breaking out above their range">
+        ${DESK_ART}
+      </div>
+      <section class="section" id="desk" aria-labelledby="desk-title">
+        <h2 class="title" id="desk-title">How the desk works</h2>
+        <article class="tile"><h2>Thesis first</h2><p>The quant researcher writes the breakout rule down before any trade.</p></article>
+        <article class="tile"><h2>Risk on every order</h2><p>The risk manager reviews the strategy and each order before it goes out.</p></article>
+        <article class="tile"><h2>The owner decides live</h2><p>Paper orders fill in the simulator. The one live order waits for the owner.</p></article>
+      </section>
+      <section class="section" id="files" aria-labelledby="files-title">
+        <h2 class="title" id="files-title">Where the work lands</h2>
+        <div class="tile wide">
+          <dl><dt>notes/thesis.md</dt><dd>The momentum rule and when it is wrong</dd></dl>
+          <dl><dt>reports/backtest.md</dt><dd>The rule over the sample bars</dd></dl>
+          <dl><dt>trades/log.csv</dt><dd>Every paper fill, with price and size</dd></dl>
+        </div>
+      </section>`,
+  "Paper money only. A record of the desk's work, not investment advice. Built by a MengAI demo crew.",
+);
+
+/** Writes index.html into a fresh demo workspace; never replaces a file that is already there. */
+export async function seedPreviewPage(root: string, html: string, logger: Logger): Promise<boolean> {
+  try {
+    await writeFile(join(root, "index.html"), html, { flag: "wx", mode: 0o644 });
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST") logger.log("warn", "demo preview page not written", { error: e instanceof Error ? e.message : String(e) });
+    return false;
+  }
+}
+
 // -------------------------------------------------------------------- seed
 export interface DemoSeed {
   projectId: string;
@@ -1105,6 +1273,8 @@ export async function seedDemo(deps: {
 }): Promise<DemoSeed | null> {
   if ((await deps.projects.list()).length > 0) return null;
   const project = await deps.projects.create({ name: DEMO_PROJECT_NAME });
+  // before the run starts, so the crew's first look and first write find it in place
+  await seedPreviewPage(project.workspacePath, DEMO_PREVIEW_HTML, deps.logger);
   const run = await deps.runs.create({ projectId: project.id, goal: DEMO_GOAL });
   deps.logger.log("info", "demo crew started", { projectId: project.id, runId: run.id });
   let fund: DemoSeed["fund"] = null;
@@ -1118,6 +1288,7 @@ export async function seedDemo(deps: {
       }
     }
     const fp = await deps.projects.create({ name: FUND_DEMO_PROJECT_NAME });
+    await seedPreviewPage(fp.workspacePath, FUND_PREVIEW_HTML, deps.logger);
     const fr = await deps.runs.create({ projectId: fp.id, goal: FUND_DEMO_GOAL, company: "fund" });
     deps.logger.log("info", "demo fund started", { projectId: fp.id, runId: fr.id });
     fund = { projectId: fp.id, runId: fr.id };

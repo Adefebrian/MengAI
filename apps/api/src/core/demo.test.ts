@@ -2,12 +2,13 @@
 // container (orchestrator, tools, workspace) must show every beat the office
 // scene choreographs, in a believable order. Pace and meetings run in ms.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "@mengai/config";
 import { CAT_NAMES, type AgentRole, type EventType, type MengaiEvent } from "@mengai/shared";
 import { STRATEGY_SYSTEM } from "../modules/evals";
+import { detectPreview } from "../modules/preview";
 import { CEO_SYSTEM, REFLEXION_SYSTEM, ROLE_SYSTEM } from "../modules/runs";
 import { createDb } from "./adapters/db-bunsql";
 import { buildConfig } from "./config";
@@ -17,6 +18,7 @@ import { HttpError } from "../lib/http";
 import {
   DEMO_CRITIQUE,
   DEMO_CSS,
+  DEMO_PREVIEW_HTML,
   DEMO_MEETING_MS,
   DEMO_PACE_MS,
   DEMO_QUESTION,
@@ -24,6 +26,7 @@ import {
   DEMO_SMOKE,
   DEMO_VENUE,
   FUND_DEMO_GOAL,
+  FUND_PREVIEW_HTML,
   FUND_TITLE,
   FUND_TRADES,
   createDemoExchange,
@@ -32,6 +35,8 @@ import {
   demoCharters,
   demoMeetingMs,
   demoTurn,
+  seedDemo,
+  seedPreviewPage,
 } from "./demo";
 import type { ChatRequest } from "./ports";
 import type { ExecRequest, ExecResult, Runner } from "./ports/runner";
@@ -313,6 +318,54 @@ describe("demo crew: one run shows every scenario", () => {
       await container.close();
     }
   }, 40_000);
+});
+
+describe("demo seed: a live preview from the first second", () => {
+  test("each demo workspace gets a static index.html before its run starts, never over an existing file", async () => {
+    const dirs = [await realpath(await tempDir()), await realpath(await tempDir())];
+    const byProject = new Map<string, string>();
+    const pageAtRunStart: boolean[] = [];
+    let n = 0;
+    const projects = {
+      list: async () => [],
+      create: async ({ name }: { name: string }) => {
+        const id = `p${n}`;
+        const workspacePath = dirs[n++]!;
+        byProject.set(id, workspacePath);
+        return { id, name, workspacePath, createdAt: 0, updatedAt: 0, lastRunId: null };
+      },
+    };
+    const runs = {
+      create: async (body: { projectId: string }) => {
+        pageAtRunStart.push(await stat(join(byProject.get(body.projectId)!, "index.html")).then(() => true, () => false));
+        return { id: `r-${body.projectId}` } as never;
+      },
+    };
+    const seed = await seedDemo({ projects, runs, logger: silentLogger });
+    expect(seed).toEqual({ projectId: "p0", runId: "r-p0", fund: { projectId: "p1", runId: "r-p1" } });
+    expect(pageAtRunStart).toEqual([true, true]);
+    for (const [dir, html] of [
+      [dirs[0]!, DEMO_PREVIEW_HTML],
+      [dirs[1]!, FUND_PREVIEW_HTML],
+    ] as const) {
+      expect(await readFile(join(dir, "index.html"), "utf8")).toBe(html);
+      expect(await detectPreview(dir)).toEqual({ kind: "static", dir, command: "static index.html" });
+      // self-contained: no script, stylesheet link, font, image or any other request leaves the page
+      expect(html).not.toMatch(/<script|<link|<img|<iframe|@import|url\(|(?:src|href)\s*=\s*["']?(?:https?:)?\/\//i);
+      expect(html).not.toMatch(/https?:/);
+      // JAL law and the demo scripts: no em or en dash, no emoji, no placeholder, no advice language, no comment
+      expect(html).not.toMatch(/[\u2013\u2014]|\p{Extended_Pictographic}/u);
+      expect(html).not.toMatch(/goes here|you should|guaranteed|we recommend|can't lose|<!--/i);
+      expect(html).not.toMatch(/gradient|shadow|glow/i);
+    }
+    expect(DEMO_PREVIEW_HTML).toContain("Slow coffee. Soft paws.");
+    expect(DEMO_PREVIEW_HTML).toContain('aria-label="A ginger cat asleep next to a latte"');
+    expect(FUND_PREVIEW_HTML).toContain("not investment advice");
+    // a folder that already has an index.html keeps it
+    await writeFile(join(dirs[0]!, "index.html"), "mine");
+    expect(await seedPreviewPage(dirs[0]!, DEMO_PREVIEW_HTML, silentLogger)).toBe(false);
+    expect(await readFile(join(dirs[0]!, "index.html"), "utf8")).toBe("mine");
+  });
 });
 
 describe("demo crew: script units", () => {

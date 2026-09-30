@@ -3,23 +3,33 @@
 // local mode the owner may bind an existing folder instead; it must be a
 // real directory that is not /, the home root or one of its ancestors, not
 // inside a credential or system folder, and not overlapping the app data dir.
-import type { CreateProjectBody, FileContent, FileNodeDTO, ProjectDTO } from "@mengai/shared";
+// Live preview and Open folder (local engine only) go through the preview
+// module with this project's workspace root, never any other path.
+import type { CreateProjectBody, FileContent, FileNodeDTO, PreviewDTO, ProjectDTO } from "@mengai/shared";
 import { mkdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import type { ModuleContext } from "../../core/module";
 import type { ProjectsService, WorkspaceService } from "../../core/services";
 import { badRequest, forbidden, HttpError, notFound } from "../../lib/http";
+import { LOCAL_ONLY, type PreviewService } from "../preview";
 import { createProjectsRepo, type ProjectRow } from "./repo";
 
 export interface ProjectsDeps {
   workspace: WorkspaceService;
+  /** live preview and open folder; absent (or server mode) answers 404 */
+  preview?: PreviewService;
 }
 
 /** ProjectsService plus the file views the routes expose */
 export interface ProjectsServiceImpl extends ProjectsService {
   listFiles(id: string, path: string, depth: number): Promise<FileNodeDTO[]>;
   readFile(id: string, path: string, range: { from?: number; to?: number }): Promise<FileContent>;
+  preview(id: string): Promise<PreviewDTO>;
+  startPreview(id: string, opts: { restart?: boolean }): Promise<PreviewDTO>;
+  stopPreview(id: string): Promise<PreviewDTO>;
+  /** opens the workspace root in the OS file manager */
+  reveal(id: string): Promise<void>;
 }
 
 const HOME_DENY = [".ssh", ".aws", ".gnupg", ".config", ".kube", ".docker", ".azure", ".password-store", "Library"];
@@ -67,6 +77,11 @@ export function createProjectsService(ctx: ModuleContext, deps: ProjectsDeps): P
     const row = await repo.get(id);
     if (!row) throw notFound("project");
     return row;
+  }
+
+  function previewer(): PreviewService {
+    if (!deps.preview || ctx.config.mode !== "local") throw new HttpError(404, "not_found", LOCAL_ONLY);
+    return deps.preview;
   }
 
   async function validateChosenFolder(path: string): Promise<string> {
@@ -126,6 +141,7 @@ export function createProjectsService(ctx: ModuleContext, deps: ProjectsDeps): P
       // record only: the files on disk always stay with the owner
       if (!(await repo.remove(id))) throw notFound("project");
       await ctx.kv.del(lastRunKey(id)).catch(() => undefined);
+      await deps.preview?.forget(id).catch((e) => ctx.logger.log("warn", "preview stop on project delete failed", { projectId: id, error: e instanceof Error ? e.message : String(e) }));
     },
 
     async root(id) {
@@ -159,6 +175,28 @@ export function createProjectsService(ctx: ModuleContext, deps: ProjectsDeps): P
     async readFile(id, path, range) {
       const r = await deps.workspace.read(await service.root(id), path, range);
       return { path, content: r.content, truncated: r.truncated, size: r.size, binary: r.binary };
+    },
+
+    async preview(id) {
+      const p = previewer();
+      return p.status(id, await service.root(id));
+    },
+
+    async startPreview(id, opts) {
+      const p = previewer();
+      return p.start(id, await service.root(id), opts);
+    },
+
+    async stopPreview(id) {
+      const p = previewer();
+      await mustGet(id);
+      return p.stop(id);
+    },
+
+    async reveal(id) {
+      const p = previewer();
+      // the workspace root only: the route takes no path
+      await p.reveal(await service.root(id));
     },
   };
   return service;
