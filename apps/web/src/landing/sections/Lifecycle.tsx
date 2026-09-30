@@ -40,6 +40,8 @@ import {
   lifeAt,
   lifeBeats,
   lifeLabel,
+  meetingStep,
+  roomOf,
   trackerAt,
   type Company,
   type CompanyKind,
@@ -47,6 +49,7 @@ import {
 } from "../story/lifecycle";
 import { hourOf } from "../story/script";
 import { useFadeOnChange } from "../story/useFade";
+import { useLifeCamera } from "../story/useLifeCamera";
 import { useStory, type StoryPlayer, type StoryScript, type StoryVisibility } from "../story/useStory";
 
 export const LIFE_TITLE = "Watch a company grow around one goal";
@@ -106,23 +109,31 @@ function LifeStage({ company }: { company: Company }) {
   );
   const story = useStory(floor, script, LIFE_VISIBILITY);
   const scene = useMemo(() => lifeAt(company, story.index), [company, story.index]);
+  const mount = useOfficeMount(company, story);
+  const room = useMemo(() => roomOf(company, story.index), [company, story.index]);
+  const cam = useLifeCamera(floor, room, `${mount.key}:${story.index}`);
+  const floorStyle = cam.narrow
+    ? ({ ...staggerStyle(1), "--lp-window-h": `${cam.viewH}px`, "--lp-cam-y": `${-cam.top}px` } as CSSProperties)
+    : staggerStyle(1);
 
   return (
     <div className="lp-life-stage" data-kind={company.kind}>
       <Tracker company={company} scene={scene} story={story} />
-      <div ref={floor} className="lp-life-office" data-motion="rise" style={staggerStyle(1)}>
-        <Office
-          agents={scene.agents}
-          meetings={scene.meetings}
-          beats={story.beats}
-          onBeatDone={story.done}
-          plan={scene.plan}
-          variant="full"
-          theme={company.theme}
-          still={story.still}
-          label={lifeLabel(company, scene.step)}
-          hour={hourOf(scene.step.clock)}
-        />
+      <div ref={floor} className="lp-life-office" data-motion="rise" data-window={cam.narrow ? "" : undefined} style={floorStyle}>
+        <div key={mount.key} className="lp-life-scene" data-cut={mount.key > 0 ? "" : undefined}>
+          <Office
+            agents={scene.agents}
+            meetings={scene.meetings}
+            beats={story.beats}
+            onBeatDone={story.done}
+            plan={scene.plan}
+            variant="full"
+            theme={company.theme}
+            still={story.still}
+            label={lifeLabel(company, scene.step)}
+            hour={hourOf(scene.step.clock)}
+          />
+        </div>
       </div>
       <div className="lp-life-panels">
         <HeadCard company={company} scene={scene} />
@@ -130,6 +141,29 @@ function LifeStage({ company }: { company: Company }) {
       </div>
     </div>
   );
+}
+
+/**
+ * The meeting cut (critic round 2, life-1280-t25): when the story enters
+ * its meeting, the floor opens on a fresh Office with the meeting already
+ * in session, so the crew sits at the chair anchors exactly as the Office
+ * seats a meeting that is running when it mounts (one cat per seat, extra
+ * cats on their own stand spots at the foot of the table), instead of six
+ * cats crossing the room at once. The key changes when the story crosses
+ * into or out of the meeting chapter, and when a jump lands on the meeting
+ * again; every other step keeps the same Office, so hires still walk in
+ * and the crew walks back to the desks after the meeting.
+ */
+function useOfficeMount(company: Company, story: StoryPlayer): { key: number } {
+  const at = meetingStep(company);
+  const chapter = at >= 0 && story.index >= at ? 1 : 0;
+  const onMeeting = story.index === at;
+  const ref = useRef({ key: 0, chapter: 0, play: -1 });
+  const cur = ref.current;
+  if (chapter !== cur.chapter || (onMeeting && cur.play !== story.play)) {
+    ref.current = { key: cur.key + 1, chapter, play: onMeeting ? story.play : cur.play };
+  }
+  return { key: ref.current.key };
 }
 
 function controlLabel(story: StoryPlayer): string {

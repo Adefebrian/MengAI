@@ -40,13 +40,12 @@ import type { OfficeAgent, OfficeProps } from "../office-contract";
 import { useReducedMotion } from "../motion";
 import { LYING_POSES, activityWords, coatOf, poseFor } from "../poses";
 import { BackCatArt, FloorActor, SeatedCat, catAttrs, useOneShot } from "./actors";
-import { ApproveStamp, BoxArt, Bubble, Chair, DeskBell, DeskBody, DeskCard, DeskExtra, DeskMug, KeyboardPaws, Monitor, Plant, VacantDesk, fundScreenFor, screenFor, screenLabel } from "./art";
+import { ApproveStamp, BoxArt, Bubble, Chair, DeskBell, DeskBody, DeskCard, DeskExtra, DeskMug, KeyboardPaws, Monitor, Plant, VacantDesk, fundScreenFor, screenOf } from "./art";
 import { AgendaBoard, Whiteboard, type Owners } from "./boards";
 import { Director, type ActorView } from "./director";
 import { allDesks, planOffice, type Desk, type OfficePlan } from "./geometry";
 import { BackWalls, BedCell, BedRim, CeoFurniture, Floors, FrontWalls, LockerCell, MeetingTable, PantryArt, PrinterCell, RackCell, ShelfCell, Stool } from "./rooms";
 import { advanceTrack, dropLeaver, isVacant, startTrack, type Track } from "./seating";
-import { baseName } from "./text";
 import { SceneUid, sceneClip, useSceneUid } from "./uid";
 
 /** At most this many desk cats play their full beat loop at once (JEV motion.intensity live_cap). */
@@ -181,10 +180,11 @@ function DeskView({ desk, agent, plan, director, live, loop, offscreen }: DeskVi
   const fund = plan.theme === "fund";
   // the paw stays only for a resting cat or an empty seat: a cat with work keeps its role's screen between tool calls
   const hasWork = Boolean(agent.taskTitle || agent.file) && agent.status !== "stopped";
-  const mode = screenFor(agent.activity, agent.role, hasWork);
+  const screen = screenOf(agent.activity, agent.role, hasWork, agent.file);
+  const mode = screen.mode;
   const working = agent.status === "working" || agent.status === "thinking";
   const clip = sceneClip(useSceneUid(), agent.id);
-  const label = baseName(agent.file) ?? screenLabel(mode);
+  const label = screen.title;
   const animate = live && loop && atDesk && working;
   const dim = !atDesk || agent.status === "stopped";
   // the fund's trader stands to execute an order (automate); a run is a backtest at the desk
@@ -206,7 +206,7 @@ function DeskView({ desk, agent, plan, director, live, loop, offscreen }: DeskVi
           <rect className="of-stand-base" x={m.x + m.w / 2 - 15} y={m.y + m.h + 7} width={30} height={4} rx={2} />
           {/* the market screen never sleeps; the work screen stays on (dimmed, still) while the trader steps away */}
           <Monitor r={{ x: m.x, y: m.y, w: half, h: m.h }} mode={packed ? "idle" : "chart"} label={SYMBOLS[seed % SYMBOLS.length]!} animate={animate || (live && loop && atDesk)} dim={dim} clip={`${clip}-m1`} seed={seed} stand={false} />
-          <Monitor r={{ x: m.x + half + 4, y: m.y, w: half, h: m.h }} mode={atDesk || (hasWork && !packed) ? fundScreenFor(agent.activity, agent.role, hasWork) : "idle"} label={label} animate={animate} dim={dim} clip={`${clip}-m2`} seed={seed + 7} note={!packed} stand={false} />
+          <Monitor r={{ x: m.x + half + 4, y: m.y, w: half, h: m.h }} mode={atDesk || (hasWork && !packed) ? fundScreenFor(agent.activity, agent.role, hasWork) : "idle"} label={screenOf(agent.activity, agent.role, hasWork, agent.file, true).title} animate={animate} dim={dim} clip={`${clip}-m2`} seed={seed + 7} note={!packed} stand={false} />
         </g>
       ) : (
         // a cat that steps away leaves its work on screen (dimmed, still); the paw is for a resting cat or a packed desk

@@ -207,3 +207,11 @@ describe("story visibility", () => {
     expect(visibleShare(0, 0, 0)).toBe(0);
   });
 });
+
+describe("the hero crew's looks (critic round 2)", () => {
+  test("Oyen is the ginger CEO and no coat repeats", () => {
+    expect(CREW[0]?.id).toBe("oyen");
+    expect(CREW[0]?.coat).toBe("ginger");
+    expect(new Set(CREW.map((c) => c.coat)).size).toBe(CREW.length);
+  });
+});

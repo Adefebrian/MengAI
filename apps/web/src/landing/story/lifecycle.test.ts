@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CAT_NAMES } from "@mengai/shared";
-import { COMPANIES, COMPANY_KINDS, HEAD_KEYS, LIFE_LABEL, TRACKER_STOP_ID, cellsAt, lifeAt, lifeBeats, lifeEnergy, lifeLabel, stageWords, trackerAt, type Company } from "./lifecycle";
+import { COMPANIES, COMPANY_KINDS, FUND, HEAD_KEYS, LIFE_LABEL, STUDIO, TRACKER_STOP_ID, cellsAt, lifeAt, lifeBeats, lifeEnergy, lifeLabel, meetingStep, roomOf, stageWords, trackerAt, type Company } from "./lifecycle";
 import { nextDelay, openingStep, type StoryScript } from "./useStory";
 
 const EMDASH = String.fromCharCode(0x2014);
@@ -249,5 +249,30 @@ describe("delivery tracker state", () => {
     const ids = [...trackerAt(COMPANIES.studio, 0).stages, ...trackerAt(COMPANIES.fund, 0).stages].map((s) => s.id);
     expect(ids).toEqual(["goal", "planned", "hired", "working", "review", "testing", "shipped", "thesis", "research", "backtest", "risk_review", "paper_trade", "live_trade", "report"]);
     expect(Object.keys(TRACKER_STOP_ID).sort()).toEqual(["live", "paper", "plan", "risk"]);
+  });
+});
+
+describe("crew identity and the phone camera (critic round 2)", () => {
+  for (const c of [STUDIO, FUND]) {
+    test(`${c.kind}: Oyen is the ginger CEO and no coat repeats in the crew`, () => {
+      const oyen = c.cats.find((x) => x.id === "oyen");
+      expect(oyen?.coat).toBe("ginger");
+      expect(oyen?.role).toBe("lead");
+      expect(new Set(c.cats.map((x) => x.coat)).size).toBe(c.cats.length);
+    });
+
+    test(`${c.kind}: hires and leaves play at the door, the meeting in its room`, () => {
+      c.steps.forEach((s, i) => {
+        const room = roomOf(c, i);
+        if (s.hire?.length || s.leave?.length) expect(room.kind).toBe("door");
+        else if (s.meetingStart) expect(room.kind).toBe("meeting");
+      });
+      expect(meetingStep(c)).toBeGreaterThan(0);
+    });
+  }
+
+  test("copy work shows the doc screen, never the paw", () => {
+    const desks = STUDIO.steps.find((s) => s.id === "desks");
+    expect(desks?.agents?.serabi?.activity).toBe("read");
   });
 });

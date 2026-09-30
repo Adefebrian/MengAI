@@ -9,7 +9,8 @@
 //   logo-row.row         runs on your own key, the providers (attached)
 //   custom.lifecycle     one goal grows a whole company, studio or fund
 //   bento.lead-left      the editor, the timeline, decisions and minutes
-//   feature-grid.rows    bring your own API key, tools and trading safety
+//   split.inset          bring your own API key: one line per claim beside
+//                        the app's key, tier, connector and trading view
 //   stat-row.chart       the measured token numbers beside the chart
 //   bento.lead-right     the safety controls, as the app shows them
 //   faq.split            questions, answered plainly
@@ -44,7 +45,7 @@ export const LANDING_LEDGER: RecipeEntry[] = [
   "logo-row.row",
   "custom.lifecycle",
   "bento.lead-left",
-  "feature-grid.rows",
+  "split.inset",
   "stat-row.chart",
   "bento.lead-right",
   "faq.split",

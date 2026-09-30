@@ -1,32 +1,57 @@
 // The /office preview's scripted story: a pure function of the time into
 // the loop, so every run of the page plays the same company day, in two
-// companies. Studio: Oyen (the CEO cat) hands the settings form to Belang,
-// Tompel asks Oyen for a dev dependency and gets a yes, Tempe sends the
-// form back, Belo is hired and walks in with a box, Cimol takes a coffee,
-// the crew holds a sync, Moci's contract ends and he walks out with his
-// box, Tempe passes the fix, Belang pins it to the board, Gembul hands
-// over the empty state art and naps, Garong asks about a leaked test key
-// and hears "the owner decides", everyone meets for the wrap-up, then the
-// crew celebrates. Fund: the same day on a trading floor, with a backtest,
-// a risk committee, an execution and the bell. Sample content only.
+// companies. The day opens on desk work (every cat with a task at its desk,
+// only Oyen carrying the first card and Belang waiting for it) and the
+// standup for the next day closes it, as the landing hero does. Studio:
+// Oyen (the CEO cat) hands the settings form to Belang, Tompel asks Oyen for
+// a dev dependency and gets a yes, Tempe sends the form back, Cimol takes a
+// coffee, Moci's contract ends and he walks out with his box, Belo is hired
+// and walks in with one, the crew holds a sync, Tempe passes the fix,
+// Belang pins it to the board, Gembul hands over the empty state art and
+// naps, Garong asks about a leaked test key and hears "the owner decides",
+// everyone meets for the wrap-up, the crew celebrates, then three cats
+// plan tomorrow. Fund: the same day on a trading floor, with a backtest, a
+// risk committee, an execution and the bell. Sample content only. Coats
+// come from crewLooks: Oyen is the ginger tabby and no coat repeats among
+// the cats on the floor at once (the leaver is gone before the hire walks in).
 import type { Activity, AgentStatus, MeetingKind, Mood } from "@mengai/shared";
 import type { OfficeAgent, OfficeBeat, OfficeMeeting, OfficeProps } from "../src/office-contract";
-import { rosterCrew, type RosterCat } from "../src/roster";
+import { crewLooks, rosterCrew, type RosterCat } from "../src/roster";
 
 export const LOOP_S = 118;
 export type Theme = "studio" | "fund";
 
 type Member = RosterCat;
 
-/** The crew in desk order, read from the shared roster so every scene gives a cat the same coat; Oyen is the CEO cat. */
-export const OFFICE_CREW: Member[] = rosterCrew(["Oyen", "Belang", "Tempe", "Tompel", "Gembul", "Cimol", "Garong", "Moci", "Cemong", "Unyil", "Ciko", "Mpus"]);
+const NAMES = ["Oyen", "Belang", "Tempe", "Tompel", "Gembul", "Cimol", "Garong", "Moci", "Cemong", "Unyil", "Ciko", "Mpus"];
+const HIRE_NAME = "Belo";
+/** Moci's contract ends: he packs a box and walks out, before the hire walks in. */
+export const LEAVER = "moci";
+export const LEAVE_AT = 22;
+export const HIRE_AT = 26;
+
+/** The crew in desk order, read from the shared roster (name, default role, seed); Oyen is the CEO cat. */
+export const OFFICE_CREW: Member[] = rosterCrew(NAMES);
 
 /** The hire who walks in with a box partway through the day. */
-export const HIRE: Member = rosterCrew(["Belo"])[0]!;
-export const HIRE_AT = 26;
-/** Moci's contract ends: he packs a box and walks out. */
-export const LEAVER = "moci";
-export const LEAVE_AT = 47;
+export const HIRE: Member = rosterCrew([HIRE_NAME])[0]!;
+
+/**
+ * Coats per crew size from crewLooks: the crew's own, then the hire's over
+ * the cats still on the floor when it walks in (the leaver has gone), so no
+ * two cats on the floor at once share a coat while the palette lasts.
+ */
+const LOOKS = new Map<number, Map<string, Member["coat"]>>();
+function looksFor(size: number): Map<string, Member["coat"]> {
+  const known = LOOKS.get(size);
+  if (known) return known;
+  const crew = NAMES.slice(0, size);
+  const coats = new Map<string, Member["coat"]>(crewLooks(crew).map((l, i) => [crew[i]!.toLowerCase(), l.coat]));
+  const stay = crew.filter((n) => n.toLowerCase() !== LEAVER);
+  coats.set(HIRE_NAME.toLowerCase(), crewLooks([...stay, HIRE_NAME])[stay.length]!.coat);
+  LOOKS.set(size, coats);
+  return coats;
+}
 
 /** The story clock: the loop is one working day, 09:00 to 19:00, so the windows show day until 18:00 and dusk at the close. */
 export function hourAt(t: number): number {
@@ -84,37 +109,37 @@ const STUDIO: Day = {
       [103, "done", "celebrate", "Goal done", "Ship the settings page", "report.md", "proud"],
     ],
     belang: [
-      [0, "waiting", "wait", "Waiting on Oyen", null, null],
+      [0, "waiting", "wait", "Waiting on Oyen", FORM, null],
       [8, "working", "code", "Editing settings.tsx", FORM, "apps/web/src/settings.tsx", "focused"],
-      [15, "working", "run", "Running bun test", FORM, "settings.test.ts", "focused"],
+      [15, "working", "run", "Running bun test", FORM, "form.test.ts", "focused"],
       [24, "waiting", "wait", "Waiting for review", FORM, "settings.tsx"],
-      [54, "working", "code", "Adding the missing test", FORM, "settings.test.ts", "focused"],
-      [60, "working", "run", "Running bun test again", FORM, "settings.test.ts", "focused"],
+      [54, "working", "code", "Adding the missing test", FORM, "form.test.ts", "focused"],
+      [60, "working", "run", "Running bun test again", FORM, "form.test.ts", "focused"],
       [63, "working", "handoff", "Pinning it to the board", FORM, "settings.tsx", "proud"],
-      [71, "working", "code", "Wiring the empty state", ART, "empty-state.tsx"],
-      [103, "done", "celebrate", "Shipped it", ART, "empty-state.tsx", "proud"],
+      [71, "working", "code", "Wiring the empty state", ART, "empty.tsx"],
+      [103, "done", "celebrate", "Shipped it", ART, "empty.tsx", "proud"],
     ],
     tempe: [
-      [0, "idle", "rest", null, null, null],
+      [0, "working", "read", "Reading the style guide", "Review the settings form", "style.md"],
       [13, "working", "review", "Reading the settings diff", "Review the settings form", "settings.tsx"],
       [26, "working", "read", "Writing review notes", "Review the settings form", "review.md"],
-      [54, "working", "review", "Checking the fix", "Review the settings form", "settings.test.ts", "focused"],
+      [54, "working", "review", "Checking the fix", "Review the settings form", "form.test.ts", "focused"],
       [62, "idle", "rest", "Review done", null, null, "proud"],
       [103, "done", "celebrate", null, null, null, "proud"],
     ],
     tompel: [
-      [0, "working", "code", "Writing router tests", "Test the router", "router.test.ts"],
-      [4, "waiting", "ask", "Asking Oyen about a dev dependency", "Test the router", "package.json"],
-      [15, "working", "run", "Running the suite", "Test the router", "router.test.ts", "focused"],
-      [22, "working", "review", "Hunting a flaky test", "Test the router", "router.test.ts", "focused"],
-      [54, "working", "run", "Running the suite again", "Test the router", "router.test.ts"],
+      [0, "working", "code", "Writing router tests", "Test the router", "nav.test.ts"],
+      [7, "waiting", "ask", "Asking Oyen about a dev dependency", "Test the router", "package.json"],
+      [15, "working", "run", "Running the suite", "Test the router", "nav.test.ts", "focused"],
+      [22, "working", "review", "Hunting a flaky test", "Test the router", "nav.test.ts", "focused"],
+      [54, "working", "run", "Running the suite again", "Test the router", "nav.test.ts"],
       [66, "idle", "rest", "Suite is green", null, null, "proud"],
       [103, "done", "celebrate", null, null, null, "proud"],
     ],
     gembul: [
-      [0, "working", "design", "Drawing the empty state", ART, "empty-state.svg", "focused"],
+      [0, "working", "design", "Drawing the empty state", ART, "empty.svg", "focused"],
       [36, "working", "code", "Laying out the form", ART, "settings.css"],
-      [68, "working", "handoff", "Handing the art to Belang", ART, "empty-state.svg"],
+      [68, "working", "handoff", "Handing the art to Belang", ART, "empty.svg"],
       [74, "idle", "rest", "Time for a nap", null, null, "tired"],
       [103, "done", "celebrate", null, null, null, "proud"],
     ],
@@ -135,10 +160,9 @@ const STUDIO: Day = {
       [103, "done", "celebrate", null, null, null],
     ],
     moci: [
-      [0, "idle", "rest", "Coffee before the rotation", null, null],
-      [12, "working", "automate", "Rotating the staging certs", "Staging certs", "certs.md"],
-      [30, "idle", "rest", "Handing over the runbook", null, null],
-      [42, "done", "rest", "Contract done, packing up", null, null, "proud"],
+      [0, "working", "automate", "Rotating the staging certs", "Staging certs", "certs.md"],
+      [14, "idle", "rest", "Handing over the runbook", null, null],
+      [18, "done", "rest", "Contract done, packing up", null, null, "proud"],
     ],
     belo: [
       [0, "idle", "rest", "First day", null, null],
@@ -155,7 +179,7 @@ const STUDIO: Day = {
       [103, "done", "celebrate", null, null, null],
     ],
     unyil: [
-      [0, "working", "run", "Running smoke tests", "Smoke tests", "smoke.test.ts"],
+      [0, "working", "run", "Running smoke tests", "Smoke tests", "e2e.test.ts"],
       [36, "idle", "rest", "Smoke tests pass", null, null],
       [103, "done", "celebrate", null, null, null],
     ],
@@ -165,27 +189,14 @@ const STUDIO: Day = {
       [103, "done", "celebrate", null, null, null],
     ],
     mpus: [
-      [0, "idle", "rest", null, null, null],
-      [12, "working", "research", "Comparing date pickers", "Compare date pickers", "notes.md"],
+      [0, "working", "research", "Comparing date pickers", "Compare date pickers", "pickers.md"],
       [72, "idle", "rest", "Wrote it up", null, null],
       [103, "done", "celebrate", null, null, null],
     ],
   },
   events: [
-    {
-      t: 0,
-      key: "m1s",
-      meetingStart: {
-        id: "standup",
-        kind: "sync",
-        title: "Standup: the settings page",
-        agentIds: ["tempe", "gembul", "garong"],
-        agenda: ["What each of us ships today", "Who reviews the form", "Blockers"],
-      },
-    },
-    { t: 12.5, key: "m1e", meetingEnd: { id: "standup", notes: ["Belang builds the form", "Tempe reviews it", "Garong audits the dependencies"] } },
     { t: 0.3, key: "h1", beat: { kind: "handoff", fromId: "oyen", toId: "belang", taskTitle: FORM } },
-    { t: 4, key: "a1", beat: { kind: "ask", fromId: "tompel", toId: "oyen", question: "Can I add a dev dependency?" } },
+    { t: 7, key: "a1", beat: { kind: "ask", fromId: "tompel", toId: "oyen", question: "Can I add a dev dependency?" } },
     { t: 12, key: "d1", beat: { kind: "decided", byId: "oyen", toId: "tompel", approved: true, answer: "Yes, as a dev dependency" } },
     { t: 16, key: "r1", beat: { kind: "review", reviewerId: "tempe", ownerId: "belang", passed: false, taskTitle: FORM } },
     { t: 19, key: "c1", coffee: "cimol" },
@@ -221,6 +232,19 @@ const STUDIO: Day = {
     },
     { t: 100, key: "m3e", meetingEnd: { id: "wrapup", notes: ["The settings page shipped", "The key rotation waits on the owner", "Belo owns the API next"] } },
     { t: 104, key: "cel", beat: { kind: "celebrate", agentIds: ALL } },
+    // the next day's standup closes the loop, so the day opens on desk work
+    {
+      t: 107,
+      key: "m1s",
+      meetingStart: {
+        id: "standup",
+        kind: "sync",
+        title: "Standup: tomorrow's work",
+        agentIds: ["tempe", "gembul", "garong"],
+        agenda: ["What each of us ships tomorrow", "Who reviews the API", "Blockers"],
+      },
+    },
+    { t: 116, key: "m1e", meetingEnd: { id: "standup", notes: ["Belo ships the settings API", "Tempe reviews it", "Garong rotates the key once the owner says yes"] } },
   ],
   cards: [
     { id: "c1", title: FORM, ownerId: "belang", steps: [[0, "todo"], [5, "doing"], [22, "review"], [52, "doing"], [60, "review"], [65, "done"]] },
@@ -256,7 +280,7 @@ const FUND: Day = {
       [103, "done", "celebrate", "Targets hit", "Rebalance the book", "pnl.md", "proud"],
     ],
     belang: [
-      [0, "waiting", "wait", "Waiting on Oyen", null, null],
+      [0, "waiting", "wait", "Waiting on Oyen", SIGNAL, null],
       [8, "working", "code", "Editing momentum.py", SIGNAL, "signals/momentum.py", "focused"],
       [15, "working", "run", "Backtesting ten years", SIGNAL, "backtest.py", "focused"],
       [24, "waiting", "wait", "Waiting for review", SIGNAL, "momentum.py"],
@@ -267,7 +291,7 @@ const FUND: Day = {
       [103, "done", "celebrate", "Signal is live", HEDGE, "hedge.py", "proud"],
     ],
     tempe: [
-      [0, "idle", "rest", null, null, null],
+      [0, "working", "read", "Reading the overnight notes", "Review the signal", "overnight.md"],
       [13, "working", "review", "Reading the backtest", "Review the signal", "backtest.py"],
       [26, "working", "read", "Found a lookahead bias", "Review the signal", "review.md"],
       [54, "working", "review", "Checking the fix", "Review the signal", "momentum.py", "focused"],
@@ -276,16 +300,16 @@ const FUND: Day = {
     ],
     tompel: [
       [0, "working", "scan", "Validating the model", "Model validation", "validate.py"],
-      [4, "waiting", "ask", "Asking Oyen for a higher limit", "Model validation", "limits.md"],
+      [7, "waiting", "ask", "Asking Oyen for a higher limit", "Model validation", "limits.md"],
       [15, "working", "run", "Stress testing", "Model validation", "stress.py", "focused"],
       [24, "working", "review", "Checking fills", "Model validation", "fills.csv", "focused"],
       [66, "idle", "rest", "Model holds up", null, null, "proud"],
       [103, "done", "celebrate", null, null, null, "proud"],
     ],
     gembul: [
-      [0, "working", "design", "Drawing the risk dashboard", "Risk dashboard", "dashboard.svg", "focused"],
-      [36, "working", "code", "Laying out the charts", "Risk dashboard", "dashboard.css"],
-      [68, "working", "handoff", "Handing the dashboard to Belang", "Risk dashboard", "dashboard.svg"],
+      [0, "working", "design", "Drawing the risk dashboard", "Risk dashboard", "risk.svg", "focused"],
+      [36, "working", "code", "Laying out the charts", "Risk dashboard", "charts.css"],
+      [68, "working", "handoff", "Handing the dashboard to Belang", "Risk dashboard", "risk.svg"],
       [74, "idle", "rest", "Time for a nap", null, null, "tired"],
       [103, "done", "celebrate", null, null, null, "proud"],
     ],
@@ -305,10 +329,9 @@ const FUND: Day = {
       [103, "done", "celebrate", null, null, null],
     ],
     moci: [
-      [0, "idle", "rest", "Coffee before the open", null, null],
-      [12, "working", "automate", "Working the open", "Morning orders", "orders.csv"],
-      [30, "idle", "rest", "Handing over the order book", null, null],
-      [42, "done", "rest", "Contract done, packing up", null, null, "proud"],
+      [0, "working", "automate", "Working the open", "Morning orders", "orders.csv"],
+      [14, "idle", "rest", "Handing over the order book", null, null],
+      [18, "done", "rest", "Contract done, packing up", null, null, "proud"],
     ],
     belo: [
       [0, "idle", "rest", "First day on the desk", null, null],
@@ -335,27 +358,14 @@ const FUND: Day = {
       [103, "done", "celebrate", null, null, null],
     ],
     mpus: [
-      [0, "idle", "rest", null, null, null],
-      [12, "working", "research", "Comparing brokers", "Broker costs", "brokers.md"],
+      [0, "working", "research", "Comparing brokers", "Broker costs", "brokers.md"],
       [72, "idle", "rest", "Wrote it up", null, null],
       [103, "done", "celebrate", null, null, null],
     ],
   },
   events: [
-    {
-      t: 0,
-      key: "m1s",
-      meetingStart: {
-        id: "morning",
-        kind: "sync",
-        title: "Morning meeting: today's book",
-        agentIds: ["tempe", "gembul", "garong"],
-        agenda: ["Overnight moves", "Today's targets", "Risk limits"],
-      },
-    },
-    { t: 12.5, key: "m1e", meetingEnd: { id: "morning", notes: ["Belang backtests the signal", "Tempe reviews it", "Garong watches the limits"] } },
     { t: 0.3, key: "h1", beat: { kind: "handoff", fromId: "oyen", toId: "belang", taskTitle: SIGNAL } },
-    { t: 4, key: "a1", beat: { kind: "ask", fromId: "tompel", toId: "oyen", question: "Can I raise the position limit?" } },
+    { t: 7, key: "a1", beat: { kind: "ask", fromId: "tompel", toId: "oyen", question: "Can I raise the position limit?" } },
     { t: 12, key: "d1", beat: { kind: "decided", byId: "oyen", toId: "tompel", approved: true, answer: "Yes, by ten percent" } },
     { t: 16, key: "r1", beat: { kind: "review", reviewerId: "tempe", ownerId: "belang", passed: false, taskTitle: SIGNAL } },
     { t: 19, key: "c1", coffee: "cimol" },
@@ -391,6 +401,19 @@ const FUND: Day = {
     },
     { t: 100, key: "m3e", meetingEnd: { id: "close", notes: ["The rebalance filled", "The rate trade waits on the owner", "Belo runs the open tomorrow"] } },
     { t: 104, key: "cel", beat: { kind: "celebrate", agentIds: ALL } },
+    // tomorrow's morning meeting is held at the close, so the day opens on desk work
+    {
+      t: 107,
+      key: "m1s",
+      meetingStart: {
+        id: "morning",
+        kind: "sync",
+        title: "Evening meeting: tomorrow's book",
+        agentIds: ["tempe", "gembul", "garong"],
+        agenda: ["Overnight risk", "Tomorrow's targets", "Risk limits"],
+      },
+    },
+    { t: 116, key: "m1e", meetingEnd: { id: "morning", notes: ["Belo runs the open", "Tempe reviews the hedge", "Garong watches the limits"] } },
   ],
   cards: [
     { id: "f1", title: SIGNAL, ownerId: "belang", steps: [[0, "todo"], [5, "doing"], [22, "review"], [52, "doing"], [60, "review"], [65, "done"]] },
@@ -411,15 +434,22 @@ function segAt(segs: Seg[], t: number): Seg {
   return cur;
 }
 
+/** The crew of a size with its crewLooks coats (the hire's too, see looksFor). */
 export function crewOf(size: CrewSize): Member[] {
-  return OFFICE_CREW.slice(0, size);
+  const coats = looksFor(size);
+  return OFFICE_CREW.slice(0, size).map((m) => ({ ...m, coat: coats.get(m.id) ?? m.coat }));
+}
+
+/** The hire with its coat for a crew size. */
+export function hireOf(size: CrewSize): Member {
+  return { ...HIRE, coat: looksFor(size).get(HIRE.id) ?? HIRE.coat };
 }
 
 /** The crew at a time into the loop: the hire has joined after HIRE_AT, the leaver is gone after LEAVE_AT. */
 export function agentsAt(t: number, size: CrewSize, theme: Theme = "studio"): OfficeAgent[] {
   const day = DAYS[theme];
   const members = crewOf(size).filter((m) => m.id !== LEAVER || t < LEAVE_AT);
-  if (t >= HIRE_AT) members.push(HIRE);
+  if (t >= HIRE_AT) members.push(hireOf(size));
   return members.map((m, i) => {
     const s = segAt(day.script[m.id]!, m.id === HIRE.id ? t - HIRE_AT : t);
     return {

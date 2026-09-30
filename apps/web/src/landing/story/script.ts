@@ -21,7 +21,7 @@
 // Pure data plus pure functions, so the timeline is tested without a
 // browser: sceneAt(i) folds the steps up to i into the scene props, and
 // stepAt(ms) finds the step playing at a time into the loop.
-import type { OfficeAgent, OfficeBeat, OfficeMeeting, OfficeProps } from "@mengai/cats";
+import { crewLooks, rosterCrew, type OfficeAgent, type OfficeBeat, type OfficeMeeting, type OfficeProps } from "@mengai/cats";
 import type { Activity, AgentRole, AgentStatus } from "@mengai/shared";
 
 export type PlanCard = NonNullable<OfficeProps["plan"]>[number];
@@ -46,15 +46,17 @@ export interface CrewSpec {
 }
 
 // The studio crew: Oyen the CEO and five cats with Indonesian snack names,
-// the same looks as the bundled demo run (apps/web/src/demo/fixture.ts).
-export const CREW: CrewSpec[] = [
-  { id: "oyen", name: "Oyen", role: "lead", coat: "ginger", seed: 1204 },
-  { id: "cemong", name: "Cemong", role: "engineer", coat: "tuxedo", seed: 88213 },
-  { id: "klepon", name: "Klepon", role: "designer", coat: "calico", seed: 5530 },
-  { id: "tempe", name: "Tempe", role: "reviewer", coat: "gray", seed: 71002 },
-  { id: "onde", name: "Onde", role: "qa", coat: "black", seed: 3319 },
-  { id: "cilok", name: "Cilok", role: "security", coat: "siamese", seed: 90417 },
-];
+// cast from the shared crew roster (@mengai/cats) with crewLooks, so each
+// wears its roster coat, Oyen is the ginger CEO, and no coat shows twice.
+const CREW_NAMES = ["Oyen", "Cemong", "Klepon", "Tempe", "Onde", "Cilok"];
+const CREW_LOOKS = crewLooks(CREW_NAMES);
+export const CREW: CrewSpec[] = rosterCrew(CREW_NAMES).map((c, i) => ({
+  id: c.id,
+  name: c.name,
+  role: c.role,
+  coat: CREW_LOOKS[i]!.coat,
+  seed: CREW_LOOKS[i]!.seed,
+}));
 
 const ALL = CREW.map((c) => c.id);
 

@@ -197,9 +197,16 @@ describe("landing", () => {
     expect(labels).toContain("Oyen's decisions");
   });
 
-  test("keys: keychain, providers, MCP and the trading safety defaults", () => {
+  test("keys: keychain, providers, MCP and the trading safety defaults, beside one app view", () => {
     const text = host.querySelector("#keys")?.textContent ?? "";
-    expect(host.querySelectorAll("#keys .kit-row").length).toBe(KEY_PROMISES.length);
+    expect(host.querySelectorAll("#keys .lp-keys-claim").length).toBe(KEY_PROMISES.length);
+    const view = host.querySelector("#keys .lp-keys-view");
+    expect(view).not.toBeNull();
+    expect(view?.textContent).toContain("...q7Zk");
+    for (const tier of ["Fast", "Balanced", "Deep"]) expect(view?.textContent).toContain(tier);
+    expect(view?.querySelector('[role="switch"][aria-checked="true"]')).not.toBeNull();
+    expect(view?.querySelectorAll('[aria-label="Trading mode"] button').length).toBe(2);
+    expect(host.querySelector("#keys .lp-keys-note")?.textContent).toContain("Sample");
     expect(NAMED_PROVIDERS.length).toBeGreaterThan(10);
     expect(text).toContain(`${NAMED_PROVIDERS.length} presets`);
     for (const part of ["macOS Keychain", "MCP servers", "APIs", "paper", "live trading on", "approval", "hard limits"]) expect(text).toContain(part);

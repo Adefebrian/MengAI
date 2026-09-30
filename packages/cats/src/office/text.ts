@@ -62,6 +62,58 @@ export function baseName(file: string | null): string | null {
   return parts[parts.length - 1] ?? null;
 }
 
+/** The longest screen title a monitor tab takes: the file's own name when it fits, else a shorter one that keeps the extension. */
+export const SCREEN_TITLE_MAX = 12;
+
+/**
+ * A file name cut to at most `max` characters on whole words, keeping its
+ * extension ("empty-state.tsx" is "empty.tsx"), or null when not even the
+ * first word fits beside the extension.
+ */
+export function shortFile(base: string, max: number): string | null {
+  if (base.length <= max) return base;
+  const dot = base.lastIndexOf(".");
+  const ext = dot > 0 && base.length - dot <= 6 ? base.slice(dot) : "";
+  const stem = ext ? base.slice(0, dot) : base;
+  const words = stem.split(/[-_.\s]+/).filter(Boolean);
+  let out = "";
+  let n = 0;
+  for (const w of words) {
+    const next = out ? `${out}-${w}` : w;
+    if (next.length + ext.length > max) break;
+    out = next;
+    n++;
+  }
+  // a test file never loses its test word: "nav.test.ts" is never shown as "nav.ts"
+  if (words.slice(n).some((w) => /^(test|tests|spec|stories)$/i.test(w))) return null;
+  if (out) return out + ext;
+  // no leading words fit: the first single word that does ("dashboard-risk.svg" is "risk.svg")
+  const one = words.find((w) => w.length + ext.length <= max);
+  return one ? one + ext : null;
+}
+
+/** A monitor's screen title: the file's last segment in 12 characters or fewer with its extension kept; null without a file or when no whole word fits (the screen's label stands in). */
+export function screenTitle(file: string | null, max = SCREEN_TITLE_MAX): string | null {
+  const base = baseName(file);
+  return base ? shortFile(base, max) : null;
+}
+
+/**
+ * The tab text that fits a monitor whole: the title, else a shorter title on
+ * whole words with the extension kept, else the screen's own label, else
+ * nothing. A tab never ends in a cut word or an ellipsis.
+ */
+export function tabTitle(title: string, maxWidth: number, style: TextStyle, alt = ""): string {
+  if (maxWidth <= 0) return "";
+  const tries = [title];
+  for (let k = title.length - 1; k >= 4; k--) {
+    const s = shortFile(title, k);
+    if (s && !tries.includes(s)) tries.push(s);
+  }
+  if (alt && !tries.includes(alt)) tries.push(alt);
+  return tries.find((t) => t && measure(t, style) <= maxWidth) ?? "";
+}
+
 const STOP = new Set(["the", "a", "an", "of", "for", "to", "and", "with", "on", "in", "our", "my", "your", "its", "this", "that", "at", "by", "from", "into"]);
 
 /** A task's short title: its first three content words ("Build the settings form" is "Build settings form"). */

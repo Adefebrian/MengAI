@@ -2,7 +2,7 @@
 // A task's short title keeps two or three content words, a chip falls back
 // to the verb and its head noun, a meeting's title to its kind.
 import { describe, expect, test } from "bun:test";
-import { chipTitle, chipTitleSized, headingTitle, measure, shortTitle } from "./text";
+import { chipTitle, chipTitleSized, headingTitle, measure, screenTitle, shortTitle, tabTitle } from "./text";
 
 const MICRO = { size: 11 };
 const BODY = { size: 13 };
@@ -42,5 +42,25 @@ describe("short titles", () => {
     expect(headingTitle(title, 1000, BODY)).toBe(title);
     expect(headingTitle(title, measure("Standup: settings page", BODY) + 1, BODY)).toBe("Standup: settings page");
     expect(headingTitle(title, measure("Standup", BODY) + 2, BODY)).toBe("Standup");
+  });
+});
+
+describe("screen titles", () => {
+  test("a file name in 12 characters or fewer keeps its extension, cut on whole words", () => {
+    expect(screenTitle("apps/web/src/empty-state.tsx")).toBe("empty.tsx");
+    expect(screenTitle("settings.tsx")).toBe("settings.tsx");
+    expect(screenTitle("dashboard-risk.svg")).toBe("risk.svg");
+    expect(screenTitle(null)).toBeNull();
+    for (const f of ["signals/momentum-long-short.py", "exposure-by-desk.csv", "router.test.ts"]) expect((screenTitle(f) ?? "").length).toBeLessThanOrEqual(12);
+  });
+
+  test("a tab never shows a cut word: the title, a shorter title, else the screen's label", () => {
+    const style = { size: 11, mono: true };
+    const w = (t: string) => measure(t, style);
+    expect(tabTitle("limits.md", w("limits.md"), style, "risk")).toBe("limits.md");
+    expect(tabTitle("empty-state.tsx", w("empty.tsx") + 1, style, "editor")).toBe("empty.tsx");
+    expect(tabTitle("momentum.py", w("momentum") , style, "risk")).toBe("risk");
+    expect(tabTitle("nav.test.ts", w("nav.ts") + 1, style, "editor")).toBe("editor");
+    expect(tabTitle("rates.md", 4, style, "risk")).toBe("");
   });
 });

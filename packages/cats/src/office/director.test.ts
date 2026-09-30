@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import type { AgentRole } from "@mengai/shared";
 import type { OfficeAgent, OfficeBeat, OfficeMeeting } from "../office-contract";
 import { Director, TIMING, daypartOf, samePlaces, type TimerHost } from "./director";
-import { bandOf, deskOf, planOffice, type OfficeVariant } from "./geometry";
+import { bandOf, deskOf, pathLength, planOffice, route, type OfficeVariant } from "./geometry";
 
 class FakeTimers implements TimerHost {
   t = 0;
@@ -201,14 +201,20 @@ describe("meetings", () => {
     expect(d.meetingView().running).toBe(true);
   });
 
-  test("attendees file into their seats with a stagger, a speaker takes turns, then they go back", async () => {
-    const { d, timers } = setup(6);
+  test("attendees file into their seats a cat's width apart, a speaker takes turns, then they go back", async () => {
+    const { d, timers, plan } = setup(6);
     await timers.advance(TIMING.opening + 10);
     d.setMeetings([meeting(null)]);
-    await timers.advance(TIMING.stand + 5);
-    // the stagger: the fourth attendee has not stood up yet
-    expect(d.actor("a0").where).toBe("floor");
-    expect(d.actor("a3").where).toBe("desk");
+    // each cat sets off late enough to reach the room a cat's width behind the one ahead (never two at the gap at once)
+    const ids = ["a0", "a1", "a2", "a3"];
+    const off = new Map<string, number>();
+    for (let t = 0; t < 8000 && off.size < ids.length; t += 50) {
+      for (const id of ids) if (!off.has(id) && d.actor(id).where !== "desk") off.set(id, t);
+      await timers.advance(50);
+    }
+    const seat0 = plan.meeting!.seats[0]!.spot;
+    const arrive = ids.map((id) => off.get(id)! + (pathLength(route(plan, deskOf(plan, id)?.home ?? plan.ceo.desk!.home, seat0)) / plan.m.speed) * 1000).sort((a, b) => a - b);
+    for (let i = 1; i < arrive.length; i++) expect(arrive[i]! - arrive[i - 1]!).toBeGreaterThanOrEqual(TIMING.stagger - 60);
     await timers.advance(LONG);
     for (const id of ["a0", "a1", "a2", "a3"]) expect(d.actor(id).where).toBe("seat");
     expect(d.actor("a4").where).toBe("desk");

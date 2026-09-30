@@ -81,7 +81,8 @@ export function HeroFrame() {
   const measured = useFrameLayout(frame);
   const layout = measured ?? "one";
   const live = !story.still && !reduced;
-  const cam = useCamera(view, world, scene.step.shot, `${story.play}-${story.index}`, live, layout === "one");
+  // every layout crops from the top of the wall, so the phone crop holds the whole plan board, never a sliver of it (critic round 2, 375-01)
+  const cam = useCamera(view, world, scene.step.shot, `${story.play}-${story.index}`, live, false);
   const label = sceneLabel(scene.step);
   const now = useFadeOnChange<HTMLParagraphElement>(`${story.play}-${story.index}`, 300);
   const viewStyle: CSSProperties = cam.height ? { blockSize: `${cam.height}px` } : { aspectRatio: "16 / 9" };

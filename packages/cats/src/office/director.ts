@@ -369,6 +369,9 @@ export class Director {
   private meeting: MeetingView = { id: null, kind: null, title: "", agenda: [], notes: [], running: false, seated: [], speaker: null, discussed: 0 };
   private meetingSource: OfficeMeeting | null = null;
   private talkTimer = 0;
+  /** the meeting's seat reservation table: one cat per seat, stand or huddle spot */
+  private seatClaims = new Map<number, string>();
+  private strollN = 0;
   private notes: Note[] = [];
   private noteN = 0;
   private boardN = 0;
@@ -793,6 +796,7 @@ export class Director {
     for (const p of this.parked.values()) this.clock.cancel(p.timer);
     this.parked.clear();
     this.reserved.clear();
+    this.seatClaims.clear();
     this.busy.clear();
     if (this.doorHolders.size) {
       this.doorHolders.clear();
@@ -1368,9 +1372,42 @@ export class Director {
     this.note(`${MEETING_WORD[m.kind]}: ${m.title}`);
     this.setMeetingView({ id: m.id, kind: m.kind, title: m.title, agenda: m.agenda, notes: [], running: true, seated: [], speaker: null, discussed: 0 });
     this.focus("meeting", this.meetingFocus(), 2);
-    ids.forEach((id, i) => {
-      void this.joinMeeting(m.id, id, i);
+    this.seatClaims.clear();
+    this.arrivalOrder(ids).forEach(({ id, delay }, i) => {
+      void this.joinMeeting(m.id, id, i, delay);
     });
+  }
+
+  /**
+   * Who walks in first, and when each cat sets off: the nearest cat takes
+   * the far seat, and each cat leaves late enough to reach the room a cat's
+   * width behind the one ahead, so two cats never meet at the gap or file
+   * in on top of each other, and a later arrival never passes a seated cat.
+   */
+  private arrivalOrder(ids: string[]): Array<{ id: string; delay: number }> {
+    const plan = this.plan;
+    const first = this.seatSpot(0);
+    if (!plan || !first || !this.live) return ids.map((id) => ({ id, delay: 0 }));
+    const walk = ids.map((id, k) => {
+      const from = this.at.get(id);
+      return { id, k, ms: from ? (pathLength(route(plan, from, first)) / plan.m.speed) * 1000 : 0 };
+    });
+    walk.sort((a, b) => a.ms - b.ms || a.k - b.k);
+    const gap = Math.max(TIMING.stagger, ((72 * plan.m.walker) / plan.m.speed) * 1000);
+    let prev = -Infinity;
+    return walk.map(({ id, ms }) => {
+      const arrive = Math.max(ms, prev + gap);
+      prev = arrive;
+      return { id, delay: Math.round(arrive - ms) };
+    });
+  }
+
+  /** The free seat nearest the way in (the last in the far-first order), for a cat that comes in late. */
+  private lastFreeSeat(): number | null {
+    const room = this.plan?.meeting;
+    const total = room ? room.seats.length + room.stands.length : (this.plan?.huddle.length ?? 0);
+    for (let i = total - 1; i >= 0; i--) if (!this.seatClaims.has(i) && this.seatSpot(i)) return i;
+    return null;
   }
 
   private async waitFree(id: string, meetingId: string): Promise<boolean> {
@@ -1381,13 +1418,18 @@ export class Director {
     return true;
   }
 
-  private async joinMeeting(meetingId: string, id: string, i: number): Promise<void> {
+  private async joinMeeting(meetingId: string, id: string, rank: number, delay: number): Promise<void> {
     try {
-      await this.sleep(this.live ? i * TIMING.stagger : 0);
+      await this.sleep(this.live ? delay : 0);
+      const late = this.busy.has(id);
       if (!(await this.waitFree(id, meetingId))) return;
       if (this.meeting.id !== meetingId || !this.meeting.running) return;
+      // one cat per seat: a cat held up elsewhere takes the free seat nearest the way in, so it never walks past a seated cat
+      const i = late || this.seatClaims.has(rank) ? this.lastFreeSeat() : rank;
+      if (i === null) return;
       const spot = this.seatSpot(i);
       if (!spot) return;
+      this.seatClaims.set(i, id);
       this.busy.add(id);
       this.cancelIdle(id);
       await this.standUp(id);
@@ -1461,9 +1503,11 @@ export class Director {
     if (!src || !this.meeting.running) return;
     const ids = this.attendees(src);
     const seated: string[] = [];
+    this.seatClaims.clear();
     ids.forEach((id, i) => {
       const spot = this.seatSpot(i);
       if (!spot) return;
+      this.seatClaims.set(i, id);
       this.at.set(id, spot);
       const el = this.els.get(id);
       if (el) this.place(el, spot.p);
@@ -1635,33 +1679,59 @@ export class Director {
     this.runTrip(id, kind, kind === "nap" ? () => this.nap(id, instant) : kind === "coffee" ? () => this.coffee(id, instant) : () => this.stroll(id, instant));
   }
 
-  /** Where a stroller sits in the corridor: on its lane, clear of the room gaps and the spines. */
+  /**
+   * Where a stroller stops for a stretch and a look round: two spots in the
+   * corridor, clear of the room gaps and the spines, then one in each aisle
+   * between the desk rows, under a monitor and a cat's width clear of every
+   * spot a cat stands at on that lane (homes, docks, the pantry, the bed),
+   * so idle life also walks the aisles and never lands on another cat.
+   */
   private strollSpots(): Spot[] {
     const plan = this.plan;
-    if (!plan || !plan.corridor) return [];
-    const lane = plan.lanes[0]!;
-    const c = plan.corridor;
+    if (!plan) return [];
     const clear = Math.round(44 * plan.m.walker);
-    const avoid = [...plan.rooms.flatMap((r) => (r.gap && r.front !== null ? [r.gap.x] : [])), ...plan.spines.flatMap((s) => [s.xD, s.xU])];
+    const body = Math.round(64 * plan.m.walker);
+    const spines = plan.spines.flatMap((s) => [s.xD, s.xU]);
     const out: Spot[] = [];
-    for (const f of [0.38, 0.7, 0.22, 0.86, 0.54]) {
-      const x = Math.round(c.x + c.w * f);
-      if (avoid.some((a) => Math.abs(a - x) < clear) || out.some((o) => Math.abs(o.p.x - x) < clear * 2)) continue;
-      out.push({ p: { x, y: lane.yR }, lane: 0, attach: x, inner: [] });
-      if (out.length === 2) break;
+    if (plan.corridor) {
+      const lane = plan.lanes[0]!;
+      const c = plan.corridor;
+      const avoid = [...plan.rooms.flatMap((r) => (r.gap && r.front !== null ? [r.gap.x] : [])), ...spines];
+      for (const f of [0.38, 0.7, 0.22, 0.86, 0.54]) {
+        const x = Math.round(c.x + c.w * f);
+        if (avoid.some((a) => Math.abs(a - x) < clear) || out.some((o) => Math.abs(o.p.x - x) < clear * 2)) continue;
+        out.push({ p: { x, y: lane.yR }, lane: 0, attach: x, inner: [] });
+        if (out.length === 2) break;
+      }
     }
+    const corridor = out.splice(0);
+    const desks = plan.desks;
+    const taken: Spot[] = [...allDesks(plan).flatMap((d) => [d.home, ...d.visits]), ...(plan.pantry?.spots ?? []), ...(plan.nap ? [plan.nap.spot] : []), ...plan.huddle];
+    const lanes = [...new Set(desks.map((d) => d.home.lane))].filter((l) => l > 0 || !plan.corridor);
+    for (const l of lanes) {
+      const onLane = taken.filter((t) => t.lane === l && Math.abs(t.p.y - (desks.find((d) => d.home.lane === l)?.home.p.y ?? 0)) < body);
+      for (const d of desks.filter((k) => k.home.lane === l)) {
+        const x = Math.round(d.monitor.x + d.monitor.w / 2);
+        if (onLane.some((t) => Math.abs(t.p.x - x) < body) || spines.some((a) => Math.abs(a - x) < clear)) continue;
+        out.push({ p: { x, y: d.home.p.y }, lane: l, attach: x, inner: [] });
+        break;
+      }
+    }
+    // corridor and aisles in turn
+    const aisles = out.splice(0);
+    for (let i = 0; i < Math.max(corridor.length, aisles.length); i++) out.push(...(corridor[i] ? [corridor[i]!] : []), ...(aisles[i] ? [aisles[i]!] : []));
     return out;
   }
 
-  /** A stroll: out to the corridor, a sit and a look round, then back; work calls it back early. */
+  /** A stroll: out to the corridor or down an aisle, a stretch and a look round, then back; work calls it back early. */
   private async stroll(id: string, instant = false): Promise<void> {
-    const spots = this.strollSpots();
-    if (!spots.length) return;
+    const all = this.strollSpots();
+    if (!all.length) return;
     if (!instant) await this.standUp(id);
-    const slot = await this.reserve(
-      id,
-      spots.map((spot, i) => ({ key: `stroll:${i}`, spot })),
-    );
+    // each stroll starts from the next spot in turn, so idle life works through the corridor and every aisle
+    const from = this.strollN++ % all.length;
+    const order = all.map((spot, i) => ({ key: `stroll:${i}`, spot })).map((_, k, arr) => arr[(from + k) % arr.length]!);
+    const slot = await this.reserve(id, order);
     try {
       if (instant) this.appearAt(id, slot.spot);
       else await this.walkTo(id, slot.spot);

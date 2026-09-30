@@ -621,11 +621,20 @@ function meetingRoom(o: MeetingOpts): { room: MeetingRoom; shape: Room; windows:
   const window = winW ? { x: agenda.x + agenda.w + 14, y: wallTop + 14, w: winW, h: wall - 38 } : null;
   const entry: Pt[] = o.inWall ? [{ x: gx, y: floorTop + 6 }] : [];
   const spot = (p: Pt): Spot => roomSpot(p, o.lane, gx, entry);
+  // the far row is reached along the free floor behind its chairs (their backs rise floorCat * 0.46 over the table), then a step down into the chair, so no cat walks across the chair backs
+  const behindY = r1(table.y - m.floorCat * 0.46 - 3);
+  const farSpot = (p: Pt): Spot => {
+    const base = roomSpot(p, o.lane, gx, entry);
+    const { inX, outX } = subLanes(gx);
+    const enter = base.inner.slice(0, -1);
+    const out = base.exit!.slice(1);
+    return { ...base, inner: [...enter, { x: inX, y: behindY }, { x: p.x, y: behindY }], exit: [{ x: p.x, y: behindY }, { x: outX, y: behindY }, ...out] };
+  };
   const seats: Seat[] = [];
   // far end first, far and near alternating, so later arrivals never pass a seated cat
   for (let i = perSide - 1; i >= 0; i--) {
     const x = r1(table.x + pitch * (i + 0.5));
-    seats.push({ side: "far", p: { x, y: farY }, spot: spot({ x, y: farY }) });
+    seats.push({ side: "far", p: { x, y: farY }, spot: farSpot({ x, y: farY }) });
     seats.push({ side: "near", p: { x, y: nearY }, spot: spot({ x, y: nearY }) });
   }
   const extra = Math.max(0, o.attendees - seats.length);
@@ -666,7 +675,9 @@ function pantryRoom(rect: Rect, m: Metrics, lane: number, frontAt: number | null
   const winW = Math.min(96, counter.w - 64);
   const window = { x: r1(counter.x + counter.w - winW - 6), y: wallTop + 12, w: winW, h: 44 };
   const spotY = r1(floorTop + 26 + 30 * m.walker);
-  const spots = [0.3, 0.72].map((f) => roomSpot({ x: r1(counter.x + counter.w * f), y: spotY }, lane, gx));
+  // two drinkers at the counter, at least one cat width apart
+  const cup = counter.x + counter.w * 0.3;
+  const spots = [cup, Math.max(counter.x + counter.w * 0.72, cup + Math.round(60 * m.walker))].filter((px) => px <= counter.x + counter.w).map((px) => roomSpot({ x: r1(px), y: spotY }, lane, gx));
   const minFront = Math.round(spotY + 30 + 70);
   const front = frontAt ?? minFront;
   const table = { x: rect.x + rect.w - 118, y: Math.max(spotY + 26, front - 86), w: 76, h: 54 };
@@ -773,8 +784,13 @@ function podGrid(o: {
     cells.push({ kind: k.kind, rect, top: cellTop, face: cellFace });
     if (k.kind === "pantry") {
       const counter = { x: x + 4, y: cellTop, w: dw - 8, h: bottom - cellTop };
-      // coffee drinkers stand at the counter's right half, clear of its label
-      const spots = [0.66, 0.88].map((f) => at(x + dw * f));
+      // coffee drinkers stand at the counter's right half, clear of its label (the plate rooms.tsx draws), one cat width apart: a second spot only when the half has room for it
+      const pitch = Math.round(60 * m.walker);
+      const half = Math.round(28 * m.walker);
+      const lo = x + 10 + Math.max(64, Math.round((dw - 8) * 0.46)) + half;
+      const px: number[] = [];
+      for (let p = x + dw - half; p >= lo && px.length < 2; p -= pitch) px.push(p);
+      const spots = (px.length ? px : [x + dw * 0.72]).map((p) => at(p));
       pantry = { kind: "cell", rect, counter, top: cellTop, fridge: null, table: null, window: null, spots, slots: [rect] };
     }
     if (k.kind === "bed" && !nap) {

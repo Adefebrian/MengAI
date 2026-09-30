@@ -153,7 +153,7 @@
 }
 
 .lp .lp-frame[data-layout="rail"] .lp-frame-body {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 440px;
 }
 
 /* The camera: a view onto the Office, cropped like an image in its frame.
@@ -347,6 +347,32 @@
   }
 }
 
+/* The first screen (critic round 2, 1280-01): at 1280x800 the whole frame,
+   the office crop and the status strip, lands inside the first 800 px. The
+   hero's top padding and the gap to the frame come down to the page's
+   related rhythm, the run header reads on one line, the strip's padding
+   matches the head, and the feed rail widens so the camera's wide shot is
+   a little shorter (the close push stays). */
+@media (min-width: 1024px) {
+  .lp .kit-masthead > .kit-grid {
+    padding-block-start: var(--space-32px);
+    row-gap: var(--space-24px);
+  }
+  .lp .lp-frame-head,
+  .lp .lp-frame-foot {
+    padding-block: var(--space-8px);
+  }
+}
+
+@media (min-width: 1200px) {
+  .lp .lp-frame-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-16px);
+  }
+}
+
 @keyframes lp-fade-in {
   from {
     opacity: 0;
@@ -515,6 +541,48 @@
 
 .lp .lp-life-office {
   min-width: 0;
+}
+
+.lp .lp-life-scene {
+  min-width: 0;
+}
+
+/* The meeting cut: the fresh floor, its crew already seated, fades up
+   from the old one's tone in one short step (opacity only). */
+.lp .lp-life-scene[data-cut] {
+  animation: lp-life-cut var(--dur-300) var(--ease-standard) both;
+}
+
+@keyframes lp-life-cut {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The phone window (critic round 2, life-375): below 640 the floor is seen
+   through one fixed window reserved from the first frame, so the floor
+   never grows under the reader; the landing's camera (useLifeCamera) moves
+   the Office's own camera group to the room where the beat plays, and the
+   Office's pan transition eases it. The art keeps its own height inside
+   the window's clip. */
+.lp .lp-life-office[data-window] .office-stage {
+  aspect-ratio: auto !important;
+  block-size: var(--lp-window-h);
+  /* the camera window: the drawn floor (an aria-hidden art layer) is cut
+     to the window's box, as the hero's camera clips its office */
+  contain: paint;
+}
+
+.lp .lp-life-office[data-window] .office-art {
+  inset: 0 0 auto 0;
+  block-size: auto;
+}
+
+.lp .lp-life-office[data-window] .of-camera {
+  transform: translateY(var(--lp-cam-y, 0px)) !important;
 }
 
 /* The head card and the scene list: one shared row from 1024, both
@@ -1710,6 +1778,227 @@
 }
 
 /* ---------------------------------------------------------------------
+ * Keys (kit.split.inset, critic round 2): one line per claim in the text
+ * column, and one app view beside it: the provider row, the tier map, the
+ * connector row and the Paper and Live switch, each a part of one surface
+ * separated by the view's own 1 px gap over the border tone, so every rule
+ * is a full hairline between two parts.
+ * ------------------------------------------------------------------- */
+.lp .lp-keys-claims {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.lp .lp-keys-claim {
+  min-width: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  color: var(--color-ink);
+  text-wrap: pretty;
+}
+
+.lp .lp-keys-view {
+  box-sizing: border-box;
+  container: lp-keys / inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  min-width: 0;
+  overflow: clip;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-card);
+}
+
+.lp .lp-keys-media {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-8px);
+  min-width: 0;
+}
+
+.lp .lp-keys-part {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-16px);
+  background: var(--color-surface);
+}
+
+.lp .lp-keys-head {
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+.lp .lp-keys-note {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+/* A settings row: the icon in its own lane, the body, the action. On a
+   narrow view the action takes its own line under the body. */
+.lp .lp-keys-row {
+  display: grid;
+  grid-template-columns: var(--space-40px) minmax(0, 1fr);
+  grid-template-areas: "icon body" "action action";
+  align-items: center;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-12px);
+  min-width: 0;
+}
+
+@container lp-keys (min-width: 480px) {
+  .lp .lp-keys-row {
+    grid-template-columns: var(--space-40px) minmax(0, 1fr) auto;
+    grid-template-areas: "icon body action";
+  }
+}
+
+.lp .lp-keys-icon {
+  grid-area: icon;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--space-40px);
+  block-size: var(--space-40px);
+  color: var(--kit-link);
+  background: var(--color-layer-1);
+  border-radius: var(--kit-radius-control);
+}
+
+.lp .lp-keys-body {
+  grid-area: body;
+  display: grid;
+  row-gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp .lp-keys-title,
+.lp .lp-keys-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp .lp-keys-url {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--kit-font-mono);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lp .lp-keys-meta {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+.lp .lp-keys-test {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4px);
+  min-width: 0;
+}
+
+.lp .lp-keys-test[data-tone="success"] {
+  color: var(--color-success);
+}
+
+.lp .lp-keys-action,
+.lp .lp-keys-switch {
+  grid-area: action;
+  justify-self: start;
+}
+
+.lp .lp-keys-switch {
+  inline-size: auto;
+  grid-template-columns: auto auto;
+}
+
+.lp .lp-switch[data-tone="on"][aria-checked="true"] .lp-switch-track {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* The tier map: one row per tier, the job under its name, the model id at
+   the end on the mono face. */
+.lp .lp-keys-tiers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  margin: 0;
+  min-width: 0;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--kit-radius-control);
+  overflow: clip;
+}
+
+.lp .lp-keys-tier {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-width: 0;
+  padding: var(--space-8px) var(--space-12px);
+  background: var(--color-surface);
+}
+
+.lp .lp-keys-tier-name {
+  display: grid;
+  min-width: 0;
+}
+
+.lp .lp-keys-model {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+  white-space: nowrap;
+}
+
+.lp .lp-keys-trade {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-12px);
+  min-width: 0;
+}
+
+@container lp-keys (min-width: 480px) {
+  .lp .lp-keys-trade {
+    grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--space-16px);
+  }
+}
+
+.lp .lp-keys-trade-state {
+  margin: 0;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------
  * Reduced motion: every part rests at its final state.
  * ------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
@@ -1722,5 +2011,8 @@
   }
   .lp .lp-cam-world {
     transition: none;
+  }
+  .lp .lp-life-scene[data-cut] {
+    animation: none;
   }
 }

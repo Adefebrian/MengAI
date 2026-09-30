@@ -8,7 +8,7 @@ import type { AgentStatus } from "@mengai/shared";
 import type { OfficeAgent } from "../office-contract";
 import type { Desk, OfficePlan, Rect } from "./geometry";
 import { GLYPHS, type GlyphId } from "./glyphs";
-import { chipTitleSized, fit, measure as measureWidth, type TextStyle } from "./text";
+import { chipTitleSized, fit, measure as measureWidth, screenTitle, tabTitle, type TextStyle } from "./text";
 
 export function textStyle(plan: OfficePlan, weight: 400 | 500 = 400, mono = false): TextStyle {
   return { size: plan.m.text === "n1" ? 13 : 11, weight, mono };
@@ -231,6 +231,18 @@ export function screenLabel(mode: ScreenMode): string {
   return SCREEN_LABEL[mode];
 }
 
+/** A screen and the title on its tab: the file in 12 characters or fewer with its extension kept, else the screen's own label. */
+export interface Screen {
+  mode: ScreenMode;
+  title: string;
+}
+
+/** The activity-to-screen lookup with its title (studio: screenFor; the fund's work screen: fundScreenFor). */
+export function screenOf(activity: string, role: string, working: boolean, file: string | null, fund = false): Screen {
+  const mode = fund ? fundScreenFor(activity, role, working) : screenFor(activity, role, working);
+  return { mode, title: screenTitle(file) ?? SCREEN_LABEL[mode] };
+}
+
 /** The screen a role keeps open between tool calls: the lead's plan board, the reviewer's diff, QA's test run. */
 const ROLE_SCREEN: Record<string, ScreenMode> = {
   lead: "board",
@@ -441,9 +453,8 @@ export function Monitor({ r, mode, label, animate, dim, clip, seed, note = false
   const body = { x: sx, y: sy + bar, w: sw, h: sh - bar };
   const pitch = 7;
   const rows = Math.max(2, Math.floor((body.h - 6) / pitch));
-  // a tab too narrow for a few letters of its name stays plain rather than showing a stub
-  const fitted = fit(label, sw - 10, { size: 11, mono: true });
-  const tab = fitted === label || fitted.length >= Math.min(label.length, 5) ? fitted : "";
+  // the tab shows its title whole, a shorter title that keeps the extension, or the screen's label; never a cut word
+  const tab = tabTitle(label, sw - 10, { size: 11, mono: true }, SCREEN_LABEL[mode]);
   const cx = r.x + r.w / 2;
   let content: ReactNode;
   const inner = { x: body.x + 5, y: body.y + 5, w: body.w - 10 };

@@ -21,7 +21,7 @@
 // is doing, and what changed in the focus cat's head. Pure data plus pure
 // functions: lifeAt(company, i) folds the steps up to i into the props of
 // the Office, the tracker cells and the head card.
-import type { OfficeAgent, OfficeBeat, OfficeMeeting, TrackerStage } from "@mengai/cats";
+import { crewLooks, rosterCat, type OfficeAgent, type OfficeBeat, type OfficeMeeting, type TrackerStage } from "@mengai/cats";
 import type { Activity, AgentRole, AgentStatus, Coat, Mood } from "@mengai/shared";
 import type { PlanCard, PlanStatus, ScriptBeat } from "./script";
 
@@ -125,18 +125,34 @@ const work = (activity: Activity, statusText: string, status: AgentStatus = "wor
 
 const mood = (patch: AgentPatch, m: Mood) => ({ ...patch, mood: m });
 
+/**
+ * A story crew from the shared crew roster (@mengai/cats): each cat's role
+ * is the roster's and its look comes from crewLooks, so Oyen is always the
+ * ginger CEO, a name wears its roster coat wherever it can, and no coat
+ * repeats inside one crew (tested).
+ */
+function cast(crew: ReadonlyArray<readonly [name: string, title: string]>): LifeCat[] {
+  const looks = crewLooks(crew.map(([name]) => name));
+  return crew.map(([name, title], i) => {
+    const r = rosterCat(name);
+    if (!r) throw new Error(`${name} is not on the crew roster`);
+    const look = looks[i]!;
+    return { id: r.id, name: r.name, role: r.role, title, coat: look.coat, seed: look.seed };
+  });
+}
+
 /* ---------------------------------------------------------------------
  * The software studio
  * ------------------------------------------------------------------- */
-const STUDIO_CATS: LifeCat[] = [
-  { id: "oyen", name: "Oyen", role: "lead", title: "CEO", coat: "ginger", seed: 1204 },
-  { id: "cemong", name: "Cemong", role: "engineer", title: "Engineer", coat: "tuxedo", seed: 88213 },
-  { id: "bakwan", name: "Bakwan", role: "engineer", title: "Engineer", coat: "tabby", seed: 60231 },
-  { id: "serabi", name: "Serabi", role: "designer", title: "Copywriter", coat: "cream", seed: 44120 },
-  { id: "tempe", name: "Tempe", role: "reviewer", title: "Reviewer", coat: "gray", seed: 71002 },
-  { id: "onde", name: "Onde", role: "qa", title: "QA", coat: "black", seed: 3319 },
-  { id: "risol", name: "Risol", role: "engineer", title: "Engineer", coat: "siamese", seed: 27514 },
-];
+const STUDIO_CATS: LifeCat[] = cast([
+  ["Oyen", "CEO"],
+  ["Cemong", "Engineer"],
+  ["Bakwan", "Engineer"],
+  ["Serabi", "Copywriter"],
+  ["Tempe", "Reviewer"],
+  ["Onde", "QA"],
+  ["Risol", "Engineer"],
+]);
 
 const STUDIO_ALL = ["oyen", "cemong", "bakwan", "serabi", "tempe", "onde"];
 
@@ -250,7 +266,7 @@ export const STUDIO: Company = {
         oyen: work("plan", "Watching the board."),
         cemong: { ...work("code", "Building the form.", "working", "src/signup/Form.tsx"), taskTitle: "Build the signup form" },
         bakwan: { ...work("code", "Wiring the API.", "working", "src/signup/api.ts"), taskTitle: "Build the signup API" },
-        serabi: { ...work("design", "Drafting the headline.", "working", "copy/launch.md"), taskTitle: "Write the launch copy" },
+        serabi: { ...work("read", "Drafting the headline.", "working", "copy/launch.md"), taskTitle: "Write the launch copy" },
         tempe: { ...work("wait", "Waiting for the form.", "waiting"), taskTitle: "Review the signup" },
         onde: { ...work("read", "Reading the old tests.", "working", "tests/signup.test.ts"), taskTitle: "Test the signup" },
       },
@@ -264,7 +280,7 @@ export const STUDIO: Company = {
       stage: 3,
       caption: "A queue at the coffee machine. Serabi lets Onde go first, Tempe waits with an empty mug.",
       agents: {
-        serabi: mood(work("rest", "After you, Onde.", "idle"), "calm"),
+        serabi: mood(work("read", "After you, Onde.", "idle", "copy/launch.md"), "calm"),
         onde: mood(work("rest", "Oat milk, please.", "idle"), "calm"),
         tempe: mood(work("rest", "Still waiting.", "idle"), "calm"),
       },
@@ -403,15 +419,15 @@ export const STUDIO: Company = {
 /* ---------------------------------------------------------------------
  * The hedge fund
  * ------------------------------------------------------------------- */
-const FUND_CATS: LifeCat[] = [
-  { id: "oyen", name: "Oyen", role: "lead", title: "CEO", coat: "ginger", seed: 1204 },
-  { id: "salak", name: "Salak", role: "researcher", title: "Data researcher", coat: "tabby", seed: 31877 },
-  { id: "jahe", name: "Jahe", role: "engineer", title: "Quant", coat: "cream", seed: 52409 },
-  { id: "kencur", name: "Kencur", role: "engineer", title: "Quant", coat: "gray", seed: 17736 },
-  { id: "duku", name: "Duku", role: "reviewer", title: "Risk officer", coat: "black", seed: 80115 },
-  { id: "pukis", name: "Pukis", role: "qa", title: "Trade checker", coat: "calico", seed: 64350 },
-  { id: "lontong", name: "Lontong", role: "engineer", title: "Quant", coat: "siamese", seed: 9921 },
-];
+const FUND_CATS: LifeCat[] = cast([
+  ["Oyen", "CEO"],
+  ["Salak", "Data researcher"],
+  ["Jahe", "Quant"],
+  ["Kencur", "Quant"],
+  ["Duku", "Risk officer"],
+  ["Pukis", "Trade checker"],
+  ["Lontong", "Quant"],
+]);
 
 const FUND_ALL = ["oyen", "salak", "jahe", "kencur", "duku", "pukis"];
 
@@ -840,4 +856,53 @@ export function trackerAt(company: Company, index: number): TrackerState {
     done: step.complete === true,
     status: step.caption,
   };
+}
+
+/* ---------------------------------------------------------------------
+ * The narrow floor's camera and the meeting cut (critic round 2)
+ * ------------------------------------------------------------------- */
+
+/** The room a step plays in, for the phone floor's camera window. */
+export type LifeRoom = { kind: "door" } | { kind: "meeting" } | { kind: "desks"; ids: string[] };
+
+/**
+ * Where a step plays: a hire or a leave at the door, a meeting in the
+ * meeting room, the walk back from it at the crew's desks, a coffee queue
+ * (two or more cats set idle) at the desks they get up from, a beat at the
+ * desks of the cats in it, else the focus cat's desk (the CEO's while the
+ * focus cat is not hired yet). Pure.
+ */
+export function roomOf(company: Company, index: number): LifeRoom {
+  const step = company.steps[Math.max(0, Math.min(index, company.steps.length - 1))]!;
+  if (step.hire?.length || step.leave?.length) return { kind: "door" };
+  if (step.meetingStart) return { kind: "meeting" };
+  // the meeting is over: the crew walks back to its desks, so the camera holds the desk rows they walk into
+  if (step.meetingEnd) return { kind: "desks", ids: lifeAt(company, index).agents.filter((a) => a.role !== "lead").map((a) => a.id) };
+  // a coffee queue: the desks the idle cats get up from (the Office sends them on their trip in its own time)
+  const idle = Object.entries(step.agents ?? {}).filter(([, p]) => p.status === "idle").map(([id]) => id);
+  if (idle.length >= 2) return { kind: "desks", ids: idle };
+  const beat = step.beats?.[0];
+  if (beat) {
+    switch (beat.kind) {
+      case "handoff":
+        return { kind: "desks", ids: [beat.fromId, beat.toId] };
+      case "ask":
+        return { kind: "desks", ids: [beat.fromId, beat.toId] };
+      case "decided":
+        return { kind: "desks", ids: [beat.byId, beat.toId] };
+      case "review":
+        return { kind: "desks", ids: [beat.reviewerId, beat.ownerId] };
+      case "deliver":
+        return { kind: "desks", ids: [beat.fromId, "oyen"] };
+      case "celebrate":
+        return { kind: "desks", ids: beat.agentIds };
+    }
+  }
+  const hired = lifeAt(company, index).agents.some((a) => a.id === company.focus);
+  return { kind: "desks", ids: [hired ? company.focus : "oyen"] };
+}
+
+/** The step that opens the story's meeting, or -1. */
+export function meetingStep(company: Company): number {
+  return company.steps.findIndex((s) => s.meetingStart);
 }

@@ -210,8 +210,8 @@ function OfficeDay({ theme, setTheme, initialSize }: { theme: Theme; setTheme: (
             </h1>
             <p className="kit-lead">
               {theme === "fund"
-                ? "One trading day on a loop. Oyen hands out the backtest, Tempe finds a lookahead bias, Belo joins the desk, the risk committee meets, Moci walks out, the fix passes and the target rings the bell."
-                : "One company day on a loop. Oyen hands out the form, Tompel gets a yes, Tempe sends the form back, Belo is hired, the crew meets, Moci walks out, the fix passes and goes on the board."}
+                ? "One trading day on a loop. Oyen hands out the backtest, Tempe finds a lookahead bias, Moci walks out, Belo joins the desk, the risk committee meets, the fix passes and the target rings the bell."
+                : "One company day on a loop. Oyen hands out the form, Tompel gets a yes, Tempe sends the form back, Moci walks out, Belo is hired, the crew meets, the fix passes and goes on the board."}
             </p>
             <div className="kit-head-action pv-office-controls">
               <button type="button" className="btn btn-secondary" aria-pressed={!playing} onClick={() => setPlaying((p) => !p)}>

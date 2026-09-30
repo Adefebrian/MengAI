@@ -7,7 +7,10 @@
 // shipped card. When the strip scrolls into view the crew celebrates once,
 // one cat after another (JEV ui.component_recipe close
 // kit.cta_split_sequence 1.00, carried); under reduced motion the cats
-// rest in their still poses.
+// rest in their still poses. One sprite per cat (critic round 2): the
+// crew sits proud on the sitting rig and the celebration is the Cat's
+// transform-only hop on that one sprite, never the done beat's lying rig,
+// whose stretch-then-curl crossfade drew a see-through second cat.
 import { Cat } from "@mengai/cats";
 import { usePrefersReducedMotion } from "@mengai/ui";
 import { StatusPill } from "@mengai/ui/src/product";
@@ -96,7 +99,7 @@ export function ShippedView() {
                 look={{ coat: c.coat, seed: c.seed }}
                 role={c.role}
                 status={lead ? "working" : "done"}
-                activity={lead ? "handoff" : "celebrate"}
+                activity={lead ? "handoff" : "rest"}
                 mood="proud"
                 label={lead ? `${c.name}, ${c.title}, holding the shipped card` : `${c.name}, ${c.title}, celebrating`}
                 size={size}
