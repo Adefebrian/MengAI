@@ -5,13 +5,45 @@ The shell owns the window, the tray, the global kill shortcut and the
 process lifecycle. All product logic lives in the sidecar (apps/api) and the
 web app (apps/web); the shell never renders its own UI.
 
+## Local-first: the website stores nothing
+
+MengAI has no user system. The public website only serves the UI (landing
+and app). The engine, the crew, every model key and every trading venue
+live on the owner's own Mac, in this app's sidecar on `127.0.0.1:4190`.
+
+1. MengAI starts the engine. Its ready line carries a one-time pairing link,
+   `https://<site>/app#pair=<token>`, where `<site>` is `siteUrl` from
+   [settings.json](#settings) (the engine default when unset).
+2. The owner picks **Open in browser** (tray or the MengAI app menu). The
+   shell checks the link and hands it to the default browser.
+3. The web app on the website posts the token straight to the local engine,
+   `POST http://127.0.0.1:4190/api/auth/pair`, and gets a bearer session
+   token back. The browser keeps it in localStorage for that runtime URL; no
+   cookie crosses origins, so this path has no CSRF surface.
+4. The engine records that exact calling origin (no wildcards) in its
+   persisted allowed-origins list and from then on answers CORS, including
+   the Private Network Access preflight, for registered origins only.
+5. Keys typed in the browser go from the page to the local engine and into
+   the macOS keychain. The website never sees them.
+
+The in-app window keeps working exactly as before: it loads
+`http://127.0.0.1:<port>/#launch=<launchToken>` from the engine itself and
+needs neither the website nor the pairing link.
+
+The pairing token is issued once per engine launch and is spent by the first
+browser that pairs. Picking **Open in browser** again reopens the same link:
+the browser that already paired keeps its session, and pairing a second
+browser needs a relaunch of MengAI.
+
 ## How it starts
 
-1. `setup` spawns `mengai-api` (resolved by tauri-plugin-shell from
+1. `setup` reads [settings.json](#settings), checks that its port is free on
+   127.0.0.1, then spawns `mengai-api` (resolved by tauri-plugin-shell from
    `bundle.externalBin`) in its own process group with a cleared
    environment. It passes only HOME, USER, LOGNAME, TMPDIR, PATH, LANG,
-   SHELL, TZ, `LC_*`, any `MENGAI_*` passthrough (for example `MENGAI_PORT`),
-   and the five contract variables:
+   SHELL, TZ, `LC_*`, any other `MENGAI_*` passthrough (for example
+   `MENGAI_DEMO`), and the contract variables, which the shell owns (a value
+   exported in the parent env is dropped):
    - `MENGAI_MODE=local`
    - `MENGAI_DATA_DIR` = `~/Library/Application Support/id.mengai.app` (mode 0700)
    - `MENGAI_WEB_DIR` = `MengAI.app/Contents/Resources/web`
@@ -22,15 +54,59 @@ web app (apps/web); the shell never renders its own UI.
      `EMBEDDED_MIGRATIONS`) and migrates with no folder at all; the folder is
      an explicit override, so a shipped app and its SQL always match. The
      shell refuses to start, with a dialog, if that folder has no `.sql` file.
+   - `MENGAI_PORT` = `port` from settings.json (default 4190)
+   - `MENGAI_SITE_URL` = `siteUrl` from settings.json, only when set
 2. The shell reads stdout until the ready line
-   `{"event":"ready","port":n,"launchToken":"..","controlToken":".."}`
-   (30 s deadline). Tokens must be 16 to 512 URL-safe characters.
+   `{"event":"ready","port":n,"launchToken":"..","controlToken":"..","pairUrl":".."}`
+   (30 s deadline). Tokens must be 16 to 512 URL-safe characters. `pairUrl`
+   is optional and never fatal: a missing or refused link only makes
+   **Open in browser** explain why, the window still opens.
 3. It grants the page one IPC permission, `allow-pick-folder`, for the exact
    origin `http://127.0.0.1:<port>` only, then opens the main window at
    `http://127.0.0.1:<port>/#launch=<launchToken>`. Navigation off that origin
    is refused; http(s) and mailto links open in the default browser.
-4. The control token stays in shell memory for the kill switch. Both tokens
-   are masked in the app log.
+4. The control token stays in shell memory for the kill switch. The launch,
+   control and pairing tokens are masked in the app log, and so is anything
+   after `pair=` or `launch=` in any sidecar line.
+5. Both **Open in browser** items are enabled once the ready line is in.
+
+## Menus
+
+| Item | Where | What it does |
+|---|---|---|
+| Show MengAI | tray | shows the window |
+| Open in browser | tray, MengAI app menu | opens the checked pairing link in the default browser (tauri-plugin-opener, from Rust only; the page gets no opener permission) |
+| Show settings file | tray, MengAI app menu | writes the default settings.json if it is missing, then reveals it in Finder |
+| Kill switch | tray | see below |
+| Quit MengAI | tray, Cmd+Q | stops the engine and quits |
+
+Before opening, the shell checks the pairing link (`src/pair.rs`): https, or
+http only on 127.0.0.1, localhost or [::1]; no user name or password; a
+`#pair=<token>` fragment with a URL-safe token of 16 to 512 characters; and,
+when settings.json names a site, exactly that origin. A link that fails any
+check is never opened; the click shows a dialog with the reason.
+
+## Settings
+
+`~/Library/Application Support/id.mengai.app/settings.json`, written as the
+template below (mode 0600) on first launch. Changes apply on the next launch.
+
+```json
+{
+  "siteUrl": null,
+  "port": 4190
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `siteUrl` | Origin of the website that serves the MengAI app, for example `https://mengai.example`. Passed to the engine as `MENGAI_SITE_URL` so pairing links point there. `null` or `""` keeps the engine default. Must be https (http only for 127.0.0.1, localhost or [::1], for a local web dev server) with no path, query, fragment or credentials; it is stored as its bare origin. |
+| `port` | Loopback port of the engine, 1024 to 65535, passed as `MENGAI_PORT`. The website app connects to `http://127.0.0.1:4190` by default, so change it only together with the web app's runtime URL. |
+
+Unknown keys, wrong types, a file over 16 KB or an unsafe `siteUrl` stop
+startup with a dialog naming the file (fail closed: a wrong site would be
+handed a pairing token that controls this Mac's engine). Deleting the file
+restores the defaults.
 
 Every sidecar stdout and stderr line after that goes to
 `~/Library/Logs/id.mengai.app/mengai.log` (0600, control characters
@@ -49,7 +125,11 @@ error dialog and quits.
 
 | Case | What the shell does |
 |---|---|
-| tray, data folder, resource folder or supervisor thread unavailable | error dialog, quit |
+| tray, app menu, data folder, resource folder or supervisor thread unavailable | error dialog, quit |
+| settings.json unreadable or invalid | error dialog naming the file, quit (the sidecar is never spawned) |
+| settings port already in use on 127.0.0.1 (for example by root `bun run dev`) | error dialog, quit (the sidecar is never spawned) |
+| pairing link missing or refused | logged; the window works; **Open in browser** shows the reason |
+| default browser cannot be opened | warning dialog |
 | bundled sqlite migrations missing | error dialog, quit (the sidecar is never spawned) |
 | sidecar cannot spawn | error dialog, quit |
 | no ready line within 30 s | SIGTERM, 3 s, kill group, error dialog, quit |
@@ -72,6 +152,11 @@ bun run smoke      # sidecar and dmg smoke against the last release build (see b
 cd src-tauri && cargo check && cargo test   # Rust unit tests, incl. real process-group kills
 bun run scripts/icons.ts                     # regenerate icons from the vector mark
 ```
+
+The app and the root `bun run dev` both answer on 127.0.0.1:4190, so run one
+at a time, or give the app another `port` in settings.json (dev and release
+builds share `~/Library/Application Support/id.mengai.app`). `bun run smoke
+-- --open` needs that port free too.
 
 `cargo check` on a fresh clone writes a placeholder
 `src-tauri/binaries/mengai-api-<triple>` (a shell script that exits 78 with a
@@ -292,5 +377,6 @@ capability.
 
 Tauri 2 and its shell, dialog, opener and global-shortcut plugins, serde,
 serde_json, and libc (kill and killpg only, already in the lockfile through
-Tauri). The HTTP client for the kill switch and the log writer are small
-in-house modules. `bun test` fails if a new direct crate appears.
+Tauri). The HTTP client for the kill switch, the log writer, the settings
+reader and the pairing link check are small in-house modules (URL parsing
+is `tauri::Url`). `bun test` fails if a new direct crate appears.

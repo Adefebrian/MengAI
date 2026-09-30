@@ -3,12 +3,15 @@
 //! Contract (docs/architecture.md section 17): env MENGAI_MODE=local,
 //! MENGAI_DATA_DIR, MENGAI_WEB_DIR, MENGAI_HANDS_BIN, MENGAI_MIGRATIONS_DIR
 //! (the bundled folder holding sqlite/*.sql; the sidecar embeds the same SQL
-//! and uses this folder as an explicit override), optional MENGAI_PORT;
-//! exactly one stdout line `{"event":"ready","port":n,"launchToken":..,"controlToken":..}`;
-//! exits on SIGTERM or stdin close. The shell sends SIGTERM on quit and kills
-//! the process group after 3 s.
+//! and uses this folder as an explicit override), MENGAI_PORT and, when the
+//! owner set one in settings.json, MENGAI_SITE_URL;
+//! exactly one stdout line
+//! `{"event":"ready","port":n,"launchToken":..,"controlToken":..,"pairUrl":..}`
+//! (`pairUrl` optional, see pair.rs); exits on SIGTERM or stdin close. The
+//! shell sends SIGTERM on quit and kills the process group after 3 s.
 use std::ffi::{OsStr, OsString};
 use std::io::{self, BufRead, BufReader, Read};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::mpsc::Sender;
@@ -19,6 +22,8 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 use crate::applog::{AppLog, MAX_LINE};
+use crate::pair;
+use crate::settings::Settings;
 use crate::signals;
 
 pub const READY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -27,8 +32,16 @@ pub const TERM_GRACE: Duration = Duration::from_secs(3);
 /// Parent env vars the sidecar may see. Everything else (cloud credentials,
 /// tokens exported in a dev terminal) is dropped. JEV sec.shell_hardening allowlist 1.0.
 const ENV_ALLOWLIST: &[&str] = &["HOME", "USER", "LOGNAME", "TMPDIR", "PATH", "LANG", "SHELL", "TZ"];
-const ENV_OWNED: &[&str] =
-    &["MENGAI_MODE", "MENGAI_DATA_DIR", "MENGAI_WEB_DIR", "MENGAI_HANDS_BIN", "MENGAI_MIGRATIONS_DIR"];
+/// Set by the shell only; a value exported in the parent env is dropped.
+const ENV_OWNED: &[&str] = &[
+    "MENGAI_MODE",
+    "MENGAI_DATA_DIR",
+    "MENGAI_WEB_DIR",
+    "MENGAI_HANDS_BIN",
+    "MENGAI_MIGRATIONS_DIR",
+    "MENGAI_PORT",
+    "MENGAI_SITE_URL",
+];
 
 pub struct Paths {
     pub data_dir: PathBuf,
@@ -44,6 +57,8 @@ pub struct Ready {
     pub port: u16,
     pub launch_token: String,
     pub control_token: String,
+    /// Raw browser pairing link; validated by pair::check, never fatal (the window works without it).
+    pub pair_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +69,9 @@ struct RawLine {
     launch_token: Option<String>,
     #[serde(rename = "controlToken")]
     control_token: Option<String>,
+    /// Any JSON type: a non-string is treated as a missing link, not as a broken ready line.
+    #[serde(rename = "pairUrl")]
+    pair_url: Option<serde_json::Value>,
 }
 
 /// None: not the ready line (log it). Some(Err): a ready line that breaks the contract (fatal).
@@ -78,7 +96,8 @@ pub fn parse_ready(line: &str) -> Option<Result<Ready, String>> {
         Some(t) if token_ok(&t) => t,
         _ => return Some(Err("ready line has a missing or malformed controlToken".into())),
     };
-    Some(Ok(Ready { port, launch_token, control_token }))
+    let pair_url = raw.pair_url.as_ref().and_then(|v| v.as_str()).map(str::to_owned);
+    Some(Ok(Ready { port, launch_token, control_token, pair_url }))
 }
 
 /// Tokens end up in a URL fragment and an HTTP header: URL-safe characters only.
@@ -87,8 +106,8 @@ pub fn token_ok(t: &str) -> bool {
         && t.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~'))
 }
 
-/// Env for the sidecar: allowlisted parent vars, LC_*, MENGAI_* passthrough (e.g. MENGAI_PORT), then the owned vars.
-pub fn build_env<I, K, V>(parent: I, paths: &Paths) -> Vec<(OsString, OsString)>
+/// Env for the sidecar: allowlisted parent vars, LC_*, MENGAI_* passthrough (e.g. MENGAI_DEMO), then the owned vars.
+pub fn build_env<I, K, V>(parent: I, paths: &Paths, settings: &Settings) -> Vec<(OsString, OsString)>
 where
     I: IntoIterator<Item = (K, V)>,
     K: AsRef<OsStr>,
@@ -107,7 +126,21 @@ where
     env.push(("MENGAI_WEB_DIR".into(), paths.web_dir.clone().into_os_string()));
     env.push(("MENGAI_HANDS_BIN".into(), paths.hands_bin.clone().into_os_string()));
     env.push(("MENGAI_MIGRATIONS_DIR".into(), paths.migrations_dir.clone().into_os_string()));
+    env.push(("MENGAI_PORT".into(), settings.port.to_string().into()));
+    if let Some(site) = &settings.site_url {
+        env.push(("MENGAI_SITE_URL".into(), site.into()));
+    }
     env
+}
+
+/// True when nothing answers on 127.0.0.1:<port> and it can be bound. Checked before the
+/// spawn so a busy port is a clear dialog instead of an engine that exits before ready.
+pub fn port_available(port: u16) -> bool {
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    if TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok() {
+        return false;
+    }
+    TcpListener::bind(addr).is_ok()
 }
 
 /// Reads one line capped at `max` bytes (the rest of an oversized line is discarded).
@@ -166,10 +199,16 @@ pub struct Sidecar {
 
 impl Sidecar {
     /// Spawns the sidecar in its own process group with piped stdio and starts the drain and monitor threads.
-    pub fn spawn(mut cmd: Command, paths: &Paths, log: Arc<AppLog>, events: Sender<Event>) -> io::Result<Arc<Self>> {
+    pub fn spawn(
+        mut cmd: Command,
+        paths: &Paths,
+        settings: &Settings,
+        log: Arc<AppLog>,
+        events: Sender<Event>,
+    ) -> io::Result<Arc<Self>> {
         use std::os::unix::process::CommandExt;
         cmd.env_clear()
-            .envs(build_env(std::env::vars_os(), paths))
+            .envs(build_env(std::env::vars_os(), paths, settings))
             .current_dir(&paths.data_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -289,6 +328,12 @@ fn drain_stdout<R: Read>(stdout: R, log: Arc<AppLog>, events: Sender<Event>) {
                             // The tokens are registered before any later line can be logged.
                             log.add_secret(&ready.launch_token);
                             log.add_secret(&ready.control_token);
+                            if let Some(link) = &ready.pair_url {
+                                if let Some(token) = pair::token_in(link) {
+                                    log.add_secret(token);
+                                }
+                                log.add_secret(link);
+                            }
                             log.info("sidecar", &format!("ready on 127.0.0.1:{}", ready.port));
                             let _ = events.send(Event::Ready(ready));
                             continue;
@@ -332,7 +377,19 @@ mod tests {
     fn parses_the_contract_ready_line() {
         let line = format!("{{\"event\":\"ready\",\"port\":51234,\"launchToken\":\"{LT}\",\"controlToken\":\"{CT}\"}}");
         let ready = parse_ready(&line).unwrap().unwrap();
-        assert_eq!(ready, Ready { port: 51234, launch_token: LT.into(), control_token: CT.into() });
+        assert_eq!(ready, Ready { port: 51234, launch_token: LT.into(), control_token: CT.into(), pair_url: None });
+    }
+
+    #[test]
+    fn carries_the_optional_pair_url_without_judging_it() {
+        let base = format!("\"event\":\"ready\",\"port\":4190,\"launchToken\":\"{LT}\",\"controlToken\":\"{CT}\"");
+        let with = format!("{{{base},\"pairUrl\":\"https://s.example/app#pair=abc\"}}");
+        assert_eq!(parse_ready(&with).unwrap().unwrap().pair_url.as_deref(), Some("https://s.example/app#pair=abc"));
+        // A wrong type or null is a missing link (explained on click), never a broken ready line.
+        for odd in ["null", "5", "{}"] {
+            let line = format!("{{{base},\"pairUrl\":{odd}}}");
+            assert_eq!(parse_ready(&line).unwrap().unwrap().pair_url, None);
+        }
     }
 
     #[test]
@@ -353,10 +410,14 @@ mod tests {
         assert!(parse_ready(short).unwrap().is_err());
     }
 
+    fn test_paths() -> Paths {
+        Paths { data_dir: "/d".into(), web_dir: "/w".into(), hands_bin: "/h".into(), migrations_dir: "/m".into() }
+    }
+
     #[test]
     fn env_is_allowlisted_and_owned_vars_win() {
-        let paths =
-            Paths { data_dir: "/d".into(), web_dir: "/w".into(), hands_bin: "/h".into(), migrations_dir: "/m".into() };
+        let paths = test_paths();
+        let settings = Settings { site_url: Some("https://site.example".into()), port: 4190 };
         let parent = vec![
             ("HOME", "/Users/x"),
             ("PATH", "/usr/bin"),
@@ -364,14 +425,18 @@ mod tests {
             ("AWS_SECRET_ACCESS_KEY", "nope"),
             ("OPENAI_API_KEY", "nope"),
             ("MENGAI_PORT", "4312"),
+            ("MENGAI_SITE_URL", "https://evil.example"),
+            ("MENGAI_DEMO", "1"),
             ("MENGAI_DATA_DIR", "/evil"),
             ("MENGAI_MIGRATIONS_DIR", "/evil-sql"),
         ];
-        let env = build_env(parent, &paths);
+        let env = build_env(parent, &paths, &settings);
         let get = |k: &str| env.iter().rev().find(|(ek, _)| ek == k).map(|(_, v)| v.to_string_lossy().into_owned());
         assert_eq!(get("HOME").as_deref(), Some("/Users/x"));
         assert_eq!(get("LC_ALL").as_deref(), Some("en_US.UTF-8"));
-        assert_eq!(get("MENGAI_PORT").as_deref(), Some("4312"));
+        assert_eq!(get("MENGAI_PORT").as_deref(), Some("4190"));
+        assert_eq!(get("MENGAI_SITE_URL").as_deref(), Some("https://site.example"));
+        assert_eq!(get("MENGAI_DEMO").as_deref(), Some("1"));
         assert_eq!(get("MENGAI_MODE").as_deref(), Some("local"));
         assert_eq!(get("MENGAI_DATA_DIR").as_deref(), Some("/d"));
         assert_eq!(get("MENGAI_WEB_DIR").as_deref(), Some("/w"));
@@ -382,6 +447,22 @@ mod tests {
         for owned in ENV_OWNED {
             assert_eq!(env.iter().filter(|(k, _)| k == owned).count(), 1, "{owned} set exactly once");
         }
+    }
+
+    #[test]
+    fn unset_site_url_is_not_inherited() {
+        let env = build_env(vec![("MENGAI_SITE_URL", "https://evil.example")], &test_paths(), &Settings::default());
+        assert!(env.iter().all(|(k, _)| k != "MENGAI_SITE_URL"));
+        assert!(env.iter().any(|(k, v)| k == "MENGAI_PORT" && v == "4190"));
+    }
+
+    #[test]
+    fn busy_port_is_detected() {
+        let held = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = held.local_addr().unwrap().port();
+        assert!(!port_available(port));
+        drop(held);
+        assert!(port_available(port));
     }
 
     #[test]
@@ -410,7 +491,7 @@ mod tests {
         cmd.arg("-c").arg(script);
         let log = Arc::new(AppLog::open(None));
         let (tx, rx) = std::sync::mpsc::channel();
-        let sc = Sidecar::spawn(cmd, &paths, log.clone(), tx).expect("spawn fake sidecar");
+        let sc = Sidecar::spawn(cmd, &paths, &Settings::default(), log.clone(), tx).expect("spawn fake sidecar");
         (sc, rx, log)
     }
 

@@ -192,15 +192,43 @@ describe("shared contract", () => {
     expect(control).toContain('pub const KILLSWITCH_PATH: &str = "/api/killswitch";');
   });
 
-  test("the shell passes the five contract env vars and owns each one", async () => {
+  test("the shell passes the contract env vars and owns each one", async () => {
     const sidecar = await read("src/sidecar.rs");
     const owned = /const ENV_OWNED: &\[&str\] =\s*&\[([^\]]*)\]/.exec(sidecar)?.[1] ?? "";
-    for (const name of ["MENGAI_MODE", "MENGAI_DATA_DIR", "MENGAI_WEB_DIR", "MENGAI_HANDS_BIN", "MENGAI_MIGRATIONS_DIR"]) {
+    for (const name of ["MENGAI_MODE", "MENGAI_DATA_DIR", "MENGAI_WEB_DIR", "MENGAI_HANDS_BIN", "MENGAI_MIGRATIONS_DIR", "MENGAI_PORT", "MENGAI_SITE_URL"]) {
       expect(sidecar).toContain(`env.push(("${name}".into()`);
       expect(owned).toContain(`"${name}"`);
     }
     expect(sidecar).toContain('("MENGAI_MIGRATIONS_DIR".into(), paths.migrations_dir.clone().into_os_string())');
     expect(sidecar).toContain('("MENGAI_MODE".into(), "local".into())');
+    expect(sidecar).toContain('("MENGAI_PORT".into(), settings.port.to_string().into())');
+  });
+
+  test("settings.json feeds MENGAI_SITE_URL and the fixed runtime port the website app talks to", async () => {
+    const settings = await read("src/settings.rs");
+    expect(settings).toContain('pub const FILE_NAME: &str = "settings.json";');
+    expect(settings).toContain("pub const DEFAULT_PORT: u16 = 4190;");
+    const template = /pub const TEMPLATE: &str = "((?:[^"\\]|\\.)*)";/.exec(settings)?.[1];
+    expect(template).toBeDefined();
+    expect(JSON.parse(JSON.parse(`"${template}"`))).toEqual({ siteUrl: null, port: 4190 });
+    // The root dev runtime and the Mac app answer on the same local address.
+    const root = await Bun.file(join(repoRoot, "package.json")).json();
+    expect(root.scripts.dev).toContain("MENGAI_PORT=4190");
+  });
+
+  test("Open in browser opens only the checked pairing link from the ready line", async () => {
+    const api = await Bun.file(join(repoRoot, "packages", "shared", "src", "api.ts")).text();
+    expect(api).toContain('"POST /api/auth/pair"');
+    const sidecar = await read("src/sidecar.rs");
+    expect(sidecar).toContain('#[serde(rename = "pairUrl")]');
+    const main = await read("src/main.rs");
+    expect(main).toContain('"Open in browser"');
+    expect(main).toContain("pair::check(ready.pair_url.as_deref(), settings.site_url.as_deref())");
+    const opens = [...main.matchAll(/\.open_url\(([^,]+),/g)].map((m) => m[1]!.trim());
+    expect(opens).toEqual(["link.as_str()"]);
+    const pair = await read("src/pair.rs");
+    expect(pair).toContain("if !token_ok(token)");
+    expect(pair).toContain("if origin != site");
   });
 });
 

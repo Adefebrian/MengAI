@@ -12,9 +12,25 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const MAX_BYTES: u64 = 5 * 1024 * 1024;
 pub const MAX_LINE: usize = 8 * 1024;
 const REDACTED: &str = "[redacted]";
-/// Prefixes of well-known provider key formats; the token after them is masked.
-const KEY_PREFIXES: &[&str] =
-    &["sk-", "sk_", "AIza", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "hf_", "r8_", "fal_", "Bearer "];
+/// Prefixes of well-known provider key formats, plus the launch and pairing link
+/// fragments (a sidecar line can carry one before the ready line registers it);
+/// the token after them is masked.
+const KEY_PREFIXES: &[&str] = &[
+    "sk-",
+    "sk_",
+    "AIza",
+    "ghp_",
+    "gho_",
+    "github_pat_",
+    "xoxb-",
+    "xoxp-",
+    "hf_",
+    "r8_",
+    "fal_",
+    "Bearer ",
+    "pair=",
+    "launch=",
+];
 const MIN_SECRET_LEN: usize = 16;
 
 pub struct AppLog {
@@ -138,6 +154,10 @@ mod tests {
         let out = redact("t=launch-token-abcdef123 key sk-proj-ABCDEFGHIJKLMNOPQRST short sk-abc", &secrets);
         assert_eq!(out, "t=[redacted] key sk-[redacted] short sk-abc");
         assert_eq!(redact("Authorization: Bearer abcdefghijklmnopqrstuvwxyz", &[]), "Authorization: Bearer [redacted]");
+        assert_eq!(
+            redact("Pair: https://s.example/app#pair=abcdefghijklmnop0123&x=1 or /#launch=abcdefghijklmnop0123", &[]),
+            "Pair: https://s.example/app#pair=[redacted]&x=1 or /#launch=[redacted]"
+        );
     }
 
     #[test]

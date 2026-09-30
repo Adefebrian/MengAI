@@ -2,33 +2,39 @@
 //!
 //! Spawns the compiled Bun API sidecar, waits for its ready line, opens the
 //! main window on http://127.0.0.1:<port>/#launch=<token>, and owns the kill
-//! switch (tray item and Cmd+Shift+Escape). Every startup failure and every
-//! failure to reach the engine is loud: an error dialog and a clean stop,
-//! never a panic and never a silent fallback.
+//! switch (tray item and Cmd+Shift+Escape). "Open in browser" (tray and app
+//! menu) hands the ready line's pairing link to the default browser, so the
+//! owner's website app can pair with this runtime. Every startup failure and
+//! every failure to reach the engine is loud: an error dialog and a clean
+//! stop, never a panic and never a silent fallback.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod applog;
 mod control;
+mod pair;
+mod settings;
 mod sidecar;
 mod signals;
 mod window;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent, Wry};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::ShellExt;
 
 use applog::AppLog;
 use control::Trigger;
+use settings::Settings;
 use sidecar::{Event, Paths, Sidecar};
 
 /// externalBin name in tauri.conf.json (the file on disk carries the target triple).
@@ -39,11 +45,24 @@ const HANDS_BIN: &str = "hands/mengai-hands";
 /// Holds `sqlite/*.sql` (bundle.resources maps the repo migrations/sqlite there).
 const MIGRATIONS_DIR: &str = "migrations";
 
+/// Menu ids, shared by the tray menu and the app menu (one global handler).
+const MENU_SHOW: &str = "show";
+const MENU_OPEN_BROWSER: &str = "open_browser";
+const MENU_SETTINGS: &str = "settings";
+const MENU_KILLSWITCH: &str = "killswitch";
+const MENU_QUIT: &str = "quit";
+
 struct Shell {
     log: Arc<AppLog>,
     sidecar: OnceLock<Arc<Sidecar>>,
     quitting: AtomicBool,
     kill_in_flight: AtomicBool,
+    /// `<app data dir>/settings.json`, once the data dir is known.
+    settings_path: OnceLock<PathBuf>,
+    /// Checked pairing link from the ready line, or the owner-facing reason it cannot be opened.
+    pair: OnceLock<Result<String, String>>,
+    /// Both "Open in browser" items; disabled until the ready line arrives.
+    open_items: Mutex<Vec<MenuItem<Wry>>>,
 }
 
 fn kill_shortcut() -> Shortcut {
@@ -66,6 +85,7 @@ fn main() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![pick_folder])
+        .on_menu_event(|app, event| on_menu(app, event.id().as_ref()))
         .setup(|app| {
             setup(app.handle());
             Ok(())
@@ -107,15 +127,22 @@ fn setup(app: &AppHandle) {
         sidecar: OnceLock::new(),
         quitting: AtomicBool::new(false),
         kill_in_flight: AtomicBool::new(false),
+        settings_path: OnceLock::new(),
+        pair: OnceLock::new(),
+        open_items: Mutex::new(Vec::new()),
     });
     if let Err(message) = start(app, &log) {
         spawn_fatal(app, message);
     }
 }
 
-/// Tray, shortcut, paths, then the sidecar and its supervisor. Err is the dialog text.
+/// Menus, shortcut, paths, settings, then the sidecar and its supervisor. Err is the dialog text.
 fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
-    build_tray(app).map_err(|e| format!("MengAI could not create its menu bar item ({e})."))?;
+    let tray_open = build_tray(app).map_err(|e| format!("MengAI could not create its menu bar item ({e})."))?;
+    let menu_open = build_app_menu(app).map_err(|e| format!("MengAI could not create its app menu ({e})."))?;
+    if let Ok(mut items) = app.state::<Shell>().open_items.lock() {
+        items.extend([tray_open, menu_open]);
+    }
     if let Err(e) = app.global_shortcut().register(kill_shortcut()) {
         log.error("shell", &format!("global kill shortcut Cmd+Shift+Escape is unavailable ({e}); the tray item and the header button still work"));
     }
@@ -123,6 +150,14 @@ fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
     let data_dir = app.path().app_data_dir().map_err(|e| format!("MengAI could not locate its data folder ({e})."))?;
     create_private_dir(&data_dir)
         .map_err(|e| format!("MengAI could not create its data folder at {} ({e}).", data_dir.display()))?;
+    let settings = load_settings(app, log, &data_dir)?;
+    if !sidecar::port_available(settings.port) {
+        return Err(format!(
+            "Port {} on 127.0.0.1 is already in use, often by another MengAI engine such as `bun run dev`. Quit it, or set another \"port\" in {}, then open MengAI again.",
+            settings.port,
+            data_dir.join(settings::FILE_NAME).display()
+        ));
+    }
     let resources =
         app.path().resource_dir().map_err(|e| format!("MengAI could not locate its bundled resources ({e})."))?;
     let paths = Paths {
@@ -150,7 +185,7 @@ fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
         .map_err(|e| format!("MengAI could not find its engine ({e}). Details are in the app log."))?
         .into();
     let (tx, rx) = mpsc::channel();
-    let sidecar = Sidecar::spawn(cmd, &paths, log.clone(), tx)
+    let sidecar = Sidecar::spawn(cmd, &paths, &settings, log.clone(), tx)
         .map_err(|e| format!("MengAI could not start its engine ({e}). Details are in the app log."))?;
     log.info("shell", &format!("sidecar spawned, pid {}", sidecar.pid));
     let _ = app.state::<Shell>().sidecar.set(sidecar);
@@ -158,7 +193,7 @@ fn start(app: &AppHandle, log: &Arc<AppLog>) -> Result<(), String> {
     // On error the sidecar is already registered, so the fatal path stops its group.
     thread::Builder::new()
         .name("sidecar-supervisor".into())
-        .spawn(move || supervise(handle, rx))
+        .spawn(move || supervise(handle, rx, settings))
         .map_err(|e| format!("MengAI could not watch its engine ({e})."))?;
     Ok(())
 }
@@ -170,12 +205,58 @@ fn has_sql_files(dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// settings.json from the data dir: missing means defaults plus a template; invalid is fatal.
+fn load_settings(app: &AppHandle, log: &AppLog, data_dir: &Path) -> Result<Settings, String> {
+    let path = data_dir.join(settings::FILE_NAME);
+    let _ = app.state::<Shell>().settings_path.set(path.clone());
+    let (settings, missing) = settings::load(&path).map_err(|reason| {
+        format!(
+            "MengAI could not use its settings file at {}: {reason}. Fix the file or delete it to go back to the defaults, then open MengAI again.",
+            path.display()
+        )
+    })?;
+    if missing {
+        if let Err(e) = settings::write_template(&path) {
+            log.warn(
+                "settings",
+                &format!("could not write the default settings file at {} ({e}); using the defaults", path.display()),
+            );
+        }
+    }
+    log.info(
+        "settings",
+        &format!("site {}, port {}", settings.site_url.as_deref().unwrap_or("engine default"), settings.port),
+    );
+    Ok(settings)
+}
+
 /// Waits for the ready line (30 s), opens the window, then watches for an unexpected exit.
-fn supervise(app: AppHandle, rx: Receiver<Event>) {
+fn supervise(app: AppHandle, rx: Receiver<Event>, settings: Settings) {
     match rx.recv_timeout(sidecar::READY_TIMEOUT) {
         Ok(Event::Ready(ready)) => {
-            if let Some(sc) = app.state::<Shell>().sidecar.get() {
+            let shell = app.state::<Shell>();
+            if let Some(sc) = shell.sidecar.get() {
                 sc.set_ready(&ready);
+            }
+            if ready.port != settings.port {
+                shell.log.warn(
+                    "shell",
+                    &format!(
+                        "engine listens on {} instead of the configured port {}; the website app may not find it",
+                        ready.port, settings.port
+                    ),
+                );
+            }
+            let pair = pair::check(ready.pair_url.as_deref(), settings.site_url.as_deref());
+            match &pair {
+                Ok(_) => shell.log.info("shell", "browser pairing link ready"),
+                Err(reason) => shell.log.warn("shell", reason),
+            }
+            let _ = shell.pair.set(pair);
+            if let Ok(items) = shell.open_items.lock() {
+                for item in items.iter() {
+                    let _ = item.set_enabled(true);
+                }
             }
             if let Err(e) = window::open_main(&app, ready.port, &ready.launch_token) {
                 return fatal(&app, &format!("MengAI could not open its window ({e})."), false);
@@ -290,30 +371,107 @@ fn trigger_killswitch(app: &AppHandle, by: Trigger) {
     }
 }
 
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show MengAI", true, None::<&str>)?;
-    let kill = MenuItem::with_id(app, "killswitch", "Kill switch", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit MengAI", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &kill, &quit])?;
+fn open_browser_item(app: &AppHandle) -> tauri::Result<MenuItem<Wry>> {
+    MenuItem::with_id(app, MENU_OPEN_BROWSER, "Open in browser", false, None::<&str>)
+}
+
+fn settings_item(app: &AppHandle) -> tauri::Result<MenuItem<Wry>> {
+    MenuItem::with_id(app, MENU_SETTINGS, "Show settings file", true, None::<&str>)
+}
+
+/// Tray menu; returns its "Open in browser" item. Clicks go to `on_menu`.
+fn build_tray(app: &AppHandle) -> tauri::Result<MenuItem<Wry>> {
+    let show = MenuItem::with_id(app, MENU_SHOW, "Show MengAI", true, None::<&str>)?;
+    let open = open_browser_item(app)?;
+    let settings = settings_item(app)?;
+    let kill = MenuItem::with_id(app, MENU_KILLSWITCH, "Kill switch", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, MENU_QUIT, "Quit MengAI", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &open, &settings, &kill, &quit])?;
     TrayIconBuilder::with_id("mengai")
         .icon(tauri::include_image!("icons/tray.png"))
         .icon_as_template(true)
         .tooltip("MengAI")
         .menu(&menu)
         .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => window::show_main(app),
-            "killswitch" => trigger_killswitch(app, Trigger::Tray),
-            "quit" => {
-                if let Some(shell) = app.try_state::<Shell>() {
-                    shell.quitting.store(true, Ordering::SeqCst);
-                }
-                app.exit(0);
-            }
-            _ => {}
-        })
         .build(app)?;
-    Ok(())
+    Ok(open)
+}
+
+/// The macOS default app menu with "Open in browser" and "Show settings file" under About.
+fn build_app_menu(app: &AppHandle) -> tauri::Result<MenuItem<Wry>> {
+    let menu = Menu::default(app)?;
+    let open = open_browser_item(app)?;
+    let settings = settings_item(app)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    match menu.items()?.first().and_then(|item| item.as_submenu()) {
+        // [About, separator, ...]: insert after them.
+        Some(app_menu) => app_menu.insert_items(&[&open, &settings, &separator], 2)?,
+        None => menu.prepend(&Submenu::with_items(app, "MengAI", true, &[&open, &settings])?)?,
+    }
+    app.set_menu(menu)?;
+    Ok(open)
+}
+
+/// One handler for the tray and the app menu (Tauri delivers both to global menu listeners).
+fn on_menu(app: &AppHandle, id: &str) {
+    match id {
+        MENU_SHOW => window::show_main(app),
+        MENU_OPEN_BROWSER => open_in_browser(app),
+        MENU_SETTINGS => show_settings_file(app),
+        MENU_KILLSWITCH => trigger_killswitch(app, Trigger::Tray),
+        MENU_QUIT => {
+            if let Some(shell) = app.try_state::<Shell>() {
+                shell.quitting.store(true, Ordering::SeqCst);
+            }
+            app.exit(0);
+        }
+        _ => {}
+    }
+}
+
+/// Opens the checked pairing link in the default browser. Never opens an unchecked URL;
+/// every refusal is a dialog with the reason. The link itself is never logged.
+fn open_in_browser(app: &AppHandle) {
+    let Some(shell) = app.try_state::<Shell>() else { return };
+    let outcome = match shell.pair.get() {
+        None => Err("MengAI is still starting. Try again in a moment.".to_string()),
+        Some(Err(reason)) => Err(reason.clone()),
+        Some(Ok(link)) => app
+            .opener()
+            .open_url(link.as_str(), None::<&str>)
+            .map_err(|e| format!("MengAI could not open your default browser ({e}).")),
+    };
+    match outcome {
+        Ok(()) => shell.log.info("shell", "opened the pairing link in the default browser"),
+        Err(message) => {
+            shell.log.warn("shell", &message);
+            notice(app, &message);
+        }
+    }
+}
+
+/// Reveals settings.json in Finder, writing the default template first when it is missing.
+fn show_settings_file(app: &AppHandle) {
+    let Some(shell) = app.try_state::<Shell>() else { return };
+    let outcome = match shell.settings_path.get() {
+        None => Err("MengAI has not located its data folder yet.".to_string()),
+        Some(path) => settings::write_template(path)
+            .map_err(|e| format!("MengAI could not create {} ({e}).", path.display()))
+            .and_then(|()| {
+                app.opener()
+                    .reveal_item_in_dir(path)
+                    .map_err(|e| format!("MengAI could not show {} in Finder ({e}).", path.display()))
+            }),
+    };
+    if let Err(message) = outcome {
+        shell.log.warn("settings", &message);
+        notice(app, &message);
+    }
+}
+
+/// Non-blocking warning dialog; safe on the main thread (menu handlers run there).
+fn notice(app: &AppHandle, message: &str) {
+    app.dialog().message(message).title("MengAI").kind(MessageDialogKind::Warning).show(|_| {});
 }
 
 /// SIGTERM, 3 s grace, then the process group. Runs on RunEvent::Exit.
