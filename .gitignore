@@ -21,7 +21,7 @@ coverage/
 *.db
 *.db-shm
 *.db-wal
-data/
+/data/
 .data/
 
 # legacy app kept locally for reference only (contains secrets and DB dumps)
