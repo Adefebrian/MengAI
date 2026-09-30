@@ -236,10 +236,36 @@ export function Segmented<T extends string>({
   );
 }
 
-/** A switch (JAL Core Switch): the whole row is one 44px button with role switch; the thumb moves by transform. */
-export function Switch({ label, description, checked, onChange, disabled }: { label: string; description?: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+/**
+ * A switch (JAL Core Switch): the whole row is one 44px button with role
+ * switch; the thumb moves by transform. In a list of rows, `ariaLabel`
+ * names which row it belongs to and starts with the visible label.
+ */
+export function Switch({
+  label,
+  description,
+  checked,
+  onChange,
+  disabled,
+  ariaLabel,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
   return (
-    <button type="button" role="switch" aria-checked={checked} className="app-switch" disabled={disabled} onClick={() => onChange(!checked)}>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      className="app-switch"
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    >
       <span className="app-switch-track" aria-hidden="true">
         <span className="app-switch-thumb" />
       </span>

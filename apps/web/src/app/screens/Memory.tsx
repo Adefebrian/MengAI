@@ -1,9 +1,10 @@
 // Copyright 2026 Adefebrian (https://adefebrian.com). Built by Adefebrian. Noncommercial use only, see LICENSE.
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Memory (/app/memory): what the crew learned. Lessons in one divided
-// group per status with their record (JEV core.list.grouped.actions), then
-// the saved skills (card). A lesson only stays active while it keeps
-// winning; you can promote, retire or delete any of them.
+// group per status with their record (JEV core.list.grouped.actions). A
+// lesson only stays active while it keeps winning; you can promote, retire
+// or delete any of them. The recipes the crew saved moved to Skills, next
+// to the written skills every cat reads.
 import { ROLE_LABEL, type LessonDTO, type LessonStatus } from "@mengai/shared";
 import { EmptyState, ProductIcon, SkeletonRows, StatusPill } from "@mengai/ui/src/product";
 import { useState } from "react";
@@ -85,14 +86,19 @@ function LessonRow({ lesson, onChange, onDelete }: { lesson: LessonDTO; onChange
 export function MemoryScreen() {
   const { api } = useApp();
   const lessons = useResource((signal) => api.call("GET /api/memory/lessons", { signal }), "lessons");
-  const skills = useResource((signal) => api.call("GET /api/memory/skills", { signal }), "skills");
-  const del = useAction();
   const all = lessons.data ?? [];
   const counts = GROUPS.map((g) => `${all.filter((l) => l.status === g.status).length} ${g.label.toLowerCase()}`).join(", ");
 
   return (
     <Page>
-      <PageHead title="Memory" lead="What the crew learned from reviews and failures. A lesson stays in the prompt only while it keeps working." />
+      <PageHead
+        title="Memory"
+        lead={
+          <>
+            What the crew learned from reviews and failures. A lesson stays in the prompt only while it keeps working. The recipes cats saved and the written skills they read are under <a href="/app/skills">Skills</a>.
+          </>
+        }
+      />
 
       <Region container="divided" title="Lessons" meta={all.length ? counts : undefined}>
         {lessons.error ? (
@@ -132,50 +138,6 @@ export function MemoryScreen() {
             })}
           </div>
         )}
-      </Region>
-
-      <Region container="card" title="Skills" className="app-card" meta="Tool sequences a cat saved because they worked. Cats replay them instead of working it out again.">
-        {skills.loading && !skills.data ? (
-          <SkeletonRows rows={2} label="Loading skills" />
-        ) : (skills.data ?? []).length === 0 ? (
-          <p className="app-empty-line">No skills saved yet.</p>
-        ) : (
-          <ul className="skill-list">
-            {(skills.data ?? []).map((s) => (
-              <li className="skill-row" key={s.id}>
-                <span className="skill-body">
-                  <span className="skill-name">{s.name}</span>
-                  <span className="skill-desc">{s.description}</span>
-                  <span className="lesson-meta">
-                    <span>{s.role ? `${ROLE_LABEL[s.role]} cats` : "Every cat"}</span>
-                    <span>
-                      <span className="num">{s.steps.length}</span> {s.steps.length === 1 ? "step" : "steps"}: <span className="num">{s.steps.map((x) => x.tool).join(", ")}</span>
-                    </span>
-                    <span>
-                      Won <span className="num">{s.wins}</span> of <span className="num">{s.uses}</span>
-                    </span>
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  aria-label={`Delete skill ${s.name}`}
-                  disabled={del.busy}
-                  onClick={() =>
-                    del.run(async () => {
-                      await api.call("DELETE /api/memory/skills/:id", { params: { id: s.id } });
-                      skills.setData((prev) => (prev ?? []).filter((x) => x.id !== s.id));
-                    })
-                  }
-                >
-                  <ProductIcon name="trash" size={20} />
-                  <span>Delete</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <FormStatus error={del.error} />
       </Region>
     </Page>
   );

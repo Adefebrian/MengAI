@@ -6,9 +6,12 @@
 // base URL comes prefilled from the preset and stays editable, custom
 // endpoints start empty), the JEV judge as its own key-only card,
 // then model routing per tier, per role and for media (divided section of
-// three settings tables on one column grid, closed by one save row).
+// three settings tables on one column grid, closed by one save row). Each
+// tier also sets its reasoning effort (TierMapping.reasoning, missing
+// means Default), saved with the routing.
 import {
   AGENT_ROLES,
+  REASONING_EFFORTS,
   ROLE_LABEL,
   TIERS,
   findPreset,
@@ -16,7 +19,9 @@ import {
   type ModelRouting,
   type ProviderDTO,
   type ProviderPreset,
+  type ReasoningEffort,
   type Tier,
+  type TierMapping,
 } from "@mengai/shared";
 import { EmptyState, ProductIcon, Sheet, SkeletonRows } from "@mengai/ui/src/product";
 import { useEffect, useId, useState, type FormEvent } from "react";
@@ -31,6 +36,15 @@ const TIER_JOB: Record<Tier, string> = {
   balanced: "Most coding and review",
   deep: "Planning and hard calls",
 };
+export const REASONING_WORD: Record<ReasoningEffort, string> = { default: "Default", none: "None", low: "Low", medium: "Medium", high: "High" };
+/** The one line under the tiers that says what Default and None do. */
+export const REASONING_NOTE = "Reasoning on Default lets each model decide, and MengAI handles a vendor that refuses the setting. None is the fastest and cheapest.";
+
+/** A tier as the engine stores it: Default is the missing value, so it is never sent. */
+function canonTier(m: TierMapping): TierMapping {
+  const { reasoning, ...rest } = m;
+  return reasoning && reasoning !== "default" ? { ...rest, reasoning } : rest;
+}
 
 function ProviderRow({ p, now, onChange, onRemove }: { p: ProviderDTO; now: number; onChange: (p: ProviderDTO) => void; onRemove: (id: string) => void }) {
   const { api } = useApp();
@@ -414,7 +428,7 @@ function routingKey(r: ModelRouting): string {
   return JSON.stringify({
     tiers: TIERS.map((t) => {
       const m = r.tiers.find((x) => x.tier === t);
-      return [m?.providerId ?? null, m?.model ?? null];
+      return [m?.providerId ?? null, m?.model ?? null, m?.reasoning ?? "default"];
     }),
     roles: ROUTED_ROLES.map((role) => r.roleTiers[role] ?? null),
     image: [r.image.providerId, r.image.model],
@@ -422,8 +436,12 @@ function routingKey(r: ModelRouting): string {
   });
 }
 
-/** The column heads of one routing table, shown once above its rows from 768px. Each control carries its own name. */
-function RoutingHead({ cols }: { cols: readonly [string, string, string] }) {
+/**
+ * The column heads of one routing table, shown once above its rows from
+ * 768px. Each control carries its own name. A three-column table runs its
+ * last head across the tier table's fourth track, as its rows do.
+ */
+function RoutingHead({ cols }: { cols: readonly string[] }) {
   return (
     <div className="rt-head" aria-hidden="true">
       {cols.map((c) => (
@@ -454,12 +472,13 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
   const chat = providers.filter((p) => p.caps.includes("chat"));
   const labelOf = (id: string | null) => providers.find((p) => p.id === id)?.label ?? "a removed provider";
   const modelsOf = (id: string | null) => providers.find((p) => p.id === id)?.models ?? [];
-  const tier = (t: Tier) => draft.tiers.find((x) => x.tier === t) ?? { tier: t, providerId: null, model: null };
-  const setTier = (t: Tier, patch: { providerId?: string | null; model?: string | null }) =>
+  const tier = (t: Tier): TierMapping => draft.tiers.find((x) => x.tier === t) ?? { tier: t, providerId: null, model: null };
+  const setTier = (t: Tier, patch: { providerId?: string | null; model?: string | null; reasoning?: ReasoningEffort }) =>
     setDraft((d) => {
       const rest = d.tiers.filter((x) => x.tier !== t);
-      return { ...d, tiers: [...rest, { ...tier(t), ...patch }].sort((a, b) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier)) };
+      return { ...d, tiers: [...rest, canonTier({ ...tier(t), ...patch })].sort((a, b) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier)) };
     });
+  const noteId = `${uid}-reasoning-note`;
   // Mirrors the server (provider agnostic): an Automatic tier borrows the
   // nearest mapped tier, cheaper first; with nothing mapped it uses the first
   // chat provider the owner added, with that provider's first model.
@@ -494,7 +513,7 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
       return;
     }
     void save.run(async () => {
-      const r = await api.call("PUT /api/routing", { body: draft });
+      const r = await api.call("PUT /api/routing", { body: { ...draft, tiers: draft.tiers.map(canonTier) } });
       onSaved(r);
       setOk(true);
     });
@@ -514,9 +533,12 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
         <div className="rt-intro">
           <h3 className="app-h3">Tiers</h3>
           <p className="app-region-meta">A tier left on Automatic borrows the nearest tier you mapped, or uses the first provider you added.</p>
+          <p className="app-region-meta" id={noteId}>
+            {REASONING_NOTE}
+          </p>
         </div>
         <div className="rt-table">
-          <RoutingHead cols={["Tier", "Provider", "Model"]} />
+          <RoutingHead cols={["Tier", "Provider", "Model", "Reasoning"]} />
           {TIERS.map((t) => {
             const m = tier(t);
             const list = modelsOf(m.providerId);
@@ -577,6 +599,24 @@ function Routing({ providers, routing, onSaved }: { providers: ProviderDTO[]; ro
                       <p className="rt-use rt-inherit">{autoUse(t)}</p>
                     </>
                   )}
+                </div>
+                <div className="rt-cell rt-reason">
+                  <label className="rt-cap" htmlFor={`${id}-reason`}>
+                    Reasoning
+                  </label>
+                  <select
+                    id={`${id}-reason`}
+                    aria-label={`${TIER_WORD[t]} reasoning`}
+                    aria-describedby={noteId}
+                    value={m.reasoning ?? "default"}
+                    onChange={(e) => setTier(t, { reasoning: e.target.value as ReasoningEffort })}
+                  >
+                    {REASONING_EFFORTS.map((r) => (
+                      <option key={r} value={r}>
+                        {REASONING_WORD[r]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             );

@@ -38,10 +38,11 @@ import { RuntimeOfflineScreen } from "./screens/Onboarding";
 import { ProvidersScreen } from "./screens/Providers";
 import { SecurityScreen } from "./screens/Security";
 import { SettingsScreen } from "./screens/Settings";
+import { SkillsScreen } from "./screens/Skills";
 import { TradingScreen } from "./screens/Trading";
 import { Page } from "./ui";
 
-export type AppRouteId = "home" | "run" | "providers" | "connectors" | "trading" | "approvals" | "memory" | "assets" | "security" | "evals" | "settings" | "about";
+export type AppRouteId = "home" | "run" | "providers" | "connectors" | "trading" | "approvals" | "memory" | "skills" | "assets" | "security" | "evals" | "settings" | "about";
 
 const NAV_OF: Record<AppRouteId, string> = {
   home: "runs",
@@ -51,6 +52,7 @@ const NAV_OF: Record<AppRouteId, string> = {
   trading: "trading",
   approvals: "approvals",
   memory: "memory",
+  skills: "skills",
   assets: "assets",
   security: "security",
   evals: "evals",
@@ -67,6 +69,7 @@ function destinations(pending: number): AppShellDestination[] {
     { id: "connectors", label: "Connectors", href: "/app/connectors", icon: icon("cpu") },
     { id: "trading", label: "Trading", href: "/app/trading", icon: icon("dollar") },
     { id: "memory", label: "Memory", href: "/app/memory", icon: icon("memory") },
+    { id: "skills", label: "Skills", href: "/app/skills", icon: icon("fileText") },
     { id: "assets", label: "Assets", href: "/app/assets", icon: icon("assets") },
     { id: "security", label: "Security", href: "/app/security", icon: icon("security") },
     { id: "evals", label: "Evals", href: "/app/evals", icon: icon("evals") },
@@ -333,6 +336,8 @@ function Screen({ route, location }: { route: RouteMatch<AppRouteId> | null; loc
       return <ApprovalsScreen />;
     case "memory":
       return <MemoryScreen />;
+    case "skills":
+      return <SkillsScreen />;
     case "assets":
       return <AssetsScreen />;
     case "security":

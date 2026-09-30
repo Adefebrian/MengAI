@@ -2692,9 +2692,13 @@ a.queue-row:focus-visible {
    ui.component_recipe core.settings_table; ui.density comfortable for this
    form). Phone: a tier row stacks name, provider, model with the column
    names as labels; a role or media row puts its name and resolved model
-   beside the select (24 + 20 = the 44px control). From 768px every table
-   runs name, choice, model on 2fr 3fr 3fr tracks with its column heads
-   shown once, so the control columns line up down the section. Rows are
+   beside the select (24 + 20 = the 44px control). A tier row adds its
+   reasoning select: stacked on a phone, the three controls side by side
+   under the name from 640px. From 768px every table runs on one
+   2fr 3fr 3fr 2fr grid with its column heads shown once: a tier row is
+   name, provider, model, reasoning; a role or media row is name, choice,
+   and what it resolves to across the last two tracks, so the name and
+   control columns line up down the section. Rows are
    open, split by one hairline; the save row closes the form under one
    hairline, status on the content line, Save on the table's right edge
    (a sticky bar would sit over the rows, so it stays in flow). */
@@ -2742,7 +2746,8 @@ a.queue-row:focus-visible {
   grid-template-areas:
     "name"
     "prov"
-    "model";
+    "model"
+    "reason";
 }
 .rt-row[data-kind="pick"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2764,6 +2769,9 @@ a.queue-row:focus-visible {
 }
 .rt-model {
   grid-area: model;
+}
+.rt-reason {
+  grid-area: reason;
 }
 .rt-ctl {
   grid-area: ctl;
@@ -2840,24 +2848,27 @@ a.queue-row:focus-visible {
 }
 @media (min-width: 640px) {
   .rt-row[data-kind="tier"] {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 2fr);
     grid-template-areas:
-      "name name"
-      "prov model";
+      "name name name"
+      "prov model reason";
   }
 }
 @media (min-width: 768px) {
   .rt-head,
   .rt-row[data-kind] {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) minmax(0, 3fr);
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) minmax(0, 3fr) minmax(0, 2fr);
     column-gap: var(--space-24px);
     row-gap: 0;
   }
   .rt-row[data-kind="tier"] {
-    grid-template-areas: "name prov model";
+    grid-template-areas: "name prov model reason";
   }
   .rt-row[data-kind="pick"] {
-    grid-template-areas: "name ctl use";
+    grid-template-areas: "name ctl use use";
+  }
+  .rt-head > :nth-child(3):last-child {
+    grid-column: 3 / -1;
   }
   .rt-row[data-kind="pick"] > .rt-name,
   .rt-row[data-kind="pick"] > .rt-use {
@@ -3633,29 +3644,34 @@ button.app-switch:disabled .app-switch-track {
   min-width: 0;
 }
 .mind-disclosure-body[hidden],
-.connector-tool-list[hidden] {
+.connector-tool-list[hidden],
+.cskill-text-wrap[hidden] {
   display: none;
 }
 button.mind-toggle,
-button.connector-toggle {
+button.connector-toggle,
+button.cskill-toggle {
   justify-self: start;
   gap: var(--space-6px);
   padding-inline: 0;
   color: var(--color-ink);
 }
 .mind-toggle-icon,
-.connector-toggle-icon {
+.connector-toggle-icon,
+.cskill-toggle-icon {
   display: inline-flex;
   transition: transform var(--dur-150) var(--ease-standard);
 }
 button[aria-expanded="true"] > .mind-toggle-icon,
-button[aria-expanded="true"] > .connector-toggle-icon {
+button[aria-expanded="true"] > .connector-toggle-icon,
+button[aria-expanded="true"] > .cskill-toggle-icon {
   transform: rotate(180deg);
 }
 /* Opt out of the base button's ink fill (button:enabled:hover and :active). */
 @media (hover: hover) {
   button.mind-toggle:enabled:hover,
-  button.connector-toggle:enabled:hover {
+  button.connector-toggle:enabled:hover,
+  button.cskill-toggle:enabled:hover {
     background: transparent;
     text-decoration: underline;
     text-underline-offset: var(--space-4px);
@@ -3664,7 +3680,8 @@ button[aria-expanded="true"] > .connector-toggle-icon {
   }
 }
 button.mind-toggle:enabled:active,
-button.connector-toggle:enabled:active {
+button.connector-toggle:enabled:active,
+button.cskill-toggle:enabled:active {
   background: transparent;
   border-color: transparent;
   color: var(--color-ink);
@@ -3696,7 +3713,8 @@ button.connector-toggle:enabled:active {
 }
 @media (prefers-reduced-motion: reduce) {
   .mind-toggle-icon,
-  .connector-toggle-icon {
+  .connector-toggle-icon,
+  .cskill-toggle-icon {
     transition: none;
   }
 }
@@ -3912,7 +3930,8 @@ button.symbol-chip:enabled:active {
 .connector-row {
   align-items: flex-start;
 }
-.connector-icon {
+.connector-icon,
+.cskill-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4142,6 +4161,227 @@ button.app-radio:disabled .app-radio-dot {
 /* =========================================================== SETTINGS */
 .settings-org-now {
   margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+
+/* ============================================================= SKILLS */
+/* The built-in pack as a divided section: one record per row between
+   hairlines. The row's controls (read the text, the enabled switch) sit
+   under the words on a phone and beside them from 768px; the opened text
+   and any error run the full row under both. Rows are auto-placed, so a
+   closed text adds no track and no gap. */
+.cskill-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cskill-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-8px);
+  min-width: 0;
+  padding: var(--space-16px) 0;
+}
+.cskill-row:first-child {
+  padding-top: 0;
+}
+.cskill-row:last-child {
+  padding-bottom: 0;
+}
+.cskill-row + .cskill-row {
+  border-top: 1px solid var(--color-border);
+}
+@media (min-width: 768px) {
+  .cskill-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-24px);
+    align-items: start;
+  }
+}
+.cskill-row > .cskill-wide,
+.cskill-row > .cskill-text-wrap {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.cskill-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4px);
+  min-width: 0;
+}
+.cskill-name,
+.cskill-own-name {
+  margin: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.cskill-summary {
+  max-inline-size: 72ch;
+  margin: 0;
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+.cskill-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-12px);
+  row-gap: var(--space-4px);
+  min-width: 0;
+  padding-top: var(--space-4px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.cskill-meta > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cskill-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+/* A skill switched off keeps its place; its name steps back to muted ink. */
+.cskill-row[data-off] .cskill-name {
+  color: var(--color-ink-muted);
+}
+.cskill-side button.app-switch,
+.cskill-actions button.app-switch {
+  inline-size: auto;
+  padding-inline-end: var(--space-12px);
+}
+/* The owner's skills: boxed rows with the file tile, actions under the
+   words. On a phone the actions sit on a two-track grid (the switch, then
+   Edit and Delete side by side, then the text toggle), so no control wraps
+   ragged; from 640px they share one line. */
+.cskill-own {
+  align-items: flex-start;
+}
+.cskill-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "switch switch"
+    "edit delete"
+    "read read";
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
+  padding-top: var(--space-8px);
+}
+.cskill-actions > * {
+  min-width: 0;
+}
+.cskill-actions > .app-switch {
+  grid-area: switch;
+  justify-self: start;
+}
+.cskill-actions > .cskill-toggle {
+  grid-area: read;
+}
+.cskill-actions > .cskill-edit {
+  grid-area: edit;
+}
+.cskill-actions > .cskill-delete {
+  grid-area: delete;
+}
+/* On a phone the words and the actions take the row's full width; the file tile returns from 640px. */
+@media (max-width: 639.98px) {
+  .cskill-own > .p-row-leading {
+    display: none;
+  }
+}
+@media (min-width: 640px) {
+  .cskill-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+/* The text a cat reads, opened in place in its own scroll box. */
+.cskill-text-wrap {
+  min-width: 0;
+}
+.cskill-own .cskill-text-wrap:not([hidden]) {
+  padding-top: var(--space-8px);
+}
+.cskill-text {
+  box-sizing: border-box;
+  max-block-size: 360px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-12px);
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--color-layer-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+}
+.cskill-text:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+/* The instructions field: the counter shares the label's line, the hint
+   slot under the control keeps the token estimate or the error. */
+.cskill-label-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--space-12px);
+  min-width: 0;
+}
+.cskill-label-row > label {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+.cskill-count {
+  font-size: var(--text-n1);
+  line-height: var(--line-n1);
+  color: var(--color-ink-muted);
+}
+.cskill-count[data-state="over"] {
+  color: var(--color-danger);
+}
+
+/* The written skills in a cat's mind panel: one line each, name then source and tokens. */
+.mind-list.mind-written {
+  gap: var(--space-8px);
+}
+.mind-written-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-12px);
+  min-width: 0;
+}
+.mind-written-name {
+  min-width: 0;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.mind-written-side {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8px);
+  min-width: 0;
   font-size: var(--text-n1);
   line-height: var(--line-n1);
   color: var(--color-ink-muted);

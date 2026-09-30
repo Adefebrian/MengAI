@@ -5,7 +5,9 @@
 // both are a bottom sheet (28 top corners, safe-area bottom). From 640px a
 // Sheet centres and a Drawer holds the inline end at full height. Escape
 // and the close button always close; a scrim tap closes unless the sheet
-// asks for an explicit answer (dismissible false).
+// asks for an explicit answer (dismissible false). The role is written out
+// (dialog, or alertdialog for a destructive confirmation) so every overlay
+// check reads the sheet as the one layer allowed to sit over the page.
 import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from "react";
 import { ProductIcon } from "./icons";
 
@@ -64,7 +66,7 @@ function DialogFrame({ kind, open, onClose, title, description, children, footer
       ref={ref}
       className="p-dialog"
       data-kind={kind}
-      role={alert ? "alertdialog" : undefined}
+      role={alert ? "alertdialog" : "dialog"}
       aria-labelledby={titleId}
       aria-describedby={description ? descId : undefined}
       onClick={onScrim}

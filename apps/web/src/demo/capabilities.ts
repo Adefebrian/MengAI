@@ -102,7 +102,8 @@ function decision(id: string, decisionId: string, action: string, answers: Recor
 }
 
 /** What is in one cat's head, from the demo crew as the board shows it. */
-export function demoMind(agent: AgentDTO, roles: Record<string, RoleDTO>): AgentMindDTO {
+/** `written` is what the cat read of the written skills on its last step (the demo store's readBy). */
+export function demoMind(agent: AgentDTO, roles: Record<string, RoleDTO>, written: AgentMindDTO["crewSkills"] = []): AgentMindDTO {
   const role = agent.roleId ? roles[agent.roleId] : undefined;
   const base = agent.archetype ?? agent.role;
   const title = role?.title ?? (agent.role === "lead" ? "CEO" : ROLE_LABEL[agent.role]);
@@ -138,6 +139,7 @@ export function demoMind(agent: AgentDTO, roles: Record<string, RoleDTO>): Agent
     addenda,
     lessons,
     skills,
+    crewSkills: written,
     decisions,
     history,
     updatedAt: DEMO_T0 + 160_000,

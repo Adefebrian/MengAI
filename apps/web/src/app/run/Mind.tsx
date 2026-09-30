@@ -5,14 +5,16 @@
 // disclosure layer at 0.62 and the mu.R01 fade-up at 0.63; motion tier 1).
 // Labelled groups between hairlines, in the order a curious owner asks:
 // which charter it runs, the strategies it learned, the lessons and skills
-// in its latest prompt and why each was picked, what JEV decided about it
+// in its latest prompt and why each was picked, the written skills it read
+// on its last step (the built-in JAL-AIDev pack first, then the owner's;
+// JEV ui.region_gate divided section, 0.75), what JEV decided about it
 // with the eval evidence, how its strategy changed (a word diff per
 // version), then its tools, its boss and its own crew, and its budget.
 // From GET /api/runs/:id/agents/:agentId/mind; every text is already
 // redacted by the server. The parts the page already knows (tools, org,
 // budget) render even when the server cannot answer.
 import { ROLE_LABEL, ROLE_TOOLS, type AgentDTO, type AgentMindDTO, type DecisionDTO, type StrategyVersionDTO } from "@mengai/shared";
-import { DataRow, DataRows, Meter, ProductIcon, SkeletonRows } from "@mengai/ui/src/product";
+import { Chip, DataRow, DataRows, Meter, ProductIcon, SkeletonRows } from "@mengai/ui/src/product";
 import { motion } from "motion/react";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { ApiError, errorMessage } from "../../api/client";
@@ -253,6 +255,54 @@ function Decision({ d }: { d: DecisionDTO }) {
   );
 }
 
+/** Written skills a cat read on its last step, in the order it read them (the built-in pack first). */
+export function WrittenSkills({ skills }: { skills: AgentMindDTO["crewSkills"] }) {
+  const read = skills.filter((k) => !k.skipped);
+  const trimmed = skills.length - read.length;
+  const tokens = read.reduce((n, k) => n + k.tokens, 0);
+  const builtin = read.filter((k) => k.source === "builtin").length;
+  const own = read.length - builtin;
+  const counts = [builtin ? `${fmtInt(builtin)} built in` : "", own ? `${builtin ? "then " : ""}${fmtInt(own)} of yours` : ""].filter(Boolean).join(", ");
+  return (
+    <Group
+      title="Written skills it read"
+      meta={
+        skills.length ? (
+          <>
+            {counts || "none read"}, <span className="num">{fmtInt(tokens)}</span> tokens in all
+            {trimmed ? `, ${fmtInt(trimmed)} trimmed by the cap` : ""}
+          </>
+        ) : undefined
+      }
+    >
+      {skills.length === 0 ? (
+        <p className="app-empty-line mind-empty">No written skill matched its role on its last step.</p>
+      ) : (
+        <ul className="mind-list mind-written" aria-label="Written skills it read">
+          {skills.map((k) => (
+            <li className="mind-written-item" key={k.id}>
+              <span className="mind-written-name">{k.name}</span>
+              <span className="mind-written-side">
+                <Chip>{k.source === "builtin" ? "Built in" : "Yours"}</Chip>
+                {k.skipped ? (
+                  <span>Trimmed by the cap</span>
+                ) : (
+                  <span>
+                    <span className="num">{fmtInt(k.tokens)}</span> tokens
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mind-why">
+        <a href="/app/skills">Manage written skills</a>
+      </p>
+    </Group>
+  );
+}
+
 function CatLink({ agent, onOpen, note }: { agent: AgentDTO; onOpen: (id: string) => void; note?: string }) {
   return (
     <DataRow
@@ -298,6 +348,8 @@ export function Mind({
   const share = budget > 0 ? used / budget : 0;
 
   const mind = load.kind === "ready" ? load.mind : null;
+  // an engine from before written skills sends none
+  const written = mind?.crewSkills ?? [];
   const reveal = level === "off" ? { initial: { opacity: 0 }, animate: { opacity: 1, transition: T.reduced } } : { initial: { opacity: 0, y: 4 }, animate: { opacity: 1, y: 0, transition: T.base } };
 
   let head: ReactNode;
@@ -320,7 +372,7 @@ export function Mind({
   else head = null;
 
   const summary = mind
-    ? `${agent.name} runs the ${mind.charter.title} charter v${mind.charter.version} with ${mind.addenda.length} learned ${mind.addenda.length === 1 ? "strategy" : "strategies"}, ${mind.lessons.length} ${mind.lessons.length === 1 ? "lesson" : "lessons"} and ${mind.skills.length} saved ${mind.skills.length === 1 ? "skill" : "skills"}.`
+    ? `${agent.name} runs the ${mind.charter.title} charter v${mind.charter.version} with ${mind.addenda.length} learned ${mind.addenda.length === 1 ? "strategy" : "strategies"}, ${mind.lessons.length} ${mind.lessons.length === 1 ? "lesson" : "lessons"}, ${mind.skills.length} saved ${mind.skills.length === 1 ? "skill" : "skills"} and ${written.length} written ${written.length === 1 ? "skill" : "skills"}.`
     : `What ${agent.name} works from: its charter, what it learned, and who it answers to.`;
 
   return (
@@ -395,6 +447,8 @@ export function Mind({
               </ul>
             )}
           </Group>
+
+          <WrittenSkills skills={written} />
 
           <Group title="JEV decisions about it" meta={mind.decisions.length ? `${mind.decisions.length} ${mind.decisions.length === 1 ? "call" : "calls"}: its hire, its role, its strategies` : undefined}>
             {mind.decisions.length === 0 ? (

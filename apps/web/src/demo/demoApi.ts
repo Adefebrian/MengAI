@@ -7,10 +7,16 @@
 // same rule the real vault follows. Health answers as a Mac engine with
 // every feature on; ?platform=win32 (or linux) answers as that engine, with
 // the sandbox-dependent features off and refused like the real engine
-// refuses them, so the page shows its coming-soon states.
+// refuses them, so the page shows its coming-soon states. ?skills=empty
+// opens the written skills with the built-in pack only, ?skills=error makes
+// their list fail, so the Skills screen shows those states too. Routing
+// plays a reasoning effort per tier (Fast on None, Balanced on Default by
+// leaving it out, Deep on High) and refuses a value the engine would not
+// know, storing Default as the missing value like the engine.
 import {
   CSRF_HEADER,
   PROVIDER_PRESETS,
+  REASONING_EFFORTS,
   TRADING_VENUE_PRESETS,
   findPreset,
   type AssetDTO,
@@ -33,10 +39,11 @@ import {
   type UsageReport,
   type UsageTotals,
 } from "@mengai/shared";
-import type { CreateConnectorBody, CreateTradingVenueBody, RunStage, TradingSettings, UpdateConnectorBody } from "@mengai/shared";
+import type { CreateConnectorBody, CreateCrewSkillBody, CreateTradingVenueBody, RunStage, TradingSettings, UpdateConnectorBody, UpdateCrewSkillBody } from "@mengai/shared";
 import { matchPath } from "../router";
 import { DEMO_SITE_PAGE } from "./site";
 import { createCapabilityState, demoMind } from "./capabilities";
+import { createCrewSkillState, type CrewSkillResult } from "./crewSkills";
 import { replay } from "../store/runStore";
 import {
   DEMO_CALLS,
@@ -162,9 +169,9 @@ export function createDemoState() {
   ];
   let routing: ModelRouting = {
     tiers: [
-      { tier: "fast", providerId: "prov-openai", model: "gpt-4o-mini" },
+      { tier: "fast", providerId: "prov-openai", model: "gpt-4o-mini", reasoning: "none" },
       { tier: "balanced", providerId: "prov-openai", model: "gpt-4o-mini" },
-      { tier: "deep", providerId: "prov-openai", model: "gpt-4.1" },
+      { tier: "deep", providerId: "prov-openai", model: "gpt-4.1", reasoning: "high" },
     ],
     roleTiers: { lead: "deep" },
     image: { providerId: "prov-openai", model: "gpt-image-1-mini" },
@@ -309,6 +316,8 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
   const st = createDemoState();
   const cap = createCapabilityState();
   const preview = createPreviewState();
+  const skillsSeed = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("skills");
+  const crew = createCrewSkillState(skillsSeed === "empty" ? "empty" : "sample");
   const health = demoHealth();
   /** The real engine refuses a sandbox-dependent feature on a platform without the crew sandbox (422 coming_soon). */
   const needs = (feature: keyof PlatformFeatures, what: string) => {
@@ -320,6 +329,10 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
   };
   let seq = 0;
   const nextId = (p: string) => `${p}-${(seq += 1)}`;
+  const skillOut = (r: CrewSkillResult | { ok: true }) => {
+    if (!r.ok) throw new DemoHttpError(r.status, r.code, r.message);
+    return "skill" in r ? r.skill : { ok: true as const };
+  };
   const hint = (key: string) => key.slice(-4);
 
   const visibleCalls = () => DEMO_CALLS.filter((c) => c.createdAt <= clockFn());
@@ -404,7 +417,7 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       const s = replay(DEMO_EVENTS.filter((e) => e.ts <= clockFn()));
       const a = s.agents[params.agentId!];
       if (params.id !== DEMO_RUN_ID || !a) throw new DemoHttpError(404, "not_found", "No cat with that id.");
-      return demoMind(a, s.roles);
+      return demoMind(a, s.roles, crew.readBy(a.archetype ?? a.role, s.run?.company === "fund" ? "fund" : "studio", s.run?.goal ?? null));
     }],
     ["GET /api/connectors", () => cap.connectors],
     ["POST /api/connectors", ({ body }) => {
@@ -518,7 +531,13 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       return { ok, latencyMs: ok ? 412 : 0, error: p.lastTestError, models: ok ? p.models : [] };
     }],
     ["GET /api/routing", () => st.getRouting()],
-    ["PUT /api/routing", ({ body }) => st.setRouting(body as ModelRouting)],
+    ["PUT /api/routing", ({ body }) => {
+      const r = body as ModelRouting;
+      const bad = r.tiers.find((t) => t.reasoning !== undefined && !(REASONING_EFFORTS as readonly string[]).includes(t.reasoning));
+      if (bad) throw new DemoHttpError(422, "invalid_body", `tiers.${r.tiers.indexOf(bad)}.reasoning: must be one of ${REASONING_EFFORTS.join(", ")}`);
+      const tiers = r.tiers.map(({ reasoning, ...t }) => (reasoning && reasoning !== "default" ? { ...t, reasoning } : t));
+      return st.setRouting({ ...r, tiers });
+    }],
     ["GET /api/memory/lessons", ({ query }) => {
       const status = query.get("status");
       return status ? st.lessons.filter((l) => l.status === status) : st.lessons;
@@ -534,6 +553,13 @@ export function createDemoFetch(): (input: string, init: RequestInit) => Promise
       if (i >= 0) st.lessons.splice(i, 1);
       return { ok: true };
     }],
+    ["GET /api/crew-skills", () => {
+      if (skillsSeed === "error") throw new DemoHttpError(503, "unavailable", "The engine could not read the skills file. Try again in a moment.");
+      return crew.list();
+    }],
+    ["POST /api/crew-skills", ({ body }) => skillOut(crew.create(body as CreateCrewSkillBody))],
+    ["PATCH /api/crew-skills/:id", ({ params, body }) => skillOut(crew.update(params.id!, body as UpdateCrewSkillBody))],
+    ["DELETE /api/crew-skills/:id", ({ params }) => skillOut(crew.remove(params.id!))],
     ["GET /api/memory/skills", () => st.skills],
     ["DELETE /api/memory/skills/:id", ({ params }) => {
       const i = st.skills.findIndex((s) => s.id === params.id);

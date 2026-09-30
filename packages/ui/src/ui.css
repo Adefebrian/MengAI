@@ -902,6 +902,7 @@ html:has(.shell[data-bar="dock"]) {
      the dock draws in to 0.94; scrolling up restores it. */
   --_nb-compact: scale(0.94);
   --_nb-compact-lbl: 1;
+  --_nb-compact-vis: hidden;
   --_nb-action: none;
   --_nb-cta: inline-flex;
   --_nb-split-over: flex;
@@ -926,6 +927,7 @@ html:has(.shell[data-bar="bar"]) {
   --_nb-pill-on: 1;
   --_nb-compact: none;
   --_nb-compact-lbl: 0;
+  --_nb-compact-vis: visible;
   --_nb-action: none;
   --_nb-cta: inline-flex;
   --_nb-split-over: flex;
@@ -952,6 +954,7 @@ html:has(.shell[data-bar="split"]) {
   --_nb-pill-on: 0;
   --_nb-compact: scale(0.94);
   --_nb-compact-lbl: 1;
+  --_nb-compact-vis: hidden;
   /* The primary action moves from the mobile header into the bar. */
   --_nb-action: flex;
   --_nb-cta: none;
@@ -1892,6 +1895,13 @@ html:has(.shell:not([data-scroll="contained"])) {
   }
   .shell.shell-motion[data-compact] .shell-nav .shell-nav-item .shell-nav-label {
     opacity: calc(1 - var(--_nb-compact-lbl));
+    /* hidden once faded, so a faded label never sits over the settled icon */
+    visibility: var(--_nb-compact-vis, visible);
+  }
+  .shell-motion[data-compact] .shell-nav .shell-nav-item .shell-nav-label {
+    transition:
+      opacity var(--dur-150) var(--ease-standard),
+      visibility var(--dur-150) var(--ease-standard);
   }
   .shell-motion[data-compact] .shell-nav .shell-nav-icon,
   .shell-motion[data-compact] .shell-nav-track > .shell-ind {
