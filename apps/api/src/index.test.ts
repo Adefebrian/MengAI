@@ -392,7 +392,8 @@ describe("local mode", () => {
 
   async function localPlatform(extra: Record<string, string> = {}, logger: Logger = silentLogger) {
     const dataDir = await tempDir();
-    const boot = buildConfig(parseEnv({ MENGAI_MODE: "local", MENGAI_DATA_DIR: dataDir, MENGAI_SITE_ORIGINS: SITE, MENGAI_UI_ORIGIN: UI, ...extra }));
+    // Projects get a folder under the workspaces dir: keep it in the temp dir, never the owner's real ~/MengAI.
+    const boot = buildConfig(parseEnv({ MENGAI_MODE: "local", MENGAI_DATA_DIR: dataDir, MENGAI_WORKSPACES_DIR: join(dataDir, "workspaces"), MENGAI_SITE_ORIGINS: SITE, MENGAI_UI_ORIGIN: UI, ...extra }));
     boot.app.allowedHosts.push(HOST, "localhost:4321");
     const platform = await bootstrap({ boot, logger, overrides: { db: await createTestDb(), vault: memoryVault() } });
     return { boot, platform, app: platform.app, base: BASE };
