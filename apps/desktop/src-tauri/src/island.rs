@@ -12,13 +12,46 @@
 //!   grant, allow-pick-folder, and cannot call these):
 //!   - `island_geometry()` -> `{ hasNotch, notchWidth, notchHeight, menuBarHeight, scale }`
 //!     in logical points.
-//!   - `island_set_state({ state, width, height })`, state `collapsed`, `peek`
-//!     or `expanded`: sets the native frame at once to exactly that size, top
-//!     centered on the notch (or centered just under the menu bar). Nothing is
-//!     animated natively; the page animates inside, so the window is always the
-//!     visible size and clicks next to it reach the menu bar.
+//!   - `island_set_state({ state, width, height, hit?, band? })`, state `collapsed`,
+//!     `peek`, `expanded` or `hidden`: sets the native frame at once to exactly
+//!     that size, top centered on the notch (or centered just under the menu
+//!     bar); `hidden` takes the window off the screen. Nothing is animated
+//!     natively; the page animates inside, so the window is always the visible
+//!     size and clicks next to it reach the menu bar.
+//!     `hit` is 1 to 4 rects `{ x, y, width, height }` in window-local points,
+//!     origin at the top left of the window like the page: the parts that take
+//!     the pointer, the shape first (then, for example, a clickable stage cat).
+//!     Each must be finite with a non-negative size; it is clipped to the window
+//!     (to the size the shell actually set). Anything else is refused with the
+//!     reason. Without `hit` the whole window takes the pointer.
+//!     `band` is `{ x, width }` in window-local points, sent while the ears are
+//!     folded away: the footprint they come back to (the open band, notch plus
+//!     both ears, centred like the window, so `x` is negative past the window's
+//!     left edge). It must be finite with a non-negative width and is clipped to
+//!     the widest window the island takes around the same centre (`MAX_WIDTH`).
+//!     Without `band` the near band follows the shape alone.
 //!   - `island_open_main({ path })`: shows and focuses the main window and routes
 //!     it to that path, which must start with `/app`.
+//! - one call back, shell to page: while the island is on screen a main thread
+//!   timer reads the pointer every 50 ms (NSEvent mouseLocation, no Accessibility
+//!   permission) and
+//!   - lets every click through (ignoresMouseEvents) while the pointer is outside
+//!     all hit rects, so a transparent part of the window never steals a click
+//!     from the app below, and takes the pointer again inside one;
+//!   - runs `window.__islandPointer({ zone, x, y })` in the page when the zone
+//!     changes, and again after the page's first `island_set_state` since it
+//!     loaded, so a fresh page hears where the pointer is (until then it assumes
+//!     `far`): `inside` a hit rect, `near` within 48 pt beside the first hit rect
+//!     or beside `band` when the page sent one, and inside the menu bar band of
+//!     the display (its top `menuBarHeight` points), else `far`. So a pointer
+//!     resting on a menu bar item where a folded ear was stays `near` and the
+//!     ears never come back under it. x and y are window-local points like
+//!     `hit`. The argument is JSON built by serde_json; the page validates it
+//!     anyway.
+//!
+//!   The pointer is let in at the next poll after it enters a hit rect, so
+//!   WebKit's pointerenter fires on the first movement after that (at most 50 ms
+//!   late); `inside` arrives at the same time and can stand in for it.
 //!
 //! The window is transparent, borderless, shadowless and fixed size, on every
 //! Space and over full screen apps, above the menu bar. It never activates the
@@ -238,6 +271,161 @@ pub fn always_active(options: usize) -> Option<usize> {
     (options & pointer != 0 && options & ALWAYS == 0).then_some((options & !gated) | ALWAYS)
 }
 
+// ---------------------------------------------------------------- pointer
+
+/// Most hit rects a page may send.
+pub const MAX_HIT: usize = 4;
+/// How far beside the shape, in points, the pointer is still near.
+pub const NEAR_X: f64 = 48.0;
+
+/// A part of the window that takes the pointer, in window-local points: origin at
+/// the top left of the window, y down, like the page.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct HitRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// `v` kept within 0..=max; NaN becomes 0, never a panic.
+fn within(v: f64, max: f64) -> f64 {
+    v.max(0.0).min(max)
+}
+
+/// `x` lies within NEAR_X of the span `left`..`right` (window-local points).
+fn beside(x: f64, left: f64, right: f64) -> bool {
+    x >= left - NEAR_X && x <= right + NEAR_X
+}
+
+impl HitRect {
+    pub const fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
+        Self { x, y, width, height }
+    }
+
+    /// The part of this rect inside a `width` x `height` window (empty when none is).
+    pub fn clip(&self, width: f64, height: f64) -> Self {
+        let (x, y) = (within(self.x, width), within(self.y, height));
+        let (right, bottom) = (within(self.x + self.width, width), within(self.y + self.height, height));
+        Self::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0))
+    }
+
+    /// Half open, like pixels: the right and bottom edges belong to the next rect.
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
+    }
+}
+
+/// Validates the page's hit rects and clips them to a `width` x `height` window. Err is the reason.
+pub fn hit_rects(hit: &[HitRect], width: f64, height: f64) -> Result<Vec<HitRect>, String> {
+    if hit.is_empty() || hit.len() > MAX_HIT {
+        return Err(format!("the island takes 1 to {MAX_HIT} hit rects, not {}", hit.len()));
+    }
+    hit.iter()
+        .map(|r| {
+            let finite = r.x.is_finite() && r.y.is_finite() && r.width.is_finite() && r.height.is_finite();
+            if finite && r.width >= 0.0 && r.height >= 0.0 {
+                Ok(r.clip(width, height))
+            } else {
+                Err(format!(
+                    "the hit rect {}, {}, {} x {} is not a finite rect of non-negative size",
+                    r.x, r.y, r.width, r.height
+                ))
+            }
+        })
+        .collect()
+}
+
+/// The footprint of the folded ears, a horizontal span in window-local points
+/// (`x` may be negative: past the window's left edge, the window being the bare
+/// notch while they are folded).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct Band {
+    pub x: f64,
+    pub width: f64,
+}
+
+impl Band {
+    pub const fn new(x: f64, width: f64) -> Self {
+        Self { x, width }
+    }
+
+    /// The part of this span inside the widest window the island takes (MAX_WIDTH)
+    /// around the same centre as a `width` wide window, so a broken page can never
+    /// claim the whole menu bar as near.
+    pub fn clip(&self, width: f64) -> Self {
+        let reach = ((MAX_WIDTH - width) / 2.0).max(0.0);
+        let (left, right) = (-reach, width + reach);
+        let x = self.x.max(left).min(right);
+        let end = (self.x + self.width).max(left).min(right);
+        Self::new(x, (end - x).max(0.0))
+    }
+}
+
+/// Validates the page's band and clips it for a `width` wide window. Err is the reason.
+pub fn near_band(band: &Band, width: f64) -> Result<Band, String> {
+    if band.x.is_finite() && band.width.is_finite() && band.width >= 0.0 {
+        Ok(band.clip(width))
+    } else {
+        Err(format!("the band {}, {} is not a finite span of non-negative width", band.x, band.width))
+    }
+}
+
+/// Where the pointer is for the island.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Zone {
+    Far,
+    Near,
+    Inside,
+}
+
+/// What `window.__islandPointer` receives: the zone, and the pointer in window-local points.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Pointer {
+    pub zone: Zone,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// A point in Cocoa global coordinates (y up) to window-local points (origin at the
+/// top left of `window`, y down).
+pub fn local_point(window: Rect, x: f64, y: f64) -> (f64, f64) {
+    (x - window.x, window.max_y() - y)
+}
+
+/// The pointer's zone. `point` and `window` are in Cocoa global coordinates, `hit`
+/// and `band` in window-local points (no hit: the whole window), `screen` is the
+/// island's display. Inside: in a hit rect (clipped to the window, so a stale rect
+/// never reaches past it). Near: in the menu bar band (the top menuBarHeight points
+/// of the display) and within NEAR_X beside the first hit rect, the shape, or beside
+/// the folded ears' footprint (`band`, clipped like it is when it arrives). Else far.
+pub fn pointer(point: (f64, f64), window: Rect, hit: Option<&[HitRect]>, band: Option<Band>, screen: &Screen) -> Pointer {
+    let (x, y) = local_point(window, point.0, point.1);
+    let whole = [HitRect::new(0.0, 0.0, window.width, window.height)];
+    let rects = hit.unwrap_or(&whole);
+    let inside = rects.iter().any(|r| r.clip(window.width, window.height).contains(x, y));
+    let top = screen.frame.max_y();
+    let in_band = point.1 <= top && point.1 >= top - geometry(screen).menu_bar_height;
+    let near_shape = rects.first().is_some_and(|shape| beside(x, shape.x, shape.x + shape.width));
+    // an empty span (nothing of it left in reach) adds nothing, like an empty hit rect
+    let near_ears = band.map(|b| b.clip(window.width)).is_some_and(|b| b.width > 0.0 && beside(x, b.x, b.x + b.width));
+    let zone = if inside {
+        Zone::Inside
+    } else if in_band && (near_shape || near_ears) {
+        Zone::Near
+    } else {
+        Zone::Far
+    };
+    Pointer { zone, x, y }
+}
+
+/// The page call for a zone change. The argument is JSON from serde_json, never spliced text.
+pub fn pointer_script(p: &Pointer) -> String {
+    let json = serde_json::to_string(p).unwrap_or_else(|_| "{\"zone\":\"far\",\"x\":0,\"y\":0}".into());
+    format!("window.__islandPointer&&window.__islandPointer({json})")
+}
+
 // ---------------------------------------------------------------- contract
 
 /// The island states the page reports.
@@ -347,6 +535,10 @@ pub struct Island {
     item: OnceLock<CheckMenuItem<Wry>>,
     /// Last state and size the page asked for, reapplied when the displays change.
     last: Mutex<Option<(IslandState, f64, f64)>>,
+    /// Hit rects of that request, clipped to the window; None: the whole window takes the pointer.
+    hit: Mutex<Option<Vec<HitRect>>>,
+    /// The folded ears' footprint of that request, clipped; None: near follows the shape alone.
+    band: Mutex<Option<Band>>,
     /// Geometry the page last saw; a display change that alters it reloads the page.
     seen: Mutex<Option<Geometry>>,
     /// The display change observer is registered once.
@@ -361,6 +553,8 @@ impl Island {
             on: AtomicBool::new(false),
             item: OnceLock::new(),
             last: Mutex::new(None),
+            hit: Mutex::new(None),
+            band: Mutex::new(None),
             seen: Mutex::new(None),
             observing: AtomicBool::new(false),
         }
@@ -443,11 +637,15 @@ pub fn stop_for_session(app: &AppHandle) {
 
 /// Closes the island window if it is open (quit, kill switch, tray item off).
 pub fn close(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    native::stop_pointer(app);
     if let Some(w) = app.get_webview_window(ISLAND_WINDOW) {
         let _ = w.destroy();
     }
     if let Some(island) = app.try_state::<Island>() {
         *island.last.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *island.hit.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *island.band.lock().unwrap_or_else(|e| e.into_inner()) = None;
         *island.seen.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
@@ -477,7 +675,9 @@ pub fn island_geometry(app: AppHandle, window: WebviewWindow) -> Result<Geometry
     }
 }
 
-/// `island_set_state({ state, width, height })`: the native frame, at once, exactly that size.
+/// `island_set_state({ state, width, height, hit?, band? })`: the native frame, at
+/// once, exactly that size; outside the hit rects (if any) clicks go through, and
+/// while the ears are folded `band` is where near is measured beside.
 #[tauri::command]
 pub fn island_set_state(
     app: AppHandle,
@@ -485,18 +685,22 @@ pub fn island_set_state(
     state: IslandState,
     width: f64,
     height: f64,
+    hit: Option<Vec<HitRect>>,
+    band: Option<Band>,
 ) -> Result<(), String> {
     only_island(&window)?;
     if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
         return Err(format!("the island size {width} x {height} is not a positive number of points"));
     }
+    let hit = hit.map(|rects| hit_rects(&rects, width, height)).transpose()?;
+    let band = band.map(|b| near_band(&b, width)).transpose()?;
     #[cfg(target_os = "macos")]
     {
-        native::set_state(&app, window, state, width, height)
+        native::set_state(&app, window, state, width, height, hit, band)
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, state);
+        let _ = (app, state, hit, band);
         Err(MAC_ONLY.into())
     }
 }
@@ -523,25 +727,31 @@ pub fn island_open_main(app: AppHandle, window: WebviewWindow, path: String) -> 
 
 #[cfg(target_os = "macos")]
 mod native {
+    use std::cell::RefCell;
     use std::ptr::NonNull;
     use std::sync::atomic::Ordering;
     use std::sync::mpsc;
     use std::time::Duration;
 
     use block2::RcBlock;
+    use objc2::rc::Retained;
     use objc2::runtime::NSObjectProtocol;
     use objc2::{sel, AnyThread, MainThreadMarker};
     use objc2_app_kit::{
-        NSApplicationDidChangeScreenParametersNotification, NSMainMenuWindowLevel, NSScreen, NSTrackingArea,
+        NSApplicationDidChangeScreenParametersNotification, NSEvent, NSMainMenuWindowLevel, NSScreen, NSTrackingArea,
         NSTrackingAreaOptions, NSView, NSWindow, NSWindowAnimationBehavior, NSWindowCollectionBehavior,
     };
-    use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue, NSPoint, NSRect, NSSize};
+    use objc2_foundation::{
+        NSNotification, NSNotificationCenter, NSOperationQueue, NSPoint, NSRect, NSRunLoop, NSRunLoopCommonModes,
+        NSSize, NSTimer,
+    };
     use tauri::webview::NewWindowResponse;
     use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
     use super::{
-        always_active, bounded_size, default_size, frame, geometry, is_island_url, island_url, pick, Geometry, Island,
-        IslandState, Rect, Screen, DEFAULT_PILL, ISLAND_WINDOW,
+        always_active, bounded_size, default_size, frame, geometry, hit_rects, is_island_url, island_url, near_band,
+        pick, pointer, pointer_script, Band, Geometry, HitRect, Island, IslandState, Rect, Screen, Zone,
+        DEFAULT_PILL, ISLAND_WINDOW,
     };
 
     /// Levels above the main menu (24): over the menu bar and status items (25),
@@ -551,6 +761,24 @@ mod native {
     const MAIN_DEADLINE: Duration = Duration::from_secs(2);
     /// How deep the view walk goes looking for the web view's tracking areas.
     const VIEW_DEPTH: usize = 8;
+    /// How often the pointer is read while the island is on screen, in seconds.
+    const POLL_INTERVAL: f64 = 0.05;
+    /// How late the system may fire the poll to coalesce wakeups, in seconds: half
+    /// an interval, so a zone change still lands within 75 ms.
+    const POLL_TOLERANCE: f64 = 0.025;
+
+    /// The pointer poll, main thread only: its timer, the display the island is on,
+    /// and what was applied last, so AppKit and the page hear only changes.
+    struct Poll {
+        timer: Retained<NSTimer>,
+        screen: Screen,
+        ignoring: Option<bool>,
+        zone: Option<Zone>,
+    }
+
+    thread_local! {
+        static POLL: RefCell<Option<Poll>> = const { RefCell::new(None) };
+    }
 
     /// Runs `f` on the main thread: at once when already there (sync commands and
     /// menu handlers), else dispatched and awaited with a deadline.
@@ -634,14 +862,20 @@ mod native {
         state: IslandState,
         width: f64,
         height: f64,
+        hit: Option<Vec<HitRect>>,
+        band: Option<Band>,
     ) -> Result<(), String> {
         let app2 = app.clone();
         on_main(app, move |mtm| {
             let all = screens(mtm);
             let screen = pick(&all).ok_or("no display is connected")?;
             let (w, h) = bounded_size(screen, width, height)?;
+            // The window can end up smaller than asked (a small display): the rects and the band follow it.
+            let hit = hit.map(|rects| hit_rects(&rects, w, h)).transpose()?;
+            let band = band.map(|b| near_band(&b, w)).transpose()?;
             if state == IslandState::Hidden {
                 with_ns(&window, mtm, |ns| ns.orderOut(None))?;
+                stop_poll(mtm);
             } else {
                 // back on screen without activating the app or taking focus
                 with_ns(&window, mtm, |ns| {
@@ -652,10 +886,107 @@ mod native {
                 })?;
             }
             if let Some(island) = app2.try_state::<Island>() {
-                *island.last.lock().unwrap_or_else(|e| e.into_inner()) = Some((state, w, h));
+                let first = island.last.lock().unwrap_or_else(|e| e.into_inner()).replace((state, w, h)).is_none();
+                *island.hit.lock().unwrap_or_else(|e| e.into_inner()) = hit;
+                *island.band.lock().unwrap_or_else(|e| e.into_inner()) = band;
+                if first {
+                    // The page's first request since it loaded (open, or a reload after a
+                    // display change): it missed the zone sent before, so it hears it again.
+                    POLL.with_borrow_mut(|poll| {
+                        if let Some(p) = poll {
+                            p.zone = None;
+                        }
+                    });
+                }
+            }
+            if state != IslandState::Hidden {
+                // after the rects are stored, so a poll that starts now uses them
+                start_poll(&app2, *screen, mtm);
             }
             Ok(())
         })
+    }
+
+    /// Starts the pointer poll for the island on `screen`, or only moves it there when
+    /// it already runs. A new poll reads the pointer at once, so clicks and the page
+    /// are right before the first interval passes.
+    fn start_poll(app: &AppHandle, screen: Screen, _mtm: MainThreadMarker) {
+        let started = POLL.with_borrow_mut(|poll| {
+            if let Some(running) = poll {
+                running.screen = screen;
+                return false;
+            }
+            let app2 = app.clone();
+            let block = RcBlock::new(move |_timer: NonNull<NSTimer>| tick(&app2));
+            // SAFETY: the block only captures a Send + Sync AppHandle, and the timer runs
+            // it on the main run loop it is added to below, never on another thread.
+            let timer = unsafe { NSTimer::timerWithTimeInterval_repeats_block(POLL_INTERVAL, true, &block) };
+            // A little slack lets macOS batch this wakeup with others (Energy Efficiency Guide).
+            timer.setTolerance(POLL_TOLERANCE);
+            // Common modes: the poll goes on while a menu is open or a modal panel runs.
+            // SAFETY: a fresh timer, added once, to the main run loop, with an AppKit mode constant.
+            unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&timer, NSRunLoopCommonModes) };
+            *poll = Some(Poll { timer, screen, ignoring: None, zone: None });
+            true
+        });
+        if started {
+            tick(app);
+        }
+    }
+
+    /// Stops the poll. Safe from inside the timer's own block: the run loop keeps the
+    /// timer and its block alive until the block returns.
+    fn stop_poll(_mtm: MainThreadMarker) {
+        if let Some(poll) = POLL.with_borrow_mut(Option::take) {
+            poll.timer.invalidate();
+        }
+    }
+
+    /// Stops the poll from any thread (the island closes). Not awaited: a poll that
+    /// still ticks finds no window and stops itself.
+    pub fn stop_pointer(app: &AppHandle) {
+        match MainThreadMarker::new() {
+            Some(mtm) => stop_poll(mtm),
+            None => {
+                let _ = app.run_on_main_thread(|| {
+                    if let Some(mtm) = MainThreadMarker::new() {
+                        stop_poll(mtm);
+                    }
+                });
+            }
+        }
+    }
+
+    /// One poll: where the pointer is, then clicks through or not, then the page,
+    /// each only on a change. The poll stops itself once the island is gone or hidden.
+    fn tick(app: &AppHandle) {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(screen) = POLL.with_borrow(|poll| poll.as_ref().map(|p| p.screen)) else { return };
+        let Some(window) = app.get_webview_window(ISLAND_WINDOW) else { return stop_poll(mtm) };
+        let Ok((visible, frame)) = with_ns(&window, mtm, |ns| (ns.isVisible(), rect(ns.frame()))) else {
+            return stop_poll(mtm);
+        };
+        if !visible {
+            return stop_poll(mtm);
+        }
+        let Some(island) = app.try_state::<Island>() else { return };
+        let mouse = NSEvent::mouseLocation();
+        let now = {
+            let hit = island.hit.lock().unwrap_or_else(|e| e.into_inner());
+            let band = *island.band.lock().unwrap_or_else(|e| e.into_inner());
+            pointer((mouse.x, mouse.y), frame, hit.as_deref(), band, &screen)
+        };
+        let ignore = now.zone != Zone::Inside;
+        let (flip, moved) = POLL.with_borrow_mut(|poll| match poll {
+            Some(p) => (p.ignoring.replace(ignore) != Some(ignore), p.zone.replace(now.zone) != Some(now.zone)),
+            None => (false, false),
+        });
+        if flip {
+            let _ = with_ns(&window, mtm, |ns| ns.setIgnoresMouseEvents(ignore));
+        }
+        if moved {
+            let _ = window.eval(pointer_script(&now));
+        }
     }
 
     /// Level, Spaces, no shadow, no move, no hide with the app, out of the Window menu and Cmd+`.
@@ -731,7 +1062,9 @@ mod native {
             }
             ns.setFrame_display(ns_rect(frame(screen, w, h)), true);
             ns.orderFrontRegardless();
-        })
+        })?;
+        start_poll(app, *screen, mtm);
+        Ok(())
     }
 
     fn build(app: &AppHandle, port: u16) -> tauri::Result<WebviewWindow> {
@@ -825,14 +1158,18 @@ mod native {
         let all = screens(mtm);
         let Some(screen) = pick(&all) else {
             let _ = with_ns(&window, mtm, |ns| ns.orderOut(None));
+            stop_poll(mtm);
             island.log.warn("island", "no display is connected; hiding the island");
             return;
         };
         let g = geometry(screen);
         let before = island.seen.lock().unwrap_or_else(|e| e.into_inner()).replace(g);
         if before.is_some_and(|b| b != g) {
-            // What the page sized itself from changed: back to the default size, reload, it asks again.
+            // What the page sized itself from changed: back to the default size (the
+            // whole window takes the pointer, near follows it alone), reload, it asks again.
             *island.last.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            *island.hit.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            *island.band.lock().unwrap_or_else(|e| e.into_inner()) = None;
             let what = if g.has_notch {
                 format!("notch {} x {} pt", g.notch_width, g.notch_height)
             } else {
@@ -1002,6 +1339,191 @@ mod tests {
         assert_eq!(always_active(0x224), None);
         // Applying it twice changes nothing.
         assert_eq!(always_active(always_active(0x227).unwrap()), None);
+    }
+
+    #[test]
+    fn hit_rects_are_validated_and_clipped_to_the_window() {
+        let shape = HitRect::new(0.0, 0.0, 400.0, 118.0);
+        let cat = HitRect::new(176.0, 118.0, 48.0, 72.0);
+        assert_eq!(hit_rects(&[shape, cat], 400.0, 190.0), Ok(vec![shape, cat]));
+        // Partly outside: clipped. Wholly outside: nothing left, which takes no pointer.
+        assert_eq!(
+            hit_rects(&[HitRect::new(-10.0, 100.0, 50.0, 200.0)], 400.0, 190.0),
+            Ok(vec![HitRect::new(0.0, 100.0, 40.0, 90.0)])
+        );
+        let gone = hit_rects(&[HitRect::new(500.0, 0.0, 10.0, 10.0)], 400.0, 190.0).unwrap();
+        assert_eq!(gone, vec![HitRect::new(400.0, 0.0, 0.0, 10.0)]);
+        assert!(!gone[0].contains(400.0, 5.0));
+        // Huge but finite never overflows the clip; a zero size is allowed and holds nothing.
+        assert_eq!(
+            hit_rects(&[HitRect::new(0.0, 0.0, f64::MAX, f64::MAX)], 400.0, 190.0),
+            Ok(vec![HitRect::new(0.0, 0.0, 400.0, 190.0)])
+        );
+        let dot = hit_rects(&[HitRect::new(10.0, 10.0, 0.0, 0.0)], 400.0, 190.0).unwrap();
+        assert!(!dot[0].contains(10.0, 10.0));
+        // 1 to 4 rects.
+        assert!(hit_rects(&[], 400.0, 190.0).is_err());
+        assert!(hit_rects(&[shape; MAX_HIT], 400.0, 190.0).is_ok());
+        assert!(hit_rects(&[shape; MAX_HIT + 1], 400.0, 190.0).is_err());
+        for bad in [
+            HitRect::new(f64::NAN, 0.0, 10.0, 10.0),
+            HitRect::new(0.0, f64::INFINITY, 10.0, 10.0),
+            HitRect::new(0.0, 0.0, f64::INFINITY, 10.0),
+            HitRect::new(0.0, 0.0, 10.0, f64::NEG_INFINITY),
+            HitRect::new(0.0, 0.0, -1.0, 10.0),
+            HitRect::new(0.0, 0.0, 10.0, -0.5),
+        ] {
+            let err = hit_rects(&[shape, bad], 400.0, 190.0).unwrap_err();
+            assert!(err.contains("non-negative size"), "{bad:?}: {err}");
+        }
+        // Rects parse from the contract's shape; a missing field or a string is refused.
+        let parsed: HitRect = serde_json::from_str(r#"{"x":1,"y":2.5,"width":3,"height":4}"#).unwrap();
+        assert_eq!(parsed, HitRect::new(1.0, 2.5, 3.0, 4.0));
+        for bad in [
+            r#"{"x":1,"y":2,"width":3}"#,
+            r#"{"x":"1","y":2,"width":3,"height":4}"#,
+            r#"{"x":null,"y":2,"width":3,"height":4}"#,
+        ] {
+            assert!(serde_json::from_str::<HitRect>(bad).is_err(), "{bad}");
+        }
+        // `hit: null` is the same as no `hit` (Tauri also gives None for a missing key).
+        assert_eq!(serde_json::from_str::<Option<Vec<HitRect>>>("null").unwrap(), None);
+    }
+
+    #[test]
+    fn the_pointer_is_converted_to_window_local_points_top_left() {
+        // Collapsed on the 14 inch notch: the window is 300 x 32 at the top edge.
+        let window = frame(&notched(), 300.0, 32.0);
+        assert_eq!(window, Rect::new(606.0, 950.0, 300.0, 32.0));
+        assert_eq!(local_point(window, 606.0, 982.0), (0.0, 0.0), "the top left corner");
+        assert_eq!(local_point(window, 706.0, 962.0), (100.0, 20.0));
+        assert_eq!(local_point(window, 556.0, 940.0), (-50.0, 42.0), "left of and under the window");
+        // A display left of the primary keeps the math (negative global x).
+        let pill = frame(&plain(-1440.0), 200.0, 32.0);
+        assert_eq!(local_point(pill, pill.x + 10.0, pill.max_y() - 5.0), (10.0, 5.0));
+    }
+
+    #[test]
+    fn the_zone_is_inside_a_hit_rect_near_beside_the_shape_in_the_menu_bar_else_far() {
+        let s = notched();
+        // No hit: the whole window takes the pointer (the old behaviour).
+        let window = frame(&s, 300.0, 32.0);
+        let zone = |x: f64, y: f64, hit: Option<&[HitRect]>| pointer((x, y), window, hit, None, &s).zone;
+        assert_eq!(zone(700.0, 970.0, None), Zone::Inside);
+        assert_eq!(zone(700.0, 982.0, None), Zone::Inside, "pushed against the top edge");
+        assert_eq!(zone(606.0, 951.0, None), Zone::Inside, "the left edge belongs to the window");
+        assert_eq!(zone(906.0, 970.0, None), Zone::Near, "the right edge does not");
+        // The menu bar band is the top 37 pt (982 down to 945); 48 pt beside the shape.
+        assert_eq!(zone(700.0, 948.0, None), Zone::Near, "under the shape, still in the menu bar");
+        assert_eq!(zone(570.0, 960.0, None), Zone::Near, "36 pt left of the shape");
+        assert_eq!(zone(558.0, 960.0, None), Zone::Near, "exactly 48 pt");
+        assert_eq!(zone(550.0, 960.0, None), Zone::Far, "56 pt left");
+        assert_eq!(zone(954.0, 960.0, None), Zone::Near, "48 pt right");
+        assert_eq!(zone(956.0, 960.0, None), Zone::Far, "50 pt right");
+        assert_eq!(zone(700.0, 940.0, None), Zone::Far, "under the menu bar");
+        assert_eq!(zone(700.0, 990.0, None), Zone::Far, "on a display above");
+
+        // Expanded with a cat on the stage: the shape and the cat take the pointer, the
+        // transparent stage around the cat lets clicks through.
+        let window = frame(&s, 400.0, 190.0);
+        assert_eq!(window, Rect::new(556.0, 792.0, 400.0, 190.0));
+        let hit = [HitRect::new(0.0, 0.0, 400.0, 118.0), HitRect::new(176.0, 118.0, 48.0, 72.0)];
+        let at = |lx: f64, ly: f64| pointer((window.x + lx, window.max_y() - ly), window, Some(&hit), None, &s);
+        assert_eq!(at(200.0, 50.0).zone, Zone::Inside, "on the shape");
+        assert_eq!(at(200.0, 150.0).zone, Zone::Inside, "on the cat");
+        assert_eq!(at(50.0, 150.0).zone, Zone::Far, "on the empty stage");
+        assert_eq!(at(-20.0, 10.0).zone, Zone::Near, "beside the shape in the menu bar");
+        assert_eq!(at(440.0, 30.0).zone, Zone::Near);
+        assert_eq!(at(460.0, 30.0).zone, Zone::Far);
+        assert_eq!(at(200.0, 50.0), Pointer { zone: Zone::Inside, x: 200.0, y: 50.0 }, "x and y are window-local");
+        // A stale rect larger than the window never reaches past it.
+        let huge = [HitRect::new(0.0, 0.0, 1000.0, 1000.0)];
+        assert_eq!(pointer((window.max_x() + 10.0, 900.0), window, Some(&huge), None, &s).zone, Zone::Far);
+        // The band follows the first rect only: beside the cat but not the shape is far.
+        let cat_first = [hit[1], hit[0]];
+        assert_eq!(pointer((window.x - 20.0, 970.0), window, Some(&cat_first), None, &s).zone, Zone::Far);
+
+        // No notch: the pill sits 6 pt under a 24 pt menu bar (band 900 down to 876).
+        let p = plain(0.0);
+        let pill = frame(&p, 200.0, 32.0);
+        let zone = |x: f64, y: f64| pointer((x, y), pill, None, None, &p).zone;
+        assert_eq!(zone(700.0, pill.max_y() - 10.0), Zone::Inside);
+        assert_eq!(zone(700.0, 890.0), Zone::Near, "in the menu bar above the pill");
+        assert_eq!(zone(700.0, 873.0), Zone::Far, "in the gap under the menu bar");
+    }
+
+    #[test]
+    fn folded_ears_keep_the_pointer_near_over_their_footprint() {
+        let s = notched();
+        // Folded: the window is the bare 185 pt notch; the open band is 400 pt wide
+        // (two 107.5 pt ears), centred like the window, so it starts 107.5 pt left of it.
+        let window = frame(&s, 185.0, 32.0);
+        assert_eq!(window, Rect::new(663.5, 950.0, 185.0, 32.0));
+        let band = Some(Band::new(-107.5, 400.0));
+        let at = |lx: f64, ly: f64, band: Option<Band>| pointer((window.x + lx, window.max_y() - ly), window, None, band, &s).zone;
+        // A menu bar item where the right ear was, 95 pt right of the notch: beside the
+        // bare notch that is far (the old flap), beside the ears' footprint it stays near.
+        assert_eq!(at(280.0, 12.0, None), Zone::Far);
+        assert_eq!(at(280.0, 12.0, band), Zone::Near);
+        assert_eq!(at(-140.0, 12.0, None), Zone::Far, "where the left ear was");
+        assert_eq!(at(-140.0, 12.0, band), Zone::Near);
+        // NEAR_X beyond the footprint, and only in the menu bar band.
+        assert_eq!(at(292.5 + NEAR_X, 12.0, band), Zone::Near, "exactly 48 pt past the right ear");
+        assert_eq!(at(292.5 + NEAR_X + 2.0, 12.0, band), Zone::Far);
+        assert_eq!(at(-107.5 - NEAR_X - 2.0, 12.0, band), Zone::Far);
+        assert_eq!(at(280.0, 40.0, band), Zone::Far, "under the menu bar");
+        // The notch itself is still inside, band or not.
+        assert_eq!(at(90.0, 10.0, band), Zone::Inside);
+        // A band from a broken page reaches no further than the widest island (640 pt).
+        let wild = Some(Band::new(-1e9, 2e9));
+        assert_eq!(at(-227.5 - NEAR_X, 12.0, wild), Zone::Near);
+        assert_eq!(at(-227.5 - NEAR_X - 2.0, 12.0, wild), Zone::Far);
+        // A band wholly out of reach is clipped to nothing and adds no near band.
+        assert_eq!(at(412.5, 12.0, Some(Band::new(5000.0, 10.0))), Zone::Far);
+    }
+
+    #[test]
+    fn the_band_is_validated_and_clipped_to_the_widest_island() {
+        // In reach: kept as sent.
+        assert_eq!(near_band(&Band::new(-107.5, 400.0), 185.0), Ok(Band::new(-107.5, 400.0)));
+        // Past the widest window around the same centre (640 pt): clipped to it.
+        assert_eq!(near_band(&Band::new(-1000.0, 3000.0), 185.0), Ok(Band::new(-227.5, 640.0)));
+        assert_eq!(near_band(&Band::new(0.0, f64::MAX), 640.0), Ok(Band::new(0.0, 640.0)));
+        // Wholly outside: nothing left, which adds no near band beyond the shape's own.
+        assert_eq!(near_band(&Band::new(5000.0, 10.0), 185.0), Ok(Band::new(412.5, 0.0)));
+        assert_eq!(near_band(&Band::new(10.0, 0.0), 185.0), Ok(Band::new(10.0, 0.0)));
+        for bad in [
+            Band::new(f64::NAN, 10.0),
+            Band::new(f64::INFINITY, 10.0),
+            Band::new(0.0, f64::NEG_INFINITY),
+            Band::new(0.0, f64::NAN),
+            Band::new(0.0, -1.0),
+        ] {
+            let err = near_band(&bad, 185.0).unwrap_err();
+            assert!(err.contains("non-negative width"), "{bad:?}: {err}");
+        }
+        // The contract's shape; a missing field or a string is refused; null is no band.
+        let parsed: Band = serde_json::from_str(r#"{"x":-107.5,"width":400}"#).unwrap();
+        assert_eq!(parsed, Band::new(-107.5, 400.0));
+        for bad in [r#"{"x":1}"#, r#"{"x":"1","width":3}"#, r#"{"x":null,"width":3}"#] {
+            assert!(serde_json::from_str::<Band>(bad).is_err(), "{bad}");
+        }
+        assert_eq!(serde_json::from_str::<Option<Band>>("null").unwrap(), None);
+        // The hit rect error reads as a plain list.
+        let err = hit_rects(&[HitRect::new(1.0, 2.0, -3.0, 4.0)], 400.0, 190.0).unwrap_err();
+        assert!(err.starts_with("the hit rect 1, 2, -3 x 4 is"), "{err}");
+    }
+
+    #[test]
+    fn the_page_call_passes_the_pointer_as_json() {
+        let js = pointer_script(&Pointer { zone: Zone::Near, x: -20.5, y: 10.0 });
+        let prefix = "window.__islandPointer&&window.__islandPointer(";
+        assert!(js.starts_with(prefix) && js.ends_with(')'), "{js}");
+        let arg: serde_json::Value = serde_json::from_str(&js[prefix.len()..js.len() - 1]).unwrap();
+        assert_eq!(arg, serde_json::json!({ "zone": "near", "x": -20.5, "y": 10.0 }));
+        for (zone, word) in [(Zone::Far, "far"), (Zone::Near, "near"), (Zone::Inside, "inside")] {
+            assert_eq!(serde_json::to_value(zone).unwrap(), serde_json::json!(word));
+        }
     }
 
     #[test]

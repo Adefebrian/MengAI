@@ -36,9 +36,10 @@ libc = "0.2"
 # The island on the notch (src/island.rs): NSScreen safe area and auxiliary top
 # areas, the window level above the menu bar, collection behavior, a frame set in
 # one call, the screen change notification and always active copies of the web
-# view's tracking areas (hover while the island is not key). Tauri exposes none
-# of these. All
-# four crates are already in Cargo.lock at these versions through tauri, tao and
+# view's tracking areas (hover while the island is not key), and the pointer
+# poll (an NSTimer on the main run loop reading NSEvent.mouseLocation, then
+# ignoresMouseEvents outside the page's hit rects). Tauri exposes none of these.
+# All four crates are already in Cargo.lock at these versions through tauri, tao and
 # wry, so nothing new enters the build; only feature flags are added. JEV
 # be.new_tech declare_locked_crates 1.0.
 objc2 = "0.6"
@@ -48,18 +49,23 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   "block2",
   "objc2-core-foundation",
   "NSArray",
+  "NSDate",
   "NSDictionary",
   "NSEnumerator",
   "NSGeometry",
   "NSNotification",
+  "NSObjCRuntime",
   "NSObject",
   "NSOperation",
+  "NSRunLoop",
   "NSString",
+  "NSTimer",
 ] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "std",
   "objc2-core-foundation",
   "NSApplication",
+  "NSEvent",
   "NSResponder",
   "NSScreen",
   "NSTrackingArea",
