@@ -28,6 +28,8 @@
   --island-disabled-fill: color-mix(in oklab, var(--island-ink) 14%, var(--island-bg));
   --island-success: #86cf9c;
   --island-danger: #f2a08c;
+  /* waits on you, budget low: amber, flat, no glow */
+  --island-warning: #f2c46d;
 }
 
 /* Inside the Tauri island window the page is transparent: only the shape shows. */
@@ -45,13 +47,19 @@ html[data-surface="island"] #root {
 }
 
 /* ---------------------------------------------------------------------
- * The shape
+ * The shape, with the moments' stage under it: one column as wide as the
+ * wider of the two, both centred in it, so the stage's top edge is the
+ * shape's bottom edge (siblings, never nested) and the stage stays centred
+ * under the shape even where a narrow preview scrolls the island
  * ------------------------------------------------------------------- */
 .island-stage {
+  position: relative;
   box-sizing: border-box;
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content;
   justify-content: center;
-  align-items: flex-start;
+  justify-items: center;
+  align-content: start;
   inline-size: 100%;
   min-width: 0;
 }
@@ -77,7 +85,7 @@ html[data-surface="island"] .island-stage {
   user-select: none;
   cursor: default;
 }
-.island:is([data-view="idle"], [data-view="collapsed"], [data-view="peek"], [data-view="shipped"]) {
+.island:is([data-view="idle"], [data-view="tucked"], [data-view="collapsed"], [data-view="peek"], [data-view="pop"], [data-view="shipped"]) {
   cursor: pointer;
 }
 .island p {
@@ -133,20 +141,88 @@ html[data-surface="island"] .island-stage {
   font-variant-numeric: var(--font-numeric);
 }
 .island-ring {
+  /* the tone of the run: running ink, waits on you and budget low amber, paused muted, failed, shipped */
+  --ring-ink: var(--island-ink);
   display: block;
   flex: none;
   inline-size: var(--space-16px);
   block-size: var(--space-16px);
-  border-radius: var(--radius-pill);
-  /* The track: a round 2 px line drawn inside the ring's own box, under the arc. */
-  outline: 2px solid var(--island-line-strong);
-  outline-offset: -2px;
+  /* The track: the ring's own fill cut to the 2 px round line its stroke lies on. */
+  background: color-mix(in oklab, var(--ring-ink) 22%, var(--island-bg));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='none' stroke='%23000' stroke-width='2'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='none' stroke='%23000' stroke-width='2'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+.island-ring:is([data-tone="wait"], [data-tone="low"]) {
+  --ring-ink: var(--island-warning);
+}
+.island-ring[data-tone="paused"] {
+  --ring-ink: var(--island-ink-muted);
+}
+.island-ring[data-tone="failed"] {
+  --ring-ink: var(--island-danger);
+}
+.island-ring[data-tone="shipped"] {
+  --ring-ink: var(--island-success);
 }
 .island-ring > svg {
   display: block;
 }
+/* One stroke: done solid, then the running share in fine dots at 45% ink (ringDash). */
 .island-ring-value {
-  stroke: var(--island-ink);
+  stroke: var(--ring-ink);
+}
+
+/* The band's mini cat: part of the band's click surface (the notch row is the
+   target), a click on it is answered with its tap reaction on the stage.
+   Hover: alert eyes; pressed: a small scale. */
+.island-cat {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  cursor: pointer;
+  transition: transform var(--dur-150) var(--ease-standard);
+}
+@media (hover: hover) {
+  .island-cat:hover .cat {
+    --cat-alert: 1;
+  }
+}
+.island-cat:active {
+  transform: scale(0.98);
+}
+.island-cat-figure {
+  display: inline-flex;
+  min-width: 0;
+}
+.island[data-motion="still"] .island-cat {
+  transition: none;
+}
+.island[data-motion="still"] .island-cat:active {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .island-cat {
+    transition: none;
+  }
+  .island-cat:active {
+    transform: none;
+  }
+}
+/* The polite read-out of each moment: one point in the column under the
+   stage, painted nowhere (clip-path), so it sits beside nothing it could overlap. */
+.island-live {
+  box-sizing: border-box;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  /* its words never widen the preview's scroller either */
+  contain: paint;
 }
 
 /* The body: everything under the band, at its final width so a morph never reflows it. */
@@ -402,37 +478,68 @@ html[data-surface="island"] .island-stage {
 }
 
 /* ---------------------------------------------------------------------
- * The development preview (a browser without the Tauri shell)
+ * The development preview (a browser without the Tauri shell): the
+ * screen with the island over a desk, the scenario under it in one plain
+ * line, the player, and the panels. Mobile first: below 640 px an app
+ * shell (pinned header, content scrolling on its own, a bottom tab bar
+ * for the panels); from 640 px every panel shows; from 1024 px the screen
+ * holds still beside the panels.
  * ------------------------------------------------------------------- */
+html[data-surface="island-preview"] body {
+  margin: 0;
+}
 .island-preview {
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   min-block-size: 100dvh;
-  padding: 0 var(--space-24px);
+  min-width: 0;
   background: var(--color-page);
   color: var(--color-ink);
 }
-.island-preview-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-24px);
-  padding-block: var(--kit-gap-section);
-  max-inline-size: 960px;
-  margin-inline: auto;
+.island-preview-bar {
+  box-sizing: border-box;
+  flex: none;
   min-width: 0;
+  padding: var(--space-16px) var(--space-24px);
+  background: var(--color-page);
 }
-.island-preview-head h1 {
+.island-preview-bar h1 {
   margin: 0;
   font-size: var(--text-4);
   line-height: var(--line-4);
   letter-spacing: var(--tracking-heading);
   font-weight: var(--weight-semibold);
 }
-.island-preview-head p {
+.island-preview-bar p {
   max-inline-size: 68ch;
   margin: var(--space-8px) 0 0;
   color: var(--color-ink-muted);
 }
+.island-preview-main {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: var(--space-24px);
+}
+.island-preview-section {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-32px);
+  padding-block: var(--kit-gap-section);
+  max-inline-size: 1200px;
+  margin-inline: auto;
+  min-width: 0;
+}
+.island-preview-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16px);
+  min-width: 0;
+}
 .island-preview-screen {
+  position: relative;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -441,11 +548,33 @@ html[data-surface="island"] .island-stage {
   border: var(--border-weight) solid var(--color-border);
   border-radius: var(--radius-16);
   background: var(--color-layer-1);
+  isolation: isolate;
+}
+/* The desk under the island: a few app windows drawn as hairlines, so the
+   transparent stage is plain to see. One painted layer, no element. */
+.island-preview-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--color-border-strong);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='240' fill='none' stroke='%23000' stroke-width='1.5'%3E%3Crect x='20' y='56' width='196' height='132' rx='10'/%3E%3Cpath d='M20 80h196'/%3E%3Crect x='236' y='96' width='104' height='120' rx='10'/%3E%3Cpath d='M236 120h104'/%3E%3Cg stroke-width='6' stroke-linecap='round'%3E%3Cpath d='M38 102h96M38 122h150M38 142h120M38 162h70M254 142h62M254 162h44M254 182h56'/%3E%3C/g%3E%3C/svg%3E") repeat 0 0 / 360px 240px;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='240' fill='none' stroke='%23000' stroke-width='1.5'%3E%3Crect x='20' y='56' width='196' height='132' rx='10'/%3E%3Cpath d='M20 80h196'/%3E%3Crect x='236' y='96' width='104' height='120' rx='10'/%3E%3Cpath d='M236 120h104'/%3E%3Cg stroke-width='6' stroke-linecap='round'%3E%3Cpath d='M38 102h96M38 122h150M38 142h120M38 162h70M254 142h62M254 162h44M254 182h56'/%3E%3C/g%3E%3C/svg%3E") repeat 0 0 / 360px 240px;
+  opacity: 0.55;
+  pointer-events: none;
 }
 .island-preview-menubar {
   flex: none;
   block-size: var(--space-24px);
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
   background: var(--color-layer-2);
+}
+.island-preview-host {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 /* On a narrow preview the desktop-sized island scrolls inside its stage instead of spilling out. */
 .island-preview-screen .island-stage {
@@ -456,11 +585,64 @@ html[data-surface="island"] .island-stage {
 .island-preview-screen:not([data-notch]) .island-stage {
   padding-block-start: var(--space-8px);
 }
-.island-preview-controls {
+/* What plays, in one plain line: what changed and who did it. */
+.island-preview-now {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4px);
+  min-width: 0;
+}
+.island-preview-now p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.island-preview-now-title {
+  font-weight: var(--weight-semibold);
+}
+.island-preview-now-step {
+  font-weight: var(--weight-regular);
+  color: var(--color-ink-muted);
+}
+.island-preview-now-text {
+  max-inline-size: 72ch;
+  color: var(--color-ink-muted);
+}
+.island-preview-player {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-24px);
+  gap: var(--space-8px);
   min-width: 0;
+}
+.island-preview-panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-32px);
+  min-width: 0;
+}
+.island-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16px);
+  min-width: 0;
+}
+.island-preview-panel h2 {
+  margin: 0;
+  font-size: var(--text-1);
+  line-height: var(--line-1);
+  font-weight: var(--weight-semibold);
+}
+.island-preview-family {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8px);
+  min-width: 0;
+}
+.island-preview-family h3 {
+  margin: 0;
+  font-size: var(--text-0);
+  line-height: var(--line-0);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-muted);
 }
 .island-preview-group {
   display: flex;
@@ -468,9 +650,236 @@ html[data-surface="island"] .island-stage {
   gap: var(--space-8px);
   min-width: 0;
 }
-/* The picked state: a tonal fill and weight, never a bar. */
+.island-preview-group > button {
+  min-width: 0;
+}
+/* The picked one: a tonal fill and weight, never a bar. */
 .island-preview-group > button[aria-pressed="true"] {
   background: var(--color-layer-2);
   border-color: var(--color-border-strong);
   font-weight: var(--weight-semibold);
 }
+.island-preview-player > button > .icon,
+.island-preview-tab > .icon {
+  flex: none;
+}
+/* The tab bar exists for the mobile shell only. */
+.island-preview-tabs {
+  display: none;
+}
+
+@media (max-width: 639.98px) {
+  .island-preview {
+    block-size: 100dvh;
+    overflow: hidden;
+  }
+  .island-preview-bar {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    padding: calc(var(--space-12px) + env(safe-area-inset-top)) var(--space-16px) var(--space-12px);
+    border-block-end: var(--border-weight) solid var(--color-border);
+  }
+  .island-preview-bar h1 {
+    font-size: var(--text-2);
+    line-height: var(--line-2);
+  }
+  .island-preview-bar p {
+    display: none;
+  }
+  .island-preview-main {
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding-inline: var(--space-16px);
+  }
+  .island-preview-section {
+    gap: var(--space-24px);
+  }
+  .island-preview-panel:not([data-active]) {
+    display: none;
+  }
+  .island-preview-tabs {
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex: none;
+    min-width: 0;
+    padding: 0 var(--space-8px) env(safe-area-inset-bottom);
+    border-block-start: var(--border-weight) solid var(--color-border);
+    background: var(--color-page);
+  }
+  .island-preview .island-preview-tab {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2px);
+    min-width: 0;
+    height: auto;
+    min-block-size: calc(var(--control-h) + var(--space-12px));
+    padding: var(--space-6px) var(--space-4px);
+    border: var(--border-weight) solid transparent;
+    border-radius: var(--radius-12);
+    background: transparent;
+    color: var(--color-ink-muted);
+    font-size: var(--text-n1);
+    line-height: var(--line-n1);
+    font-weight: var(--weight-medium);
+  }
+  .island-preview .island-preview-tab[aria-pressed="true"] {
+    background: var(--color-layer-2);
+    color: var(--color-ink);
+    font-weight: var(--weight-semibold);
+  }
+  @media (hover: hover) {
+    .island-preview .island-preview-tab:hover {
+      background: var(--color-layer-1);
+      color: var(--color-ink);
+    }
+  }
+  .island-preview .island-preview-tab:focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: -2px;
+  }
+}
+
+/* JEV ui.region_gate (verified jev-1.13.0): the screen is the card (0.58),
+   the scenario list a divided section (runner-up 0.31, the states and
+   display panels after it are plain spacing, 0.94 and 0.91). */
+@media (min-width: 640px) {
+  .island-preview-panel[data-panel="scenarios"] + .island-preview-panel {
+    padding-block-start: var(--space-32px);
+    border-block-start: var(--border-weight) solid var(--color-border);
+  }
+}
+
+@media (min-width: 1024px) {
+  .island-preview-section {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+    align-items: start;
+  }
+  /* the screen holds still while the list scrolls past it */
+  .island-preview-view {
+    position: sticky;
+    inset-block-start: var(--space-24px);
+  }
+}
+
+/* =====================================================================
+ * STAGE (Stage.tsx), owned by the stage. Kept as the last section of this
+ * file so the island ships one stylesheet (index.tsx imports island.css).
+ *
+ * A transparent region under the shape where a moment's cats come out. No
+ * fill, no line, no text: it sits over any app. The row's geometry comes
+ * from Stage.tsx (stageLayout: centred, every box on the top edge, the
+ * --space-8px gap) so the hit rects it reports are exactly the boxes drawn.
+ * Motion is Motion's transform and opacity only; nothing here animates.
+ * ===================================================================== */
+.moment-stage {
+  position: relative;
+  box-sizing: border-box;
+  flex: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.moment-cats {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+}
+/* One slot per cat, on the stage's top edge: a 48 pt cat fills it, a 32 pt
+   quirk cat sits at its top centre (Stage.tsx SLOT). */
+.moment-slot {
+  position: absolute;
+  inset-block-start: 0;
+  box-sizing: border-box;
+  inline-size: var(--space-48px);
+  block-size: var(--space-48px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+/* While its cat slides out, hops or goes back up, the slot clips at its top
+   edge (the shape's bottom edge), so the cat comes down out of the island.
+   Only vertical moves clip; a leave slides sideways inside the stage. */
+.moment-slot[data-clip] {
+  overflow: hidden;
+}
+.moment-mover {
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: 100%;
+  min-width: 0;
+}
+/* The cat as its own target, all states. Rest: no chrome, the cat sits on
+   the box's top edge. Hover: its eyes go alert (and follow the pointer).
+   Focus: a black tile with the island's ink ring inside the box, readable
+   over any app. Pressed: a small scale. Disabled: never shown, kept inert.
+   Loading, error and success belong to the island body, not the cat.
+   Selectors out-rank the global button base in ui.css. */
+.moment-stage button.moment-cat {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  inline-size: 100%;
+  block-size: 100%;
+  height: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-12);
+  background: transparent;
+  color: inherit;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-150) var(--ease-standard);
+}
+@media (hover: hover) {
+  .moment-stage button.moment-cat:enabled:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+  .moment-stage button.moment-cat:enabled:hover .cat {
+    --cat-alert: 1;
+  }
+}
+.moment-stage button.moment-cat:enabled:active {
+  background: transparent;
+  border-color: transparent;
+  transform: scale(0.98);
+}
+.moment-stage button.moment-cat:focus-visible {
+  background: var(--island-bg);
+  outline: 2px solid var(--island-ink);
+  outline-offset: -2px;
+}
+.moment-stage button.moment-cat:focus-visible .cat {
+  --cat-alert: 1;
+}
+.moment-stage button.moment-cat:disabled {
+  cursor: default;
+  transform: none;
+}
+/* Reduced motion, or the owner's motion setting "off": nothing moves, not even the press. */
+.moment-stage[data-motion="still"] button.moment-cat {
+  transition: none;
+}
+.moment-stage[data-motion="still"] button.moment-cat:enabled:active {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .moment-stage button.moment-cat {
+    transition: none;
+  }
+  .moment-stage button.moment-cat:enabled:active {
+    transform: none;
+  }
+}
+/* ======================== end of STAGE ================================ */

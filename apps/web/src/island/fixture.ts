@@ -4,6 +4,8 @@
 // tests: a small studio run folded through the same reducer as the live
 // feed, so every preview state reads exactly as a real run would. The
 // crew names come from the shared roster, so each cat wears its own coat.
+// The scenario gallery (scenarios.ts) builds on the same run and keeps its
+// script open, stamping each live event with the preview clock (Script.at).
 import { lookFor } from "@mengai/cats/src/roster";
 import type { AgentDTO, AgentRole, AgentStatus, Activity, MengaiEvent, OrderDTO, RunDTO, TaskDTO, UsageTotals } from "@mengai/shared";
 import { applyEvent, emptyLive, miniOf, type IslandLive } from "./live";
@@ -41,6 +43,11 @@ export class Script {
   }
   get now(): number {
     return this.ts;
+  }
+  /** The next events carry this time (the preview clock of a scenario playing live). */
+  at(ts: number): this {
+    this.ts = ts;
+    return this;
   }
 }
 
@@ -170,7 +177,8 @@ export function askOwner(s: Script, requestId = "rq-install"): void {
   s.emit("agent.status", { status: "approval", activity: "ask", mood: "focused", statusText: "Meowing for you: may I run npm install papaparse?", taskId: "t-review" }, "a-klepon", "t-review");
 }
 
-function fold(s: Script, now: number, live: IslandLive = emptyLive()): IslandLive {
+/** Every event of a script through the island's reducer, the island clock at `now`. */
+export function fold(s: Script, now: number, live: IslandLive = emptyLive()): IslandLive {
   let l = live;
   for (const e of s.events) l = applyEvent(l, e, now).live;
   return l;

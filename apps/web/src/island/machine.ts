@@ -13,6 +13,13 @@
 //   shipped    a run shipped: Oyen cheers, the ring completes, then after
 //              SHIP_MS the island collapses on its own
 //   peek       the pointer rests on the island: the crew at work
+//   pop        a stage finished: the body pops the moment's sentence for
+//              its length (stage_done), then the island collapses again
+//   tucked     a live run with no news for TUCK_MS (progress.tuckState), or
+//              the pointer passing near on its way to the menu bar: exactly
+//              the notch, or off the screen without one. Never while
+//              something waits on the owner, nor while a moment plays on the
+//              stage (a quirk may play under the tucked notch, that is all)
 //   collapsed  a run is live: mini Oyen, the ring, the stage ("Review 5 of 7")
 //   idle       nothing runs: exactly the notch, nothing shows (JEV
 //              idle_notch: notch_only 0.60); without a notch a small pill
@@ -22,10 +29,18 @@
 // notch it is a pill that hugs its content. Every grown view keeps the
 // band on top (the notch row) and adds its body under it; the body height
 // is measured in the page and estimated here when it cannot be (tests).
-import type { IslandGeometry, NativeState } from "./native";
+//
+// The stage (Stage.tsx) is a transparent region under the shape where a
+// moment's cats come out: a sibling of the shape, centred under it, its top
+// edge on the shape's bottom edge, never overlapping it. The native window
+// is the union of the two (windowOf), and only the shape and the clickable
+// cats take the pointer (hitOf), so the transparent rest never steals a
+// click from the app below.
 import type { IslandModel } from "./live";
+import type { Moment, MomentType } from "./moment-types";
+import { MAX_HIT, type HitRect, type IslandGeometry, type NativeState } from "./native";
 
-export type IslandView = "idle" | "collapsed" | "peek" | "ask" | "shipped" | "failed";
+export type IslandView = "idle" | "tucked" | "collapsed" | "peek" | "pop" | "ask" | "shipped" | "failed";
 
 /** How long the ship celebration plays before the island collapses. */
 export const SHIP_MS = 4000;
@@ -55,7 +70,10 @@ export const PEEK_ROWS = 3;
 export const EAR_MAX = 144;
 export const EAR_MIN = EAR_OUTER + MINI_CAT + EAR_INNER;
 /** body widths per grown view */
-export const BODY_W: Record<"peek" | "ask" | "shipped" | "failed", number> = { peek: 360, ask: 400, shipped: 340, failed: 360 };
+export const BODY_W: Record<"peek" | "pop" | "ask" | "shipped" | "failed", number> = { peek: 360, pop: 340, ask: 400, shipped: 340, failed: 360 };
+/** The stage under the shape (spec section 5): a 48 pt cat plus room for its hop, and its narrowest width. */
+export const STAGE_H = 72;
+export const STAGE_W = 160;
 
 /** Width of a string in the ear font (500 13px, the island's --text-n1). */
 export type Measure = (text: string) => number;
@@ -71,22 +89,47 @@ export interface ViewInput {
   /** an ask is showing the result of the owner's answer */
   pinned: boolean;
   now: number;
+  /** no news for TUCK_MS: the island tucks into the notch */
+  tucked?: boolean;
+  /** the pointer passes near the island on its way to the menu bar: the ears fold away */
+  near?: boolean;
+  /** the type of the moment on the stage, null or missing for none */
+  moment?: MomentType | null;
+  /** the display has a notch (a quirk may play under the tucked notch); true when missing */
+  notch?: boolean;
 }
 
-export function pickView({ model, hover, snoozed, pinned, now }: ViewInput): IslandView {
+/**
+ * Whether a live, quiet island folds to the notch. The pointer near folds
+ * it at once (only on a notch: the pill sits under the menu bar, and off the
+ * screen it would hear no pointer to come back) and a long quiet tucks it;
+ * never while something waits on the owner and never over a moment on the
+ * stage: every moment brings the ears out, except a quirk under a tucked
+ * notch, which plays right there.
+ */
+function folds({ model, tucked = false, near = false, moment = null, notch = true }: ViewInput): boolean {
+  if (model.asks.length > 0) return false;
+  if (!moment) return (near && notch) || tucked;
+  return moment === "quirk" && tucked && notch;
+}
+
+export function pickView(input: ViewInput): IslandView {
+  const { model, hover, snoozed, pinned, now, moment = null } = input;
   if (pinned) return "ask";
   if (model.asks.length > 0 && (!snoozed || hover)) return "ask";
   const f = model.finish;
   if (f?.kind === "failed") return "failed";
   if (f?.kind === "shipped" && now - f.at < SHIP_MS) return "shipped";
   if (hover) return "peek";
-  return model.active ? "collapsed" : "idle";
+  if (!model.active) return "idle";
+  if (moment === "stage_done") return "pop";
+  return folds(input) ? "tucked" : "collapsed";
 }
 
 export function nativeStateOf(view: IslandView, hasNotch = true): NativeState {
-  // without a notch an idle pill would sit over the frontmost title bar: leave the screen
-  if (view === "idle" && !hasNotch) return "hidden";
-  if (view === "idle" || view === "collapsed") return "collapsed";
+  // without a notch an idle (or tucked) pill would sit over the frontmost title bar: leave the screen
+  if ((view === "idle" || view === "tucked") && !hasNotch) return "hidden";
+  if (view === "idle" || view === "tucked" || view === "collapsed") return "collapsed";
   if (view === "peek") return "peek";
   return "expanded";
 }
@@ -97,7 +140,7 @@ export function earTexts(view: IslandView, model: IslandModel, queue: number): s
   if (view === "ask") return [queue > 1 ? `${queue} waiting` : "Needs you"];
   if (view === "shipped") return ["Shipped"];
   if (view === "failed") return ["Failed"];
-  if (view === "idle") return [];
+  if (view === "idle" || view === "tucked") return [];
   if (!a) return ["No run"];
   if (queue > 0) return [queue > 1 ? `${queue} waiting` : "Needs you"];
   if (a.status === "paused") return ["Paused"];
@@ -107,10 +150,61 @@ export function earTexts(view: IslandView, model: IslandModel, queue: number): s
   return [`${a.stageLabel} ${count}`, a.stageLabel, count];
 }
 
-/** The ring shows with a live stage and at the ship; never over an ask or an alert. */
-export function showsRing(view: IslandView, model: IslandModel, queue: number): boolean {
-  if (view === "shipped") return true;
-  return (view === "collapsed" || view === "peek") && !!model.active && queue === 0;
+/**
+ * The ring shows with a live stage (in the warning tone while asks wait put
+ * aside), at the ship and at a failure, each in its tone; never over an
+ * open ask, where the answer is the one thing to look at.
+ */
+export function showsRing(view: IslandView, model: IslandModel): boolean {
+  if (view === "shipped" || view === "failed") return true;
+  return (view === "collapsed" || view === "peek" || view === "pop") && !!model.active;
+}
+
+/** Name first, then the shorter form, for fitText. */
+function named(name: string, words: string, short: string): string[] {
+  return name ? [`${name} ${words}`, short] : [short];
+}
+
+const QUIRK_EAR: Record<string, string> = { yawn: "yawns", stretch: "stretches", groom: "grooms", knead: "kneads", bat: "plays", blink: "blinks", twitch: "twitches" };
+
+/**
+ * A few words in the ear for a moment on the stage, longest first: what
+ * changed and who. Empty for an ask and the reaction to its answer (the ear
+ * says it waits) and for a ship or failure (their own view says it).
+ */
+export function momentEarTexts(m: Pick<Moment, "type" | "cats">): string[] {
+  const first = m.cats[0];
+  const name = first?.cat.name ?? "";
+  switch (m.type) {
+    case "hire":
+      return named(name, "joined", "Joined");
+    case "let_go":
+      return named(name, "left", "Left");
+    case "handoff":
+      return ["Handoff"];
+    case "review_pass":
+      return ["Review passed", "Passed"];
+    case "review_fail":
+      return ["Needs a look", "Sent back"];
+    case "ceo_approved":
+      return named(name, "approved", "Approved");
+    case "ceo_denied":
+      return named(name, "said no", "Said no");
+    case "rethink":
+      return named(name, "rethinks", "Rethinking");
+    case "stuck":
+      return named(name, "is stuck", "Stuck");
+    case "budget_low":
+      return ["Budget low"];
+    case "stage_done":
+      return ["Stage done"];
+    case "quirk":
+      return named(name, QUIRK_EAR[first?.quirk ?? ""] ?? "plays", name || "Break");
+    case "tap":
+      return named(name, "says hi", "Hi");
+    default:
+      return [];
+  }
 }
 
 export interface Band {
@@ -126,16 +220,33 @@ export interface Band {
   width: number;
 }
 
+/** The stage under the shape, in the window that holds both (windowOf). */
+export interface StageBox {
+  width: number;
+  height: number;
+  /** its left edge in that window: both are centred, so (window - stage) / 2 */
+  x: number;
+}
+
 export interface Frame {
   view: IslandView;
   native: NativeState;
+  /** the black shape */
   width: number;
   height: number;
   /** corner radii: the notched island keeps square top corners flush with the screen edge */
   radius: { top: number; bottom: number };
   band: Band;
-  /** the body under the band, null for idle and collapsed */
+  /** the body under the band, null for idle, tucked and collapsed */
   body: { width: number; height: number } | null;
+  /** the stage under the shape while a moment's cats are out, else null */
+  stage: StageBox | null;
+}
+
+/** What the ear says: one or more items of text candidates (longest first) and the one up now. */
+export interface EarInput {
+  items: string[][];
+  index: number;
 }
 
 function fitText(candidates: string[], measure: Measure, room: number): { text: string; width: number } {
@@ -147,20 +258,36 @@ function fitText(candidates: string[], measure: Measure, room: number): { text: 
   return { text: last, width: Math.min(room, Math.ceil(measure(last))) };
 }
 
-export function bandOf(view: IslandView, model: IslandModel, g: IslandGeometry, measure: Measure, queue: number): Band {
-  const ring = showsRing(view, model, queue);
+/** Views whose ear takes a rotation or a moment's label; the rest say their own fixed words. */
+const EAR_VIEWS: ReadonlySet<IslandView> = new Set<IslandView>(["collapsed", "peek", "pop"]);
+
+/**
+ * Every item fitted to the room, the one up now picked: the ear is as wide
+ * as its widest item, so a rotation crossfades its words in place and never
+ * resizes the shape (or the window) every few seconds.
+ */
+function fitEar(items: string[][], index: number, measure: Measure, room: number): { text: string; width: number } {
+  const fits = items.map((t) => fitText(t, measure, room));
+  const up = fits[Math.min(Math.max(0, index), fits.length - 1)] ?? { text: "", width: 0 };
+  return { text: up.text, width: Math.max(0, ...fits.map((f) => (f.text ? f.width : 0))) };
+}
+
+export function bandOf(view: IslandView, model: IslandModel, g: IslandGeometry, measure: Measure, queue: number, ear: EarInput | null = null): Band {
+  const ring = showsRing(view, model);
   const ringPart = ring ? RING + RING_GAP : 0;
-  const texts = earTexts(view, model, queue);
+  const custom = ear && ear.items.length > 0 && EAR_VIEWS.has(view);
+  const items = custom ? ear.items : [earTexts(view, model, queue)];
+  const index = custom ? ear.index : 0;
   if (g.hasNotch) {
     const height = g.notchHeight;
-    if (view === "idle") return { height, ear: 0, text: "", textWidth: 0, ring: false, notch: true, width: g.notchWidth };
+    if (view === "idle" || view === "tucked") return { height, ear: 0, text: "", textWidth: 0, ring: false, notch: true, width: g.notchWidth };
     const room = EAR_MAX - EAR_INNER - EAR_OUTER - ringPart;
-    const { text, width: textWidth } = fitText(texts, measure, room);
-    const ear = Math.max(EAR_MIN, EAR_INNER + ringPart + textWidth + EAR_OUTER);
-    return { height, ear, text, textWidth, ring, notch: true, width: g.notchWidth + ear * 2 };
+    const { text, width: textWidth } = fitEar(items, index, measure, room);
+    const earW = Math.max(EAR_MIN, EAR_INNER + ringPart + textWidth + EAR_OUTER);
+    return { height, ear: earW, text, textWidth, ring, notch: true, width: g.notchWidth + earW * 2 };
   }
   const room = EAR_MAX * 2 - EAR_OUTER * 2 - MINI_CAT - GAP - ringPart;
-  const { text, width: textWidth } = fitText(texts, measure, room);
+  const { text, width: textWidth } = fitEar(items, index, measure, room);
   const content = text ? GAP + ringPart + textWidth : ring ? GAP + RING : 0;
   return { height: PILL_H, ear: 0, text, textWidth, ring, notch: false, width: EAR_OUTER + MINI_CAT + content + EAR_OUTER };
 }
@@ -208,8 +335,9 @@ function stack(children: number[]): number {
 }
 
 /** The body height the page would measure, estimated from the content. */
-export function estimateBody(view: IslandView, model: IslandModel, askIndex: number, width: number): number {
+export function estimateBody(view: IslandView, model: IslandModel, askIndex: number, width: number, popText = ""): number {
   const inner = width - PAD_X * 2;
+  if (view === "pop") return stack([Math.max(CONTROL_H, (linesFor(popText, inner, 13, 2) + 1) * LINE_S)]);
   if (view === "peek") {
     const a = model.active;
     if (!a) return stack([CONTROL_H]);
@@ -244,23 +372,60 @@ export interface FrameInput {
   askIndex?: number;
   /** the body height the page measured; the estimate stands in when it is 0 or missing */
   bodyHeight?: number;
+  /** what the ear says instead of its fixed words: the rotation, or a moment's label */
+  ear?: EarInput | null;
+  /** the width of the row of cats on the stage (Stage.minStageWidth); 0 or missing: no stage */
+  stageRow?: number;
+  /** the pop's sentence, for its estimate */
+  popText?: string;
 }
 
-export function frameOf({ view, model, geometry: g, measure = estimateText, askIndex = 0, bodyHeight }: FrameInput): Frame {
+/** The stage under a shape of this width, both centred in the window that holds them. */
+export function stageOf(shapeWidth: number, row: number): StageBox {
+  const width = Math.max(STAGE_W, Math.ceil(row));
+  return { width, height: STAGE_H, x: (Math.max(shapeWidth, width) - width) / 2 };
+}
+
+export function frameOf({ view, model, geometry: g, measure = estimateText, askIndex = 0, bodyHeight, ear = null, stageRow = 0, popText = "" }: FrameInput): Frame {
   const queue = model.asks.length;
-  const band = bandOf(view, model, g, measure, queue);
+  const band = bandOf(view, model, g, measure, queue, ear);
   const native = nativeStateOf(view, g.hasNotch);
-  if (view === "idle" || view === "collapsed") {
+  // an island off the screen has no stage either
+  const stageFor = (w: number) => (stageRow > 0 && native !== "hidden" ? stageOf(w, stageRow) : null);
+  if (view === "idle" || view === "tucked" || view === "collapsed") {
     // A notched band keeps its corners within a third of its height; the pill is a pill.
     const radius = g.hasNotch ? { top: 0, bottom: Math.min(R_BAND, Math.floor(band.height / 3)) } : { top: band.height / 2, bottom: band.height / 2 };
-    return { view, native, width: band.width, height: band.height, radius, band, body: null };
+    return { view, native, width: band.width, height: band.height, radius, band, body: null, stage: stageFor(band.width) };
   }
   const width = Math.max(BODY_W[view], band.width);
   const measured = bodyHeight && bodyHeight > 0 ? Math.ceil(bodyHeight) : 0;
-  const height = band.height + (measured || estimateBody(view, model, askIndex, width));
+  const height = band.height + (measured || estimateBody(view, model, askIndex, width, popText));
   const r = Math.min(R_GROWN, Math.floor(height / 3));
   const radius = g.hasNotch ? { top: 0, bottom: r } : { top: r, bottom: r };
-  return { view, native, width, height, radius, band, body: { width, height: height - band.height } };
+  return { view, native, width, height, radius, band, body: { width, height: height - band.height }, stage: stageFor(width) };
+}
+
+/** The native window for a frame: the union of the shape and the stage under it. */
+export function windowOf(f: Pick<Frame, "width" | "height" | "stage">): { width: number; height: number } {
+  if (!f.stage) return { width: f.width, height: f.height };
+  return { width: Math.max(f.width, f.stage.width), height: f.height + f.stage.height };
+}
+
+/**
+ * The parts of a window of size `win` that take the pointer, in
+ * window-local points: the shape first (centred, on the top edge), then
+ * each clickable cat (stage-local rects from Stage, under the shape, the
+ * stage centred too), at most MAX_HIT (the shape and up to three cats).
+ * Undefined when the shape is the whole window: the shell then takes the
+ * whole window, the same thing.
+ */
+export function hitOf(f: Pick<Frame, "width" | "height" | "stage">, win: { width: number; height: number }, cats: readonly HitRect[] = []): HitRect[] | undefined {
+  const shape: HitRect = { x: (win.width - f.width) / 2, y: 0, width: f.width, height: f.height };
+  const stageX = (win.width - (f.stage?.width ?? 0)) / 2;
+  const rows = f.stage ? cats.map((c) => ({ x: stageX + c.x, y: f.height + c.y, width: c.width, height: c.height })) : [];
+  const rects = [shape, ...rows].slice(0, MAX_HIT);
+  if (rects.length === 1 && shape.x === 0 && shape.width === win.width && shape.height === win.height) return undefined;
+  return rects;
 }
 
 /**

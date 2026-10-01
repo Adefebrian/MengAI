@@ -14,12 +14,12 @@
 // proposed (status proposed, mode live) and cats that wait on an answer
 // (a pending approval card, a question raised to the owner, or a cat whose
 // status says it waits on you when the island joined after the question).
-import { ACTIVITY_LABEL, type Activity, type AgentDTO, type AgentRole, type AgentStatus, type ApprovalDTO, type CatLook, type MengaiEvent, type Mood, type OrderDTO, type RunDTO, type RunSnapshotDTO, type RunStatus } from "@mengai/shared";
+import { ACTIVITY_LABEL, MOMENT_BUDGET_LOW_SHARE, type Activity, type AgentDTO, type AgentRole, type AgentStatus, type ApprovalDTO, type CatLook, type MengaiEvent, type Mood, type OrderDTO, type RunDTO, type RunSnapshotDTO, type RunStatus, type TaskStatus } from "@mengai/shared";
 import { orderTitle, orderType, sentence, waitsOnYou } from "../app/parts/orderText";
 import { clip, leadOf } from "../app/run/office";
 import { trackerModel } from "../app/run/stages";
 import { isFinished } from "../app/status";
-import { crewOrder, emptyRunState, pendingApprovals, reduceRun, stateFromSnapshot, type RunState } from "../store/runStore";
+import { crewOrder, emptyRunState, pendingApprovals, reduceRun, stateFromSnapshot, tokensUsed, type RunState } from "../store/runStore";
 
 /** Runs the island follows. A finished run leaves; its finish is kept once. */
 export const LIVE_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>(["queued", "running", "paused", "stopping"]);
@@ -28,7 +28,7 @@ export const FRESH_MS = 60_000;
 /** Runs the island loads a snapshot for, newest first. */
 export const MAX_RUNS = 3;
 /** Events kept per run: the reducer only looks back a few entries. */
-const LOG_KEEP = 32;
+export const LOG_KEEP = 32;
 
 export interface MiniCat {
   id: string | null;
@@ -50,8 +50,21 @@ export interface Finish {
   lead: MiniCat;
 }
 
+/**
+ * What the island keeps of a run's engine hints past its trimmed log: the
+ * newest `moment` seq and whether one said the budget runs low. Both only
+ * ever grow (a running maximum), so a hint that leaves the kept log never
+ * reads as news nor takes the warning tone back.
+ */
+export interface RunHints {
+  lastMoment: number;
+  saidLow: boolean;
+}
+
 export interface IslandLive {
   runs: Record<string, RunState>;
+  /** per followed run, by run id, folded in before its log is trimmed */
+  hints: Record<string, RunHints>;
   /** requestId to the task it was raised on, from request.raised */
   requestTask: Record<string, string | null>;
   orders: Record<string, OrderDTO>;
@@ -84,6 +97,19 @@ export interface ActiveRun {
   task: string | null;
   /** bumps when the run is done, so Oyen cheers once */
   celebrate: number;
+  /** tasks on the board, cancelled ones left out (the ring's whole) */
+  taskCount: number;
+  doneCount: number;
+  /** tasks a cat is on right now (the ring's in-flight share) */
+  runningCount: number;
+  /** tasks that ever started; it only grows, so a start is news */
+  startedCount: number;
+  /** 0..1 share of the budget spent (tokens or USD, whichever is further); null without a budget */
+  budget: number | null;
+  /** spent at least MOMENT_BUDGET_LOW_SHARE of the budget, or the engine said so (a budget_low moment) */
+  budgetLow: boolean;
+  /** seq of the newest engine `moment` hint of this run, 0 for none; it never goes down */
+  lastMoment: number;
 }
 
 interface AskBase {
@@ -103,6 +129,8 @@ export interface OrderAsk extends AskBase {
   detail: string;
   reason: string | null;
   who: string | null;
+  /** the cat that proposed it, null when the island does not know it */
+  cat: MiniCat | null;
 }
 
 export interface CatAsk extends AskBase {
@@ -126,11 +154,43 @@ export interface IslandModel {
 }
 
 export function emptyLive(): IslandLive {
-  return { runs: {}, requestTask: {}, orders: {}, finish: null, lastSeq: 0 };
+  return { runs: {}, hints: {}, requestTask: {}, orders: {}, finish: null, lastSeq: 0 };
 }
 
 function trim(s: RunState): RunState {
   return s.log.length > LOG_KEEP * 2 ? { ...s, log: s.log.slice(-LOG_KEEP) } : s;
+}
+
+/** The hints of a run's log folded into what the island kept: a running maximum that ignores any decrease. */
+export function foldHints(prev: RunHints | undefined, log: readonly MengaiEvent[]): RunHints {
+  let lastMoment = prev?.lastMoment ?? 0;
+  let saidLow = prev?.saidLow ?? false;
+  for (const e of log) {
+    if (e.type !== "moment") continue;
+    lastMoment = Math.max(lastMoment, e.seq);
+    if ((e as MengaiEvent<"moment">).data.kind === "budget_low") saidLow = true;
+  }
+  return prev && prev.lastMoment === lastMoment && prev.saidLow === saidLow ? prev : { lastMoment, saidLow };
+}
+
+/** A followed run's new state: its hints are folded in from the whole log first, then the log is trimmed. */
+function store(live: IslandLive, runId: string, s: RunState): IslandLive {
+  const before = live.hints[runId];
+  const hints = foldHints(before, s.log);
+  return { ...live, runs: { ...live.runs, [runId]: trim(s) }, hints: hints === before ? live.hints : { ...live.hints, [runId]: hints } };
+}
+
+/** Runs the island stops following leave with their hints. */
+function without(live: IslandLive, ids: readonly string[]): IslandLive {
+  const gone = ids.filter((id) => live.runs[id] || live.hints[id]);
+  if (gone.length === 0) return live;
+  const runs = { ...live.runs };
+  const hints = { ...live.hints };
+  for (const id of gone) {
+    delete runs[id];
+    delete hints[id];
+  }
+  return { ...live, runs, hints };
 }
 
 function isLive(run: Pick<RunDTO, "status"> | null | undefined): boolean {
@@ -139,16 +199,11 @@ function isLive(run: Pick<RunDTO, "status"> | null | undefined): boolean {
 
 /** A run's snapshot: first paint of that run; its events after snapshot.lastSeq follow on the stream. */
 export function withSnapshot(live: IslandLive, snap: RunSnapshotDTO): IslandLive {
-  if (!isLive(snap.run)) {
-    if (!live.runs[snap.run.id]) return live;
-    const runs = { ...live.runs };
-    delete runs[snap.run.id];
-    return { ...live, runs };
-  }
+  if (!isLive(snap.run)) return without(live, [snap.run.id]);
   const prev = live.runs[snap.run.id];
   // the stream may already be ahead of this snapshot: keep the newer state
   if (prev && prev.lastSeq >= snap.lastSeq) return live;
-  return { ...live, runs: { ...live.runs, [snap.run.id]: trim(stateFromSnapshot(snap)) } };
+  return store(live, snap.run.id, stateFromSnapshot(snap));
 }
 
 /**
@@ -157,20 +212,15 @@ export function withSnapshot(live: IslandLive, snap: RunSnapshotDTO): IslandLive
  * first, for their snapshots.
  */
 export function withRunList(live: IslandLive, list: RunDTO[]): { live: IslandLive; missing: string[] } {
-  let runs = live.runs;
-  for (const r of list) {
-    if (runs[r.id] && !isLive(r)) {
-      if (runs === live.runs) runs = { ...runs };
-      delete runs[r.id];
-    }
-  }
+  const next = without(live, list.filter((r) => live.runs[r.id] && !isLive(r)).map((r) => r.id));
+  const runs = next.runs;
   const followed = Object.keys(runs).length;
   const missing = list
     .filter((r) => isLive(r) && !runs[r.id])
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, Math.max(0, MAX_RUNS - followed))
     .map((r) => r.id);
-  return { live: runs === live.runs ? live : { ...live, runs }, missing };
+  return { live: next, missing };
 }
 
 /** The whole order list (GET /api/trading/orders) replaces what the island knew. */
@@ -226,8 +276,8 @@ export function applyEvent(live: IslandLive, e: MengaiEvent, now: number): Appli
   const cur = next.runs[runId];
   if (!cur) {
     if (e.type === "run.created") {
-      const s = trim(reduceRun(emptyRunState(runId), e));
-      if (isLive(s.run)) return { live: { ...next, runs: { ...next.runs, [runId]: s } }, fetch: null };
+      const s = reduceRun(emptyRunState(runId), e);
+      if (isLive(s.run)) return { live: store(next, runId, s), fetch: null };
     }
     if (e.type === "run.status") {
       const d = (e as MengaiEvent<"run.status">).data;
@@ -236,16 +286,14 @@ export function applyEvent(live: IslandLive, e: MengaiEvent, now: number): Appli
     return { live: next, fetch: null };
   }
   const before = cur.run?.status ?? null;
-  const s = trim(reduceRun(cur, e));
+  const s = reduceRun(cur, e);
   if (s === cur) return { live: next, fetch: null };
   if (s.run && isFinished(s.run.status) && !isFinished(before)) {
-    const runs = { ...next.runs };
-    delete runs[runId];
     const fresh = now - e.ts <= FRESH_MS;
     const finish = fresh ? (finishOf(s, now) ?? next.finish) : next.finish;
-    return { live: { ...next, runs, finish }, fetch: null };
+    return { live: { ...without(next, [runId]), finish }, fetch: null };
   }
-  return { live: { ...next, runs: { ...next.runs, [runId]: s } }, fetch: null };
+  return { live: store(next, runId, s), fetch: null };
 }
 
 /** The finish is done playing (the celebration ended, or the owner dismissed the alert). */
@@ -275,7 +323,38 @@ function activeTask(s: RunState): string | null {
   return best ? clip(best.title, 72) : null;
 }
 
-export function activeOf(s: RunState): ActiveRun | null {
+const STARTED: ReadonlySet<TaskStatus> = new Set<TaskStatus>(["running", "waiting", "review", "done", "failed"]);
+
+/** Task counts for the ring and the news key: the board without cancelled cards. */
+function taskCounts(s: RunState): Pick<ActiveRun, "taskCount" | "doneCount" | "runningCount" | "startedCount"> {
+  let taskCount = 0;
+  let doneCount = 0;
+  let runningCount = 0;
+  let startedCount = 0;
+  for (const id of s.taskOrder) {
+    const t = s.tasks[id];
+    if (!t || t.status === "cancelled") continue;
+    taskCount += 1;
+    if (t.status === "done") doneCount += 1;
+    if (t.status === "running") runningCount += 1;
+    if (t.startedAt !== null || STARTED.has(t.status)) startedCount += 1;
+  }
+  return { taskCount, doneCount, runningCount, startedCount };
+}
+
+/** The share of the budget spent: the further of tokens and USD, each only when it has a budget. */
+function budgetOf(s: RunState): number | null {
+  const u = s.usage;
+  if (!u) return null;
+  const shares: number[] = [];
+  if (u.budgetTokens > 0) shares.push(tokensUsed(u.totals) / u.budgetTokens);
+  if (u.budgetUsd > 0) shares.push(u.totals.costUsd / u.budgetUsd);
+  const finite = shares.filter((n) => Number.isFinite(n));
+  return finite.length ? Math.max(0, Math.min(1, Math.max(...finite))) : null;
+}
+
+/** The run as the island shows it; `kept` are its hints from IslandLive.hints (without them, only the kept log's). */
+export function activeOf(s: RunState, kept?: RunHints): ActiveRun | null {
   const run = s.run;
   if (!run) return null;
   const m = trackerModel(s);
@@ -283,6 +362,8 @@ export function activeOf(s: RunState): ActiveRun | null {
   const lead = leadOf(s);
   const crew = crewOrder(s).map((a): CrewLine => ({ ...miniOf(a), id: a.id, doing: doingOf(s, a), atWork: AT_WORK.has(a.status) }));
   const ordered = [...crew.filter((c) => c.atWork), ...crew.filter((c) => !c.atWork)];
+  const budget = budgetOf(s);
+  const hints = foldHints(kept, s.log);
   return {
     runId: run.id,
     goal: run.goal,
@@ -296,6 +377,10 @@ export function activeOf(s: RunState): ActiveRun | null {
     atWork: crew.filter((c) => c.atWork).length,
     task: activeTask(s),
     celebrate: lead ? (s.celebrate[lead.id] ?? 0) : 0,
+    ...taskCounts(s),
+    budget,
+    budgetLow: (budget !== null && budget >= MOMENT_BUDGET_LOW_SHARE) || hints.saidLow,
+    lastMoment: hints.lastMoment,
   };
 }
 
@@ -392,19 +477,20 @@ function catAsks(s: RunState, live: IslandLive): CatAsk[] {
 }
 
 /** The cat that proposed an order: from its run, or from any run the island follows (ids are unique). */
-function proposer(o: OrderDTO, live: IslandLive): string | null {
+function proposer(o: OrderDTO, live: IslandLive): AgentDTO | null {
   if (!o.agentId) return null;
   const own = o.runId ? live.runs[o.runId] : undefined;
-  if (own) return own.agents[o.agentId]?.name ?? null;
+  if (own) return own.agents[o.agentId] ?? null;
   for (const s of Object.values(live.runs)) {
     const a = s.agents[o.agentId];
-    if (a) return a.name;
+    if (a) return a;
   }
   return null;
 }
 
 function orderAsk(o: OrderDTO, live: IslandLive): OrderAsk {
-  const who = proposer(o, live);
+  const agent = proposer(o, live);
+  const who = agent?.name ?? null;
   const price = o.type === "limit" && o.limitPrice !== null ? o.limitPrice : o.fillPrice;
   const total = price !== null && Number.isFinite(price) ? price * o.qty : null;
   const type = sentence(orderType(o));
@@ -420,6 +506,7 @@ function orderAsk(o: OrderDTO, live: IslandLive): OrderAsk {
     detail,
     reason: o.reason ? clip(sentence(o.reason), 140) : null,
     who,
+    cat: agent ? miniOf(agent) : null,
   };
 }
 
@@ -436,5 +523,5 @@ export function deriveModel(live: IslandLive): IslandModel {
   for (const o of Object.values(live.orders)) if (waitsOnYou(o)) asks.push(orderAsk(o, live));
   for (const s of runs) if (isLive(s.run)) asks.push(...catAsks(s, live));
   asks.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-  return { active: active ? activeOf(active) : null, asks, finish: live.finish, liveRuns: runs.filter((s) => isLive(s.run)).length };
+  return { active: active ? activeOf(active, live.hints[active.run!.id]) : null, asks, finish: live.finish, liveRuns: runs.filter((s) => isLive(s.run)).length };
 }

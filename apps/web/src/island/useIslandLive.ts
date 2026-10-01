@@ -10,12 +10,14 @@
 // off up to 30 s, after reading the run list again. A run that goes live
 // later arrives as run.created or run.status and loads its snapshot.
 // Nothing polls faster than the stream, except a light refresh of the
-// orders every 20 s.
+// orders every 20 s. Every event the feed reduces reaches `onEvent` with the
+// island before and after it, for the moments (useIslandMoments); the
+// preview's scenarios push their events through the same `apply`.
 import { SSE_EVENT_NAME, type MengaiEvent, type OwnerSettings } from "@mengai/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient } from "../api/client";
 import type { EventSourceLike } from "../store/runStore";
-import { applyEvent, emptyLive, withOrders, withRunList, withSnapshot, type IslandLive } from "./live";
+import { applyEvent, emptyLive, withOrders, withRunList, withSnapshot, type Applied, type IslandLive } from "./live";
 
 export const ORDERS_REFRESH_MS = 20_000;
 const CLOSED = 2;
@@ -28,9 +30,14 @@ export interface IslandFeed {
   /** the owner's motion setting: "off" makes the island instant and the cats still */
   motion: OwnerSettings["motion"];
   update(fn: (live: IslandLive) => IslandLive): void;
+  /** reduce one event of the stream (the preview's scenarios push theirs here too) */
+  apply(e: MengaiEvent): Applied;
   /** read the orders again now (after a decision) */
   refreshOrders(): void;
 }
+
+/** One reduced event, with the island before and after it. */
+export type EventSink = (before: IslandLive, e: MengaiEvent, after: IslandLive) => void;
 
 export interface FeedOptions {
   /** null keeps the feed idle (the preview with sample data) */
@@ -39,9 +46,11 @@ export interface FeedOptions {
   now?: () => number;
   ordersEveryMs?: number;
   initial?: IslandLive;
+  /** every event the feed reduces, for the moments */
+  onEvent?: EventSink;
 }
 
-export function useIslandLive({ api, now = Date.now, ordersEveryMs = ORDERS_REFRESH_MS, initial }: FeedOptions): IslandFeed {
+export function useIslandLive({ api, now = Date.now, ordersEveryMs = ORDERS_REFRESH_MS, initial, onEvent }: FeedOptions): IslandFeed {
   const [live, setLive] = useState<IslandLive>(() => initial ?? emptyLive());
   const [connection, setConnection] = useState<LiveConnection>(api ? "connecting" : "offline");
   const [motion, setMotion] = useState<OwnerSettings["motion"]>("full");
@@ -49,6 +58,8 @@ export function useIslandLive({ api, now = Date.now, ordersEveryMs = ORDERS_REFR
   const ordersRef = useRef<() => void>(() => {});
   const nowRef = useRef(now);
   nowRef.current = now;
+  const sinkRef = useRef(onEvent);
+  sinkRef.current = onEvent;
 
   const update = useCallback((fn: (l: IslandLive) => IslandLive) => {
     const next = fn(ref.current);
@@ -56,6 +67,17 @@ export function useIslandLive({ api, now = Date.now, ordersEveryMs = ORDERS_REFR
     ref.current = next;
     setLive(next);
   }, []);
+
+  const apply = useCallback(
+    (e: MengaiEvent) => {
+      const before = ref.current;
+      const r = applyEvent(before, e, nowRef.current());
+      update(() => r.live);
+      sinkRef.current?.(before, e, r.live);
+      return r;
+    },
+    [update],
+  );
 
   // A fixture handed in later (the preview switching states) replaces the picture.
   useEffect(() => {
@@ -123,8 +145,7 @@ export function useIslandLive({ api, now = Date.now, ordersEveryMs = ORDERS_REFR
           return;
         }
         if (typeof e.seq !== "number" || typeof e.type !== "string") return;
-        const r = applyEvent(ref.current, e, nowRef.current());
-        update(() => r.live);
+        const r = apply(e);
         if (r.fetch) void loadSnapshot(r.fetch);
       });
       es.onerror = () => {
@@ -174,8 +195,8 @@ export function useIslandLive({ api, now = Date.now, ordersEveryMs = ORDERS_REFR
       source?.close();
       ordersRef.current = () => {};
     };
-  }, [api, ordersEveryMs, update]);
+  }, [api, ordersEveryMs, update, apply]);
 
   const refreshOrders = useCallback(() => ordersRef.current(), []);
-  return { live, connection, motion, update, refreshOrders };
+  return { live, connection, motion, update, apply, refreshOrders };
 }
