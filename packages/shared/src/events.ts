@@ -112,9 +112,29 @@ export interface EventMap {
   "trade.order": { order: import("./capabilities").OrderDTO };
   "trade.positions": { positions: import("./capabilities").PositionDTO[] };
   "connector.status": { connectorId: string; status: "connected" | "error" | "disabled"; error: string | null };
+  /**
+   * A fact the engine knows best, sent for the island's moments: a review
+   * verdict, the CEO answering a crew request itself, a cat rethinking or
+   * stuck, the budget running low. Facts only, never an animation name;
+   * `text` is one plain sentence, clipped to MOMENT_TEXT_MAX.
+   */
+  moment: { kind: MomentKind; agentId: string | null; taskId: string | null; level: MomentLevel; text: string };
 }
 
 export type EventType = keyof EventMap;
+
+export const MOMENT_KINDS = ["review_pass", "review_fail", "ceo_approved", "ceo_denied", "rethink", "budget_low", "stuck"] as const;
+export type MomentKind = (typeof MOMENT_KINDS)[number];
+export const MOMENT_LEVELS = ["info", "good", "bad"] as const;
+export type MomentLevel = (typeof MOMENT_LEVELS)[number];
+/** The longest a moment's sentence may be. */
+export const MOMENT_TEXT_MAX = 80;
+/**
+ * The share of a run's token or USD budget that counts as running low: the
+ * engine sends its budget_low moment there, and the island's ring turns to
+ * the warning tone there.
+ */
+export const MOMENT_BUDGET_LOW_SHARE = 0.8;
 
 export const MEETING_KINDS = ["kickoff", "sync", "review", "wrapup"] as const;
 export type MeetingKind = (typeof MEETING_KINDS)[number];
@@ -171,6 +191,7 @@ export const EVENT_TYPES = [
   "trade.order",
   "trade.positions",
   "connector.status",
+  "moment",
 ] as const satisfies readonly EventType[];
 
 /** SSE event name used on the wire for every MengaiEvent (data is the JSON envelope). */
