@@ -30,6 +30,11 @@
 // once with the list (a second pass after that is the reviewer's call; JEV
 // picked hold once over a hard block). A scan that cannot run holds the
 // pass until the reviewer runs ui_check itself.
+//
+// The island's moments get one `moment` hint per fact the engine knows
+// best (runs/moments.ts): a review verdict, the CEO answering a crew
+// request itself, a self-check that sends a cat into another round, a
+// tripped guard, the budget crossing 80% (once per run). No model call.
 import {
   ACTIVITY_LABEL,
   ROLE_LABEL,
@@ -101,6 +106,7 @@ import {
 } from "./company";
 import { EvidenceLog, REFLEXION, REFLEXION_SYSTEM, StepBudget, initialSteps, parseReflexion, precheck, reflexionPacket, type Evidence, type Verdict } from "./brain";
 import { createBrainJudge, planAdopt, planHire, planLetGo, planRole, type BrainJudge } from "./judge";
+import { budgetLow, momentFor, type MomentPayload } from "./moments";
 import { ORG, budgetLeftShare, canAffordHire, depthOf, hireReason, letGoReason, type BudgetView, type HireKind } from "./org";
 import { LIMITS, OUTPUT_CAP, RepeatGuard, TITLES, bounded, moodFor, roleCap, withArticle } from "./policy";
 import {
@@ -432,12 +438,15 @@ export class RunEngine {
   private readonly company: CompanyKind;
   /** the company template; null for a studio run or when no catalog is wired */
   private readonly template: CompanyTemplateView | null;
+  /** the island's budget_low moment goes out once per run; a restored run already past the line never repeats it */
+  private budgetLowSent: boolean;
 
   private constructor(init: EngineInit) {
     this.ctx = init.ctx;
     this.deps = init.deps;
     this.repo = init.repo;
     this.run = init.run;
+    this.budgetLowSent = budgetLow(this.budgetView());
     this.project = init.project;
     this.root = init.root;
     this.maxConcurrent = Math.max(1, Math.floor(init.maxConcurrent || 1));
@@ -809,6 +818,18 @@ export class RunEngine {
   private async emitUsage(): Promise<void> {
     const v = this.view;
     await this.emit("run.usage", { usage: v.usage, budgetTokens: v.budgetTokens, budgetUsd: v.budgetUsd, progress: v.progress });
+  }
+
+  /** An island moment hint: a fact, never an animation; the envelope carries the payload's cat and task. */
+  private async emitMoment(m: MomentPayload): Promise<void> {
+    await this.emit("moment", m, m.agentId, m.taskId);
+  }
+
+  /** The first time usage reaches 80% of the token or USD budget: one budget_low moment from the CEO, once per run. */
+  private async noteBudget(): Promise<void> {
+    if (this.budgetLowSent || !budgetLow(this.budgetView())) return;
+    this.budgetLowSent = true;
+    await this.emitMoment(momentFor("budget_low", { cat: this.lead()?.dto }));
   }
 
   // ------------------------------------------------------ brain helpers
@@ -1980,6 +2001,7 @@ export class RunEngine {
     if (!target || target.dto.status !== "review") return;
     target.rounds++;
     target.reviewNotes.push(notes);
+    await this.emitMoment(momentFor(verdict === "pass" ? "review_pass" : "review_fail", { cat: reviewer.dto, task: target.dto }));
     const owner = target.dto.assigneeId ? this.agents.get(target.dto.assigneeId) : undefined;
     if (owner) await this.roleOutcome(owner, target, verdict === "pass" ? "win" : "loss", verdict === "pass" ? "review_pass" : "review_fail", notes.join("; "));
     if (verdict === "pass") {
@@ -2207,7 +2229,10 @@ export class RunEngine {
         const step: StepRecord = { assistant: { text: redact(result.text), toolCalls: [] }, results: [] };
         steps.push(step);
         budget.record(step);
-        if (textOnly >= LIMITS.noProgressLimit) return { kind: "failed", reason: `no progress: ${LIMITS.noProgressLimit} replies without a tool call` };
+        if (textOnly >= LIMITS.noProgressLimit) {
+          await this.emitMoment(momentFor("stuck", { cat: a.dto, task: t.dto }));
+          return { kind: "failed", reason: `no progress: ${LIMITS.noProgressLimit} replies without a tool call` };
+        }
         continue;
       }
       textOnly = 0;
@@ -2222,7 +2247,10 @@ export class RunEngine {
       lastFailed = exec.anyError;
       a.cleanSteps = exec.anyError ? 0 : a.cleanSteps + 1;
       await this.setAgent(a, {});
-      if (exec.tripped) return { kind: "failed", reason: exec.tripped };
+      if (exec.tripped) {
+        await this.emitMoment(momentFor("stuck", { cat: a.dto, task: t.dto }));
+        return { kind: "failed", reason: exec.tripped };
+      }
       if (!exec.end) continue;
       const end = exec.end;
       if (end.kind !== "finished" || end.blocked || !this.selfCheckApplies(a, t)) return end;
@@ -2238,7 +2266,9 @@ export class RunEngine {
         // the last check still found a gap: the finish is accepted with the open point noted
         return { ...end, summary: bounded(`${end.summary}\nOpen after the self-check: ${v.critique}`, LIMITS.resultChars) };
       }
+      // only a revise that really sends the cat into another round is a rethink (JEV picked this over every revise)
       rounds++;
+      await this.emitMoment(momentFor("rethink", { cat: a.dto, task: t.dto }));
       budget.extend(REFLEXION.roundSteps);
       const note = `Not finished yet. Self-check ${checks}: ${v.critique} Address it, then call finish again.`;
       step.results = step.results.map((r) => (finish && r.callId === finish.id ? { ...r, output: note, ok: false } : r));
@@ -2631,6 +2661,7 @@ export class RunEngine {
     await this.repo.addRunUsage(this.run.id, d, now);
     await this.repo.addAgentUsage(a.dto.id, d, now);
     await this.emitUsage();
+    await this.noteBudget();
     if (this.run.status === "running" && this.overBudget()) await this.pause("budget");
   }
 
@@ -2640,6 +2671,7 @@ export class RunEngine {
     addUsage(this.run.usage, d);
     await this.repo.addRunUsage(this.run.id, d, this.ctx.clock.now());
     await this.emitUsage();
+    await this.noteBudget();
     if (this.run.status === "running" && this.overBudget()) await this.pause("budget");
   }
 
@@ -2870,6 +2902,7 @@ export class RunEngine {
     }
     const approved = verdict.decision === "approve";
     await this.emit("request.decided", { requestId, byAgentId: lead.dto.id, byOwner: false, answer: verdict.answer, approved }, lead.dto.id, t.dto.id);
+    await this.emitMoment(momentFor(approved ? "ceo_approved" : "ceo_denied", { cat: lead.dto, task: t.dto, asker: a.dto.name }));
     await this.emit("agent.say", { text: clip(verdict.answer, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, t.dto.id);
     return { approved, answer: `${lead.dto.name} (the CEO): ${verdict.answer}` };
   }
@@ -3212,6 +3245,7 @@ export class RunEngine {
     }
     const approved = verdict.decision === "approve";
     await this.emit("request.decided", { requestId, byAgentId: lead.dto.id, byOwner: false, answer: verdict.answer, approved }, lead.dto.id, t.dto.id);
+    await this.emitMoment(momentFor(approved ? "ceo_approved" : "ceo_denied", { cat: lead.dto, task: t.dto, asker: a.dto.name }));
     await this.emit("agent.say", { text: clip(verdict.answer, LIMITS.sayChars), to: a.dto.id }, lead.dto.id, t.dto.id);
     await settleLead(VOICE.answered(a.dto.name));
     a.waiting = false;
