@@ -14,7 +14,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { AgentRole } from "@mengai/shared";
 import { AsideArt, BatCard, beatLayers, type BeatLayers } from "./props";
-import { ROLE_PROP, SIT, asideFor, type Beat, type Pose, type SitBeat } from "./poses";
+import { ROLE_PROP, SIT, heldFor, type Beat, type Held, type Pose, type PropId, type SitBeat } from "./poses";
 
 type EyeMode = "open" | "closed" | "happy";
 
@@ -30,6 +30,8 @@ const HEAD = "M80 32 C 104 32 117 46 117 63 C 117 80 101 90 80 90 C 59 90 43 80 
 const LOAF = "M40 128 C 40 108 62 100 88 100 C 114 100 132 110 132 128 C 132 142 120 148 86 148 C 54 148 40 142 40 128 Z";
 const LIE_TAIL = "M128 132 C 142 138 138 150 116 150 C 104 150 96 149 90 148";
 const LIE_TAIL_TIP = "M90 148 C 84 148 80 146 78 142";
+/** The paws at rest: a beat whose object gives way to a held one has nothing to work on. */
+const REST_PAW = [0, 0] as const;
 const CUSHION =
   "M22 138 C 22 132 28 130 40 130 L 120 130 C 132 130 138 132 138 138 L 138 148 C 138 154 132 156 120 156 L 40 156 C 28 156 22 154 22 148 Z";
 
@@ -156,10 +158,11 @@ function Paw({ side, offset, hidden, children }: { side: "l" | "r"; offset: read
 /**
  * One art layer of a beat. While a sitting beat changes, the previous beat's
  * layer stays for one crossfade (data-fade out) under the new one (data-fade in).
+ * A beat whose object is replaced by a held one (heldFor) draws no art.
  */
-function Layer({ pick, beat, leaving, clipBase }: { pick: keyof BeatLayers; beat: Beat; leaving: Beat | null; clipBase: string }) {
-  const now = beatLayers(beat, `${clipBase}-${beat}`)[pick];
-  const old = leaving ? beatLayers(leaving, `${clipBase}-${leaving}-x`)[pick] : null;
+function Layer({ pick, beat, leaving, clipBase, bare = false, leavingBare = false }: { pick: keyof BeatLayers; beat: Beat; leaving: Beat | null; clipBase: string; bare?: boolean; leavingBare?: boolean }) {
+  const now = bare ? null : beatLayers(beat, `${clipBase}-${beat}`)[pick];
+  const old = leaving && !leavingBare ? beatLayers(leaving, `${clipBase}-${leaving}-x`)[pick] : null;
   return (
     <>
       {old ? (
@@ -176,11 +179,14 @@ function Layer({ pick, beat, leaving, clipBase }: { pick: keyof BeatLayers; beat
   );
 }
 
-/** The role's own object in the free corner; it fades when a beat takes the corner. */
-function Aside({ role, beat }: { role: AgentRole; beat: Beat }) {
+/**
+ * The free corner: the role's own object, or the one the cat is told to
+ * hold (heldFor). It fades when a beat takes the corner.
+ */
+function Aside({ role, held, holding }: { role: AgentRole; held: Held; holding: PropId | null }) {
   return (
-    <g className="cat-aside" data-on={asideFor(beat, role) ? "" : undefined}>
-      <AsideArt id={ROLE_PROP[role]} />
+    <g className="cat-aside" data-on={held.aside ? "" : undefined} data-held={holding && held.aside ? held.aside : undefined}>
+      <AsideArt id={held.aside ?? ROLE_PROP[role]} />
     </g>
   );
 }
@@ -192,15 +198,21 @@ interface SitRigProps {
   clipBase: string;
   /** Show the role's own object aside (off inside the celebrate stretch). */
   aside?: boolean;
+  /** The object the cat is told to hold (CatProps.holding). */
+  holding?: PropId | null;
 }
 
 /** The sitting rig: every sitting beat, and the stretch that opens celebrate. */
-function SitRig({ beat, leaving, role, clipBase, aside = true }: SitRigProps) {
+function SitRig({ beat, leaving, role, clipBase, aside = true, holding = null }: SitRigProps) {
   const spec = SIT[beat];
   const head = spec.head;
+  const held = heldFor(beat, role, holding);
+  const bare = !held.beatArt;
+  const leavingBare = leaving ? !heldFor(leaving, role, holding).beatArt : false;
+  const art = { beat, leaving, clipBase, bare, leavingBare };
   return (
-    <g className="cat-sit">
-      <Layer pick="ground" beat={beat} leaving={leaving} clipBase={clipBase} />
+    <g className="cat-sit" data-arm={spec.arm ? "" : undefined}>
+      <Layer pick="ground" {...art} />
       <g className="cat-walk">
         <g className="cat-tail" data-on={spec.tail === "up" ? "" : undefined}>
           <g className="cat-tail-cel">
@@ -226,22 +238,22 @@ function SitRig({ beat, leaving, role, clipBase, aside = true }: SitRigProps) {
         </g>
         <g className="cat-head" style={move(head.x, head.y, head.r)}>
           <Head pupils={spec.pupils} eyes="open" clipBase={clipBase}>
-            <Layer pick="head" beat={beat} leaving={leaving} clipBase={clipBase} />
+            <Layer pick="head" {...art} />
           </Head>
         </g>
-        <Layer pick="under" beat={beat} leaving={leaving} clipBase={clipBase} />
-        <Paw side="l" offset={spec.pawL} />
-        <Paw side="r" offset={spec.pawR} hidden={spec.pawInHead}>
-          <Layer pick="paw" beat={beat} leaving={leaving} clipBase={clipBase} />
+        <Layer pick="under" {...art} />
+        <Paw side="l" offset={bare ? REST_PAW : spec.pawL} />
+        <Paw side="r" offset={bare ? REST_PAW : spec.pawR} hidden={spec.pawInHead && !bare}>
+          <Layer pick="paw" {...art} />
         </Paw>
-        <Layer pick="over" beat={beat} leaving={leaving} clipBase={clipBase} />
+        <Layer pick="over" {...art} />
         <g className="cat-tail-wrap" data-on={spec.tail === "wrap" ? "" : undefined}>
           <Tube d={TAIL_WRAP} className="c-tube-tail" width={7} />
           <g className="cat-tail-tip">
             <Tube d={TAIL_WRAP_TIP} className="c-tube-tail" width={7} />
           </g>
         </g>
-        {aside ? <Aside role={role} beat={beat} /> : null}
+        {aside ? <Aside role={role} held={held} holding={holding} /> : null}
         <BatCard />
       </g>
     </g>
@@ -253,7 +265,7 @@ function SitRig({ beat, leaving, role, clipBase, aside = true }: SitRigProps) {
  * role's own object can sit at the right. Stopped (eyes closed, dimmed) and
  * done (curled, content).
  */
-function LieRig({ eyes, clipBase, role, beat }: { eyes: "closed" | "happy"; clipBase: string; role: AgentRole; beat: Beat }) {
+function LieRig({ eyes, clipBase, role, beat, holding = null }: { eyes: "closed" | "happy"; clipBase: string; role: AgentRole; beat: Beat; holding?: PropId | null }) {
   return (
     <g className="cat-lie">
       <g transform="translate(-12 0)">
@@ -280,7 +292,7 @@ function LieRig({ eyes, clipBase, role, beat }: { eyes: "closed" | "happy"; clip
         <ellipse className="c-paw" cx={70} cy={144} rx={9} ry={5.5} />
       </g>
       <g className="cat-aside-lie" transform="translate(112 0)">
-        <Aside role={role} beat={beat} />
+        <Aside role={role} held={heldFor(beat, role, holding)} holding={holding} />
       </g>
     </g>
   );
@@ -331,27 +343,29 @@ export interface RigProps {
   /** Motion allowed: done plays its stretch and paw prints before it curls up. */
   live: boolean;
   fade?: "in" | "out";
+  /** The object the cat is told to hold (CatProps.holding); null keeps the rig's own choice. */
+  holding?: PropId | null;
 }
 
 /** One full pose. Two rigs sit on top of each other only while sitting and lying crossfade. */
-export function Rig({ pose, beat, leaving = null, role, clipBase, live, fade }: RigProps) {
+export function Rig({ pose, beat, leaving = null, role, clipBase, live, fade, holding = null }: RigProps) {
   const kind = rigKind(pose);
   const base = `${clipBase}-${kind}`;
   let body: ReactNode;
-  if (kind === "lie-stopped") body = <LieRig eyes="closed" clipBase={base} role={role} beat={beat} />;
+  if (kind === "lie-stopped") body = <LieRig eyes="closed" clipBase={base} role={role} beat={beat} holding={holding} />;
   else if (kind === "lie-celebrate")
     body = live ? (
       <>
         <SitRig beat="celebrate" leaving={null} role={role} clipBase={`${base}-s`} aside={false} />
         <PawPrints className="cat-done-prints" />
-        <LieRig eyes="happy" clipBase={base} role={role} beat={beat} />
+        <LieRig eyes="happy" clipBase={base} role={role} beat={beat} holding={holding} />
       </>
     ) : (
-      <LieRig eyes="happy" clipBase={base} role={role} beat={beat} />
+      <LieRig eyes="happy" clipBase={base} role={role} beat={beat} holding={holding} />
     );
   else {
     const sitLeaving = leaving && leaving !== "stopped" ? (leaving as SitBeat) : null;
-    body = <SitRig beat={beat as SitBeat} leaving={sitLeaving} role={role} clipBase={base} />;
+    body = <SitRig beat={beat as SitBeat} leaving={sitLeaving} role={role} clipBase={base} holding={holding} />;
   }
   return (
     <g

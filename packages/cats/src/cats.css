@@ -1313,6 +1313,14 @@ rect.p-paint-3 {
 .cat-quirk-twitch .cat-ear-r .cat-ear-loop {
   animation: cat-twitch var(--cat-quirk) var(--ease-standard) both;
 }
+/* A raised arm (think, ask) holds its paw: a quirk asked for in that pose
+   (playQuirk) moves the head, lids and ears, never the paw off the arm. */
+.cat-sit[data-arm] .cat-q-paw-r {
+  animation: none;
+}
+.cat-sit[data-arm] .cat-q-card {
+  animation: none;
+}
 
 /* Tap, click, or keyboard activation: a short head bob. */
 .cat-react-tap .cat-react-head {

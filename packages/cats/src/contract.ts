@@ -4,6 +4,8 @@
 // packages/cats owns the rendering (flat SVG rig, CSS keyframes, reduced
 // motion stills). Keep this file stable: both sides build in parallel.
 import type { Activity, AgentRole, AgentStatus, CatLook, Mood } from "@mengai/shared";
+import type { QuirkPlay } from "./motion";
+import type { PropId } from "./poses";
 
 /** 24 and 32 are the mini cats (the Mac island); 48 and up carry the full detail. */
 export type CatSize = 24 | 32 | 48 | 64 | 96 | 160;
@@ -24,6 +26,10 @@ export interface CatProps {
   still?: boolean;
   /** one-shot celebration trigger: change the value to play it once */
   celebrateKey?: number;
+  /** the one object the cat holds, over its beat's own and the role's aside; null or absent keeps the rig's choice */
+  holding?: PropId | null;
+  /** one-shot quirk on demand: plays once whenever key changes (never on mount), in any pose; none under reduced motion or still */
+  playQuirk?: QuirkPlay;
 }
 
 export interface CatCardProps extends CatProps {

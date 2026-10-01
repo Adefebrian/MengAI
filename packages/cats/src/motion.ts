@@ -143,6 +143,35 @@ export function useQuirks(enabled: boolean, seed: number, offscreen: RefObject<b
   return quirk;
 }
 
+/** A quirk asked for by the host (CatProps.playQuirk). */
+export interface QuirkPlay {
+  quirk: Quirk;
+  key: number;
+}
+
+/**
+ * Plays one quirk on demand: whenever play.key changes (never on mount),
+ * the quirk plays once for QUIRK_MS, in any pose, outside the idle schedule.
+ * Nothing plays while motion is off (reduced motion or still).
+ */
+export function usePlayQuirk(play: QuirkPlay | undefined, live: boolean): Quirk | null {
+  const [playing, setPlaying] = useState<{ quirk: Quirk; n: number } | null>(null);
+  const prev = useRef(play?.key);
+  const key = play?.key;
+  const quirk = play?.quirk;
+  useEffect(() => {
+    if (Object.is(prev.current, key)) return;
+    prev.current = key;
+    if (live && key !== undefined && quirk) setPlaying((p) => ({ quirk, n: (p?.n ?? 0) + 1 }));
+  }, [key, quirk, live]);
+  useEffect(() => {
+    if (!playing) return;
+    const timer = setTimeout(() => setPlaying(null), QUIRK_MS);
+    return () => clearTimeout(timer);
+  }, [playing]);
+  return live && playing ? playing.quirk : null;
+}
+
 export interface Offscreen {
   /** Read by the quirk scheduler without a render. */
   ref: RefObject<boolean>;

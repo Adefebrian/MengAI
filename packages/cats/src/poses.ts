@@ -191,6 +191,30 @@ export function asideFor(beat: Beat, role: AgentRole): PropId | null {
   return BEAT_PROP[beat] === own ? null : own;
 }
 
+/** What a cat shows when it is told to hold one object (CatProps.holding). */
+export interface Held {
+  /** The object in the free corner (the lying rig's right side), null for none. */
+  aside: PropId | null;
+  /** False: the beat's own object gives way to the held one; its paws rest, its head keeps the beat. */
+  beatArt: boolean;
+}
+
+/**
+ * The one object a cat holds. Without `holding` the rig keeps its own
+ * choice (the beat's art, the role's object aside). With it the cat shows
+ * exactly that one object, never two:
+ *   the beat works with that object     the beat's art shows it, the corner stays empty
+ *   the beat's paws are free            the held object takes the corner, not the role's own
+ *   the beat works with another object  that art gives way, the held object takes the corner
+ * The corner is x 8..44, y 114..148 (lying: x 120..156), inside the viewBox.
+ */
+export function heldFor(beat: Beat, role: AgentRole, holding: PropId | null | undefined): Held {
+  if (holding == null) return { aside: asideFor(beat, role), beatArt: true };
+  const own = BEAT_PROP[beat];
+  if (own === holding) return { aside: null, beatArt: true };
+  return { aside: holding, beatArt: own === null };
+}
+
 type Vec = readonly [number, number];
 
 export interface SitSpec {

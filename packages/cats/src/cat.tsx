@@ -13,12 +13,14 @@
 //   catch     leaving wait for work: a task card flies into the paws once
 //   pointer   head and eyes follow the pointer, tap and focus reactions (interactive)
 //   celebrate one-shot from celebrateKey: tail up, a small hop, paw prints under 900 ms
+//   holding   the one object the cat holds (heldFor), over the beat's own and the aside
+//   playQuirk one quirk on demand whenever its key changes, in any pose
 // Reduced motion and `still` render the static pose for the beat with its
 // label under the cat; no animation class is ever set then.
 import { useEffect, useId, useRef, useState, type CSSProperties, type Ref, type RefObject } from "react";
 import { ACTIVITY_MIN_DWELL_MS } from "@mengai/shared";
 import type { CatProps } from "./contract";
-import { CELEBRATE_MS, CROSSFADE_MS, TAP_MS, useCalm, useCatch, useDwell, useOffscreen, usePointerFollow, useQuirks, useReducedMotion } from "./motion";
+import { CELEBRATE_MS, CROSSFADE_MS, TAP_MS, useCalm, useCatch, useDwell, useOffscreen, usePlayQuirk, usePointerFollow, useQuirks, useReducedMotion } from "./motion";
 import { QUIRK_POSES, beatFor, coatOf, isLowEnergy, phaseMs, poseFor, stillCaption, type Pose } from "./poses";
 import { CatchCard, Warning } from "./props";
 import { Cushion, PawPrints, Rig, rigKind } from "./rig";
@@ -104,6 +106,8 @@ export function CatFigure(props: CatFigureProps) {
     onSelect,
     still = false,
     celebrateKey,
+    holding = null,
+    playQuirk,
     cushion = false,
     caption = true,
     host = "auto",
@@ -118,7 +122,9 @@ export function CatFigure(props: CatFigureProps) {
   const offscreen = useOffscreen(rootRef, live);
   const calm = useCalm(rootRef, live && offscreen.onscreen);
   const busy = live && !calm;
-  const quirk = useQuirks(busy && (status === "idle" || status === "waiting") && QUIRK_POSES.has(pose), look.seed, offscreen.ref);
+  const idleQuirk = useQuirks(busy && (status === "idle" || status === "waiting") && QUIRK_POSES.has(pose), look.seed, offscreen.ref);
+  const asked = usePlayQuirk(playQuirk, live);
+  const quirk = asked ?? idleQuirk;
   usePointerFollow(rootRef, live && interactive);
   const tapped = useTap(rootRef, live && interactive);
   const celebrating = useCelebrate(celebrateKey, live);
@@ -151,6 +157,7 @@ export function CatFigure(props: CatFigureProps) {
     "data-mood": mood,
     "data-motion": live ? "live" : "still",
     "data-energy": low ? "low" : undefined,
+    "data-holding": holding ?? undefined,
     "data-calm": calm ? "" : undefined,
     style: { "--cat-phase": `${phaseMs(look.seed)}ms` } as CSSProperties,
   };
@@ -164,7 +171,7 @@ export function CatFigure(props: CatFigureProps) {
       <svg className="cat-svg" viewBox="0 0 160 160" width={size} height={size} aria-hidden="true" focusable="false">
         {cushion ? <Cushion /> : null}
         {leaving && !sameKind ? (
-          <Rig key={rigKind(leaving)} pose={leaving} beat={leavingBeat!} role={role} clipBase={clipBase} live={live} fade="out" />
+          <Rig key={rigKind(leaving)} pose={leaving} beat={leavingBeat!} role={role} clipBase={clipBase} live={live} fade="out" holding={holding} />
         ) : null}
         <Rig
           key={rigKind(pose)}
@@ -175,6 +182,7 @@ export function CatFigure(props: CatFigureProps) {
           clipBase={clipBase}
           live={live}
           fade={leaving && !sameKind ? "in" : undefined}
+          holding={holding}
         />
         {status === "error" ? <Warning /> : null}
         {catching ? <CatchCard key={catching} /> : null}
