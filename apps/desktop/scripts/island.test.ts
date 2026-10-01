@@ -32,8 +32,11 @@ describe("island contract", () => {
     for (const field of ["has_notch: bool", "notch_width: f64", "notch_height: f64", "menu_bar_height: f64", "scale: f64"]) {
       expect(island).toContain(`pub ${field},`);
     }
-    expect(island).toContain('#[serde(rename_all = "lowercase")]\npub enum IslandState {\n    Collapsed,\n    Peek,\n    Expanded,\n}');
-    expect(island).toMatch(/pub fn island_set_state\(\s*app: AppHandle,\s*window: WebviewWindow,\s*state: IslandState,\s*width: f64,\s*height: f64,\s*\)/);
+    expect(island).toMatch(/#\[serde\(rename_all = "lowercase"\)\]\npub enum IslandState \{\n    Collapsed,\n    Peek,\n    Expanded,\n(?:    \/\/\/.*\n)*    Hidden,\n\}/);
+    // hit and band are optional: a page that sends neither gets the whole window as hit and no band.
+    expect(island).toMatch(
+      /pub fn island_set_state\(\s*app: AppHandle,\s*window: WebviewWindow,\s*state: IslandState,\s*width: f64,\s*height: f64,\s*hit: Option<Vec<HitRect>>,\s*band: Option<Band>,\s*\)/,
+    );
     expect(island).toMatch(/pub fn island_open_main\(app: AppHandle, window: WebviewWindow, path: String\)/);
   });
 
