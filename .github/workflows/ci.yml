@@ -21,8 +21,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Typecheck, lint, test, build
-        run: bunx turbo typecheck lint test build
+      - name: Typecheck, lint, test
+        run: bunx turbo typecheck lint test
+
+      # The desktop app builds only on macOS or Windows (its own release workflow and scripts/build.ts).
+      - name: Build
+        run: bunx turbo build --filter=!@mengai/desktop
 
       - name: Module boundary check
         run: bun run check:boundaries
