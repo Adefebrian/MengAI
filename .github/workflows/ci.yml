@@ -33,7 +33,6 @@ jobs:
   rust:
     name: Rust check (desktop shell and native helper)
     runs-on: macos-14
-    if: ${{ hashFiles('apps/desktop/src-tauri/Cargo.toml', 'services/hands/Cargo.toml') != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
