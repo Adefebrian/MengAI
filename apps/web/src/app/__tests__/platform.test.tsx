@@ -112,19 +112,14 @@ describe("platform facts", () => {
 });
 
 describe("downloads", () => {
-  test("Mac and Windows go to the beta release; Android is coming soon with no link", () => {
+  test("Mac goes to the beta release; Windows is hidden (its build stays on the release); Android is coming soon with no link", () => {
     expect(RELEASE_URL).toBe("https://github.com/Adefebrian/MengAI/releases/tag/v0.1.0-beta");
-    expect(availableDownloads().map((d) => [d.label, d.href])).toEqual([
-      ["Download for Mac", RELEASE_URL],
-      ["Download for Windows", RELEASE_URL],
-    ]);
+    expect(availableDownloads().map((d) => [d.label, d.href])).toEqual([["Download for Mac", RELEASE_URL]]);
     expect(comingDownloads().map((d) => d.id)).toEqual(["android"]);
+    expect(DOWNLOADS.find((d) => d.id === "windows")).toMatchObject({ href: RELEASE_URL, hidden: true });
     expect(DOWNLOADS.find((d) => d.id === "android")?.href).toBeNull();
     const line = downloadLine();
-    expect(line).toContain("Apple Silicon");
-    expect(line).toContain("Windows x64");
-    expect(line).toContain("A few crew tricks reach Windows later.");
-    expect(line).toContain("Android is coming soon.");
+    expect(line).toBe("A beta for Apple Silicon Macs. Android is coming soon.");
     expect(line.includes(LONG_DASH)).toBe(false);
   });
 
@@ -136,10 +131,11 @@ describe("downloads", () => {
     expect(visitorDownload(MAC)).toBe("mac");
     expect(visitorDownload(IPAD)).toBeNull();
     expect(visitorDownload("Mozilla/5.0 (Linux; Android 15) Mobile")).toBe("android");
-    expect(downloadOrder("windows").map((d) => d.id)).toEqual(["windows", "mac"]);
-    expect(downloadOrder("mac").map((d) => d.id)).toEqual(["mac", "windows"]);
-    expect(downloadOrder(null).map((d) => d.id)).toEqual(["mac", "windows"]);
-    expect(downloadOrder("android").map((d) => d.id)).toEqual(["mac", "windows"]);
+    // Windows is hidden for now: every visitor is offered the Mac build.
+    expect(downloadOrder("windows").map((d) => d.id)).toEqual(["mac"]);
+    expect(downloadOrder("mac").map((d) => d.id)).toEqual(["mac"]);
+    expect(downloadOrder(null).map((d) => d.id)).toEqual(["mac"]);
+    expect(downloadOrder("android").map((d) => d.id)).toEqual(["mac"]);
   });
 });
 

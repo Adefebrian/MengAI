@@ -32,7 +32,7 @@ export function CloseSection() {
             {CLOSE_TITLE}
           </h2>
           <p className="kit-lead">
-            MengAI is source available under the {LICENSE_NAME}, free for personal and noncommercial use, and runs on your own machine. Get the app for Mac or Windows, open it, and this
+            MengAI is source available under the {LICENSE_NAME}, free for personal and noncommercial use, and runs on your own machine. Get the app for Mac, open it, and this
             website is only the window: it keeps no account, no key and no data. Every cat runs on the models you pick, on your own key.
           </p>
         </div>
